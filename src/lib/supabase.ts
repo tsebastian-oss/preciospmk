@@ -7,15 +7,15 @@ type QueryOptions = {
 
 function configuration() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !serviceRoleKey) {
+  const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
+  if (!url || !publishableKey) {
     throw new Error("Supabase environment variables are missing");
   }
-  return { url, serviceRoleKey };
+  return { url, publishableKey };
 }
 
 export async function supabaseRest<T>(path: string, options: QueryOptions = {}): Promise<T> {
-  const { url, serviceRoleKey } = configuration();
+  const { url, publishableKey } = configuration();
   const endpoint = new URL(`${url}/rest/v1/${path}`);
   for (const [key, value] of Object.entries(options.query ?? {})) {
     endpoint.searchParams.set(key, value);
@@ -24,8 +24,8 @@ export async function supabaseRest<T>(path: string, options: QueryOptions = {}):
   const response = await fetch(endpoint, {
     method: options.method ?? "GET",
     headers: {
-      apikey: serviceRoleKey,
-      authorization: `Bearer ${serviceRoleKey}`,
+      apikey: publishableKey,
+      authorization: `Bearer ${publishableKey}`,
       "content-type": "application/json",
       ...(options.prefer ? { prefer: options.prefer } : {})
     },
