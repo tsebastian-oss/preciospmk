@@ -13,6 +13,7 @@ import {
 export const dynamic = "force-dynamic";
 
 const PRODUCT_SELECT = "id,supermarket,external_id,name,brand,category,url,image_url,regular_price,offer_price,unit,unit_price,in_stock,observed_at";
+const SUPABASE_URL = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://yfpixszkiakwzrqdcfbw.supabase.co";
 
 function safeSearchTerm(value: string) {
   return value.replace(/[(),*]/g, " ").replace(/\s+/g, " ").trim();
@@ -76,10 +77,9 @@ type AiNarrative = {
   risks: string[];
 };
 
-async function createAiNarrative(target: ProductRecord, matches: CompetitorMatch[], fallback: string): Promise<AiNarrative> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  const model = process.env.OPENAI_COMPETITIVE_MODEL ?? "gpt-5-mini";
-  if (!apiKey) return { enabled: false, model: null, explanation: fallback, actions: [], risks: [] };
+async function createAiNarrative(request: NextRequest, target: ProductRecord, matches: CompetitorMatch[], fallback: string): Promise<AiNarrative> {
+  const token = request.cookies.get("mgp_access_token")?.value;
+  if (!token) return { enabled: false, model: null, explanation: fallback, actions: [], risks: [] };
 
   const compactMatches = matches.slice(0, 12).map((item) => ({
     id: item.id,
@@ -94,30 +94,25 @@ async function createAiNarrative(target: ProductRecord, matches: CompetitorMatch
     warnings: item.warnings,
   }));
 
-  const prompt = [
-    "Eres un analista senior de pricing para supermercados en Chile.",
-    "Analiza el producto objetivo y su set competitivo ya prefiltrado por reglas estructuradas.",
-    "No inventes datos ni declares equivalencia si el formato, categoría o atributos no la respaldan.",
-    "Devuelve exclusivamente JSON con: explanation (string), actions (array de hasta 3 strings), risks (array de hasta 3 strings).",
-    JSON.stringify({ target, competitors: compactMatches }),
-  ].join("\n");
-
   try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/competitive-ai`, {
       method: "POST",
-      headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-      body: JSON.stringify({ model, input: prompt, store: false }),
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ target, competitors: compactMatches }),
       cache: "no-store",
     });
-    if (!response.ok) return { enabled: false, model, explanation: fallback, actions: [], risks: [] };
-    const parsed = parseJsonObject(outputText(await response.json()));
-    if (!parsed) return { enabled: false, model, explanation: fallback, actions: [], risks: [] };
+    const result = await response.json() as { enabled?: boolean; model?: string; payload?: unknown };
+    if (!response.ok || !result.enabled || !result.payload) {
+      return { enabled: false, model: result.model ?? null, explanation: fallback, actions: [], risks: [] };
+    }
+    const parsed = parseJsonObject(outputText(result.payload));
+    if (!parsed) return { enabled: false, model: result.model ?? null, explanation: fallback, actions: [], risks: [] };
     const explanation = typeof parsed.explanation === "string" ? parsed.explanation : fallback;
     const actions = Array.isArray(parsed.actions) ? parsed.actions.filter((item): item is string => typeof item === "string").slice(0, 3) : [];
     const risks = Array.isArray(parsed.risks) ? parsed.risks.filter((item): item is string => typeof item === "string").slice(0, 3) : [];
-    return { enabled: true, model, explanation, actions, risks };
+    return { enabled: true, model: result.model ?? null, explanation, actions, risks };
   } catch {
-    return { enabled: false, model, explanation: fallback, actions: [], risks: [] };
+    return { enabled: false, model: null, explanation: fallback, actions: [], risks: [] };
   }
 }
 
@@ -178,7 +173,7 @@ export async function GET(request: NextRequest) {
 
     const metrics = buildMetrics(target, competitors);
     const fallback = deterministicExplanation(target, competitors, metrics);
-    const ai = await createAiNarrative(target, competitors, fallback);
+    const ai = await createAiNarrative(request, target, competitors, fallback);
 
     return NextResponse.json({ target, competitors, metrics, ai, generatedAt: new Date().toISOString() });
   } catch (error) {
