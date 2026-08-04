@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 
+const DEFAULT_SUPABASE_URL = "https://yfpixszkiakwzrqdcfbw.supabase.co";
+const DEFAULT_PUBLISHABLE_KEY = "sb_publishable_4FrGlw8owGm5EtwMs9V5zQ_oBrH0c0-";
+
 const USERNAME_EMAIL_MAP: Record<string, string> = {
   mazokin13: "mazokin13@mgp-retail.internal",
 };
 
 export async function POST(request: NextRequest) {
-  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const apiKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!supabaseUrl || !apiKey) {
-    return NextResponse.json({ error: "La autenticación no está configurada" }, { status: 500 });
-  }
+  const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? DEFAULT_SUPABASE_URL;
+  const apiKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_PUBLISHABLE_KEY ?? DEFAULT_PUBLISHABLE_KEY;
 
   let identifier = "";
   let password = "";
