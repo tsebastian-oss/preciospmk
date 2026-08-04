@@ -1,58 +1,44 @@
 import { NextResponse } from "next/server";
-import { runScrapers } from "@/lib/scrapers";
-import { supabaseRest } from "@/lib/supabase";
 
 export const maxDuration = 60;
+export const dynamic = "force-dynamic";
 
-type IngestResult = { products_found: number };
+const SCRAPER_ENDPOINT = "https://yfpixszkiakwzrqdcfbw.supabase.co/functions/v1/scrape-supermarkets";
 
 export async function GET() {
-  const secret = process.env.SCRAPE_INGEST_SECRET;
-  if (!secret) {
-    return NextResponse.json({ error: "Scraping secret is not configured" }, { status: 500 });
+  const oidcToken = process.env.VERCEL_OIDC_TOKEN;
+  if (!oidcToken) {
+    return NextResponse.json(
+      { error: "Vercel OIDC is not available for this deployment" },
+      { status: 503 }
+    );
   }
 
   try {
-    const canRun = await supabaseRest<boolean>("rpc/scrape_status", {
+    const response = await fetch(SCRAPER_ENDPOINT, {
       method: "POST",
-      body: { p_secret: secret }
+      headers: {
+        authorization: `Bearer ${oidcToken}`,
+        "content-type": "application/json"
+      },
+      body: "{}",
+      cache: "no-store",
+      signal: AbortSignal.timeout(55_000)
     });
-    if (!canRun) {
-      return NextResponse.json({ error: "A scraping run was completed recently. Try again later." }, { status: 429 });
+
+    const text = await response.text();
+    let payload: unknown;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      payload = { error: text || "Invalid response from scraper" };
     }
 
-    const startedAt = new Date().toISOString();
-    const { products, errors } = await runScrapers();
-    const result = await supabaseRest<IngestResult>("rpc/ingest_scrape", {
-      method: "POST",
-      body: {
-        p_secret: secret,
-        p_started_at: startedAt,
-        p_products: products.map((item) => ({
-          supermarket: item.supermarket,
-          external_id: item.externalId,
-          name: item.name,
-          brand: item.brand ?? null,
-          category: item.category ?? null,
-          url: item.url,
-          image_url: item.imageUrl ?? null,
-          regular_price: item.regularPrice ?? null,
-          offer_price: item.offerPrice,
-          unit: item.unit ?? null,
-          unit_price: item.unitPrice ?? null,
-          in_stock: item.stock ?? true,
-          observed_at: new Date().toISOString()
-        })),
-        p_errors: errors
-      }
-    });
-
-    return NextResponse.json({
-      ok: errors.length === 0,
-      productsFound: result.products_found,
-      errors
-    });
+    return NextResponse.json(payload, { status: response.status });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : String(error) },
+      { status: 500 }
+    );
   }
 }
