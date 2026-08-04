@@ -9,7 +9,7 @@ import {
   type Relationship,
 } from "@/lib/competitive-intelligence";
 
-export { buildMetrics, deterministicExplanation };
+export { buildMetrics, deterministicExplanation, normalizeText, numeric };
 export type { CompetitorMatch, ProductRecord, Relationship };
 
 const STOPWORDS = new Set(["a","al","con","de","del","el","en","la","las","lo","los","para","por","sin","un","una","y","pack","producto","nuevo","nueva","unidad","unidades","formato","marca","botella","bolsa","caja"]);
