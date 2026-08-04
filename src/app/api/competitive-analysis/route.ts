@@ -8,7 +8,7 @@ import {
   scoreCompetitor,
   type CompetitorMatch,
   type ProductRecord,
-} from "@/lib/competitive-intelligence";
+} from "@/lib/competitive-intelligence-v2";
 
 export const dynamic = "force-dynamic";
 
