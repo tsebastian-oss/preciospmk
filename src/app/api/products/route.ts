@@ -3,11 +3,11 @@ import { supabaseRestWithCount } from "@/lib/supabase";
 
 const SUPERMARKETS = new Set(["Lider", "Jumbo", "Santa Isabel"]);
 const SORTS: Record<string, string> = {
-  price_asc: "offer_price.asc,name.asc",
-  price_desc: "offer_price.desc,name.asc",
-  discount_desc: "discount_pct.desc,savings.desc,name.asc",
-  newest: "observed_at.desc,name.asc",
-  name_asc: "name.asc",
+  price_asc: "in_stock.desc,offer_price.asc,name.asc",
+  price_desc: "in_stock.desc,offer_price.desc,name.asc",
+  discount_desc: "discount_pct.desc,savings.desc,in_stock.desc,name.asc",
+  newest: "observed_at.desc,in_stock.desc,name.asc",
+  name_asc: "name.asc,in_stock.desc",
 };
 
 function integer(value: string | null, fallback: number, min: number, max: number) {
