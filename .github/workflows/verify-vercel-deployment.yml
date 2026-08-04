@@ -12,26 +12,62 @@ jobs:
     if: github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
     steps:
-      - name: Verify homepage and APIs
+      - name: Discover production URL and verify APIs
         env:
           DEPLOYMENT_URL: ${{ github.event.deployment_status.environment_url }}
           DEPLOYMENT_SHA: ${{ github.event.deployment.sha }}
         run: |
           set +e
           mkdir -p /tmp/vercel-check
+          : > /tmp/vercel-check/candidates.txt
 
-          home_meta=$(curl -L --max-time 30 -sS -D /tmp/vercel-check/home.headers -o /tmp/vercel-check/home.html -w '%{http_code}|%{url_effective}|%{content_type}' "$DEPLOYMENT_URL/")
-          products_meta=$(curl -L --max-time 30 -sS -D /tmp/vercel-check/products.headers -o /tmp/vercel-check/products.json -w '%{http_code}|%{url_effective}|%{content_type}' "$DEPLOYMENT_URL/api/products")
-          scrape_meta=$(curl -L --max-time 75 -sS -D /tmp/vercel-check/scrape.headers -o /tmp/vercel-check/scrape.json -w '%{http_code}|%{url_effective}|%{content_type}' "$DEPLOYMENT_URL/api/scrape")
+          PUBLIC_URL=""
+          candidates=(
+            "$DEPLOYMENT_URL"
+            "https://preciospmk.vercel.app"
+            "https://preciospmk-tsebastian-oss-projects.vercel.app"
+            "https://preciospmk-tsebastian-oss.vercel.app"
+            "https://preciospmk-tsebastian-oss-tsebastian-oss-projects.vercel.app"
+          )
+
+          index=0
+          for candidate in "${candidates[@]}"; do
+            index=$((index + 1))
+            body="/tmp/vercel-check/candidate-${index}.html"
+            meta=$(curl -L --max-time 30 -sS -o "$body" -w '%{http_code}|%{url_effective}|%{content_type}' "$candidate/")
+            echo "$candidate => $meta" >> /tmp/vercel-check/candidates.txt
+            final_url=$(echo "$meta" | cut -d'|' -f2)
+            status=$(echo "$meta" | cut -d'|' -f1)
+            if [ "$status" = "200" ] && [[ "$final_url" != *"vercel.com/login"* ]] && grep -qi "Super Precios Chile" "$body"; then
+              PUBLIC_URL="$candidate"
+              cp "$body" /tmp/vercel-check/home.html
+              break
+            fi
+          done
+
+          if [ -n "$PUBLIC_URL" ]; then
+            products_meta=$(curl -L --max-time 30 -sS -o /tmp/vercel-check/products.json -w '%{http_code}|%{url_effective}|%{content_type}' "$PUBLIC_URL/api/products")
+            scrape_meta=$(curl -L --max-time 75 -sS -o /tmp/vercel-check/scrape.json -w '%{http_code}|%{url_effective}|%{content_type}' "$PUBLIC_URL/api/scrape")
+          else
+            products_meta="not-tested"
+            scrape_meta="not-tested"
+            echo '{"error":"No public production URL discovered"}' > /tmp/vercel-check/products.json
+            echo '{"error":"Vercel Authentication is enabled"}' > /tmp/vercel-check/scrape.json
+          fi
 
           {
             echo "# Vercel production verification"
             echo
             echo "- Deployment URL: $DEPLOYMENT_URL"
+            echo "- Public URL: ${PUBLIC_URL:-not discovered}"
             echo "- Commit: $DEPLOYMENT_SHA"
-            echo "- Homepage: $home_meta"
             echo "- Products API: $products_meta"
             echo "- Scrape API: $scrape_meta"
+            echo
+            echo "## Candidate domains"
+            echo '```'
+            cat /tmp/vercel-check/candidates.txt
+            echo '```'
             echo
             echo "## Products response"
             echo '```'
@@ -43,11 +79,6 @@ jobs:
             echo '```'
             head -c 5000 /tmp/vercel-check/scrape.json
             echo
-            echo '```'
-            echo
-            echo "## Redirect headers"
-            echo '```'
-            head -n 40 /tmp/vercel-check/home.headers
             echo '```'
           } > /tmp/vercel-check/report.md
 
