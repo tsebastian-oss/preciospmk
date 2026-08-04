@@ -35,3 +35,5 @@ Producción: https://preciospmk.vercel.app
 Última verificación end-to-end: 4 de agosto de 2026. Página pública, API de productos y API de scraping respondieron correctamente.
 
 Última solicitud manual de corrida integral: 4 de agosto de 2026, 14:08 CLT.
+
+Sonda técnica de cobertura Unimarc activada el 4 de agosto de 2026.
