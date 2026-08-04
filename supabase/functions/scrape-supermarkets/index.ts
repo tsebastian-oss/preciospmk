@@ -1,5 +1,3 @@
-import { createRemoteJWKSet, decodeJwt, jwtVerify } from "npm:jose@5.9.6";
-
 type ScrapedProduct = {
   supermarket: string;
   externalId: string;
@@ -15,18 +13,8 @@ type ScrapedProduct = {
   stock?: boolean;
 };
 
-const TEAM_SLUG = "tsebastian-oss-projects";
-const PROJECT_NAME = "preciospmk";
-const EXPECTED_AUDIENCE = `https://vercel.com/${TEAM_SLUG}`;
-const EXPECTED_SUBJECT = `owner:${TEAM_SLUG}:project:${PROJECT_NAME}:environment:production`;
-const ALLOWED_ISSUERS = new Set([
-  "https://oidc.vercel.com",
-  `https://oidc.vercel.com/${TEAM_SLUG}`
-]);
-const JWKS = createRemoteJWKSet(new URL("https://oidc.vercel.com/.well-known/jwks"));
-
 const TARGETS = [
-  { supermarket: "Lider", url: "https://www.lider.cl/supermercado/category/Despensa" },
+  { supermarket: "Lider", url: "https://super.lider.cl/v/productos-de-despensa-y-abarrotes" },
   { supermarket: "Jumbo", url: "https://www.jumbo.cl/despensa" },
   { supermarket: "Santa Isabel", url: "https://www.santaisabel.cl/despensa" },
   { supermarket: "Unimarc", url: "https://www.unimarc.cl/category/despensa" }
@@ -35,26 +23,10 @@ const TARGETS = [
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8" }
-  });
-}
-
-async function verifyVercelOidc(req: Request) {
-  const authorization = req.headers.get("authorization") ?? "";
-  const token = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
-  if (!token) throw new Error("Missing Vercel OIDC token");
-
-  const unverified = decodeJwt(token);
-  const issuer = typeof unverified.iss === "string" ? unverified.iss : "";
-  const audience = Array.isArray(unverified.aud) ? unverified.aud : [unverified.aud];
-  if (!ALLOWED_ISSUERS.has(issuer)) throw new Error("Unexpected OIDC issuer");
-  if (!audience.includes(EXPECTED_AUDIENCE)) throw new Error("Unexpected OIDC audience");
-  if (unverified.sub !== EXPECTED_SUBJECT) throw new Error("Unexpected OIDC subject");
-
-  await jwtVerify(token, JWKS, {
-    issuer,
-    audience: EXPECTED_AUDIENCE,
-    subject: EXPECTED_SUBJECT
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store"
+    }
   });
 }
 
@@ -102,7 +74,7 @@ async function scrapeJsonLdCollection(supermarket: string, url: string): Promise
     },
     signal: AbortSignal.timeout(20_000)
   });
-  if (!response.ok) throw new Error(`${supermarket}: HTTP ${response.status}`);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
   const html = await response.text();
   const results: ScrapedProduct[] = [];
@@ -140,7 +112,7 @@ async function scrapeJsonLdCollection(supermarket: string, url: string): Promise
         });
       }
     } catch {
-      // Retailers sometimes emit malformed JSON-LD. Continue with the next block.
+      // Some retailers emit malformed JSON-LD. Continue with the next block.
     }
   }
   return results;
@@ -149,14 +121,20 @@ async function scrapeJsonLdCollection(supermarket: string, url: string): Promise
 async function runScrapers() {
   const products: ScrapedProduct[] = [];
   const errors: string[] = [];
+  const sources: Record<string, number> = {};
+
   for (const target of TARGETS) {
     try {
-      products.push(...await scrapeJsonLdCollection(target.supermarket, target.url));
+      const found = await scrapeJsonLdCollection(target.supermarket, target.url);
+      sources[target.supermarket] = found.length;
+      products.push(...found);
+      if (found.length === 0) errors.push(`${target.supermarket}: no JSON-LD products found`);
     } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error));
+      sources[target.supermarket] = 0;
+      errors.push(`${target.supermarket}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
-  return { products, errors };
+  return { products, errors, sources };
 }
 
 async function rpc<T>(name: string, body: unknown): Promise<T> {
@@ -179,21 +157,24 @@ async function rpc<T>(name: string, body: unknown): Promise<T> {
 
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, 405);
+  if ((req.headers.get("content-length") ?? "0") !== "0") {
+    const body = await req.text();
+    if (body && body !== "{}") return json({ error: "Request body is not accepted" }, 400);
+  }
 
+  let runId: number;
   try {
-    await verifyVercelOidc(req);
+    runId = await rpc<number>("start_scrape_service", {});
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : "Unauthorized" }, 401);
+    const message = error instanceof Error ? error.message : String(error);
+    const status = message.includes("started recently") ? 429 : 500;
+    return json({ error: message }, status);
   }
 
   try {
-    const canRun = await rpc<boolean>("scrape_service_status", {});
-    if (!canRun) return json({ error: "A scraping run was completed recently. Try again later." }, 429);
-
-    const startedAt = new Date().toISOString();
-    const { products, errors } = await runScrapers();
-    const result = await rpc<{ products_found: number }>("ingest_scrape_service", {
-      p_started_at: startedAt,
+    const { products, errors, sources } = await runScrapers();
+    const result = await rpc<{ run_id: number; products_found: number }>("finish_scrape_service", {
+      p_run_id: runId,
       p_products: products.map((item) => ({
         supermarket: item.supermarket,
         external_id: item.externalId,
@@ -213,11 +194,13 @@ Deno.serve(async (req: Request) => {
     });
 
     return json({
-      ok: errors.length === 0,
+      ok: result.products_found > 0,
+      runId: result.run_id,
       productsFound: result.products_found,
+      sources,
       errors
     });
   } catch (error) {
-    return json({ error: error instanceof Error ? error.message : String(error) }, 500);
+    return json({ error: error instanceof Error ? error.message : String(error), runId }, 500);
   }
 });
