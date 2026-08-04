@@ -12,7 +12,7 @@ jobs:
     if: github.event.deployment_status.state == 'success'
     runs-on: ubuntu-latest
     steps:
-      - name: Discover production URL and verify APIs
+      - name: Discover production URL and verify dashboard
         env:
           DEPLOYMENT_URL: ${{ github.event.deployment_status.environment_url }}
           DEPLOYMENT_SHA: ${{ github.event.deployment.sha }}
@@ -21,6 +21,7 @@ jobs:
           set +e
           mkdir -p /tmp/vercel-check
           : > /tmp/vercel-check/candidates.txt
+          echo "false" > /tmp/vercel-check/verification-ok.txt
 
           commit_message=$(curl -sS \
             -H "Authorization: Bearer $GH_TOKEN" \
@@ -39,7 +40,6 @@ jobs:
             "https://preciospmk.vercel.app"
             "https://preciospmk-tsebastian-oss-projects.vercel.app"
             "https://preciospmk-tsebastian-oss.vercel.app"
-            "https://preciospmk-tsebastian-oss-tsebastian-oss-projects.vercel.app"
           )
 
           index=0
@@ -50,15 +50,32 @@ jobs:
             echo "$candidate => $meta" >> /tmp/vercel-check/candidates.txt
             final_url=$(echo "$meta" | cut -d'|' -f2)
             status=$(echo "$meta" | cut -d'|' -f1)
-            if [ "$status" = "200" ] && [[ "$final_url" != *"vercel.com/login"* ]] && grep -qi "Super Precios Chile" "$body"; then
+            if [ "$status" = "200" ] \
+              && [[ "$final_url" != *"vercel.com/login"* ]] \
+              && grep -Eqi "MGP Price Intelligence|Resumen del mercado" "$body"; then
               PUBLIC_URL="$candidate"
               cp "$body" /tmp/vercel-check/home.html
               break
             fi
           done
 
+          dashboard_valid=false
+          products_valid=false
+
           if [ -n "$PUBLIC_URL" ]; then
-            products_meta=$(curl -L --max-time 30 -sS -o /tmp/vercel-check/products.json -w '%{http_code}|%{url_effective}|%{content_type}' "$PUBLIC_URL/api/products")
+            dashboard_meta=$(curl -L --max-time 45 -sS -o /tmp/vercel-check/dashboard.json -w '%{http_code}|%{url_effective}|%{content_type}' "$PUBLIC_URL/api/dashboard")
+            products_meta=$(curl -L --max-time 45 -sS -o /tmp/vercel-check/products.json -w '%{http_code}|%{url_effective}|%{content_type}' "$PUBLIC_URL/api/products?page=1&pageSize=5&supermarket=Jumbo")
+
+            if [ "$(echo "$dashboard_meta" | cut -d'|' -f1)" = "200" ] \
+              && jq -e '.summary.total_products > 0 and (.supermarkets | length) >= 3 and (.topOffers | type == "array")' /tmp/vercel-check/dashboard.json >/dev/null 2>&1; then
+              dashboard_valid=true
+            fi
+
+            if [ "$(echo "$products_meta" | cut -d'|' -f1)" = "200" ] \
+              && jq -e '.total > 0 and (.products | length) > 0 and ([.products[].supermarket] | all(. == "Jumbo"))' /tmp/vercel-check/products.json >/dev/null 2>&1; then
+              products_valid=true
+            fi
+
             if [ "$run_scrape" = true ]; then
               scrape_meta=$(curl -L --max-time 75 -sS -o /tmp/vercel-check/scrape.json -w '%{http_code}|%{url_effective}|%{content_type}' "$PUBLIC_URL/api/scrape")
             else
@@ -66,10 +83,16 @@ jobs:
               echo '{"skipped":true}' > /tmp/vercel-check/scrape.json
             fi
           else
+            dashboard_meta="not-tested"
             products_meta="not-tested"
             scrape_meta="not-tested"
+            echo '{"error":"No public production URL discovered"}' > /tmp/vercel-check/dashboard.json
             echo '{"error":"No public production URL discovered"}' > /tmp/vercel-check/products.json
             echo '{"error":"No public production URL discovered"}' > /tmp/vercel-check/scrape.json
+          fi
+
+          if [ -n "$PUBLIC_URL" ] && [ "$dashboard_valid" = true ] && [ "$products_valid" = true ]; then
+            echo "true" > /tmp/vercel-check/verification-ok.txt
           fi
 
           {
@@ -79,7 +102,8 @@ jobs:
             echo "- Public URL: ${PUBLIC_URL:-not discovered}"
             echo "- Commit: $DEPLOYMENT_SHA"
             echo "- Commit message: $commit_message"
-            echo "- Products API: $products_meta"
+            echo "- Dashboard API: $dashboard_meta · valid=$dashboard_valid"
+            echo "- Filtered products API: $products_meta · valid=$products_valid"
             echo "- Scrape API: $scrape_meta"
             echo
             echo "## Candidate domains"
@@ -87,15 +111,15 @@ jobs:
             cat /tmp/vercel-check/candidates.txt
             echo '```'
             echo
+            echo "## Dashboard response"
+            echo '```json'
+            head -c 5000 /tmp/vercel-check/dashboard.json
+            echo
+            echo '```'
+            echo
             echo "## Products response"
-            echo '```'
+            echo '```json'
             head -c 5000 /tmp/vercel-check/products.json
-            echo
-            echo '```'
-            echo
-            echo "## Scrape response"
-            echo '```'
-            head -c 5000 /tmp/vercel-check/scrape.json
             echo
             echo '```'
           } > /tmp/vercel-check/report.md
@@ -129,3 +153,10 @@ jobs:
                 body
               });
             }
+
+      - name: Enforce production health
+        run: |
+          if [ "$(cat /tmp/vercel-check/verification-ok.txt)" != "true" ]; then
+            echo "Production verification failed"
+            exit 1
+          fi
