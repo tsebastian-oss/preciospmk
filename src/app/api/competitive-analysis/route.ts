@@ -62,8 +62,8 @@ function extractMeasure(name: string) {
   const match = matches.at(-1)!;
   let amount = Number(match[1]);
   let unit = match[2];
-  if (["kg"].includes(unit)) { amount *= 1000; unit = "g"; }
-  if (["l", "lt"].includes(unit)) { amount *= 1000; unit = "ml"; }
+  if (unit === "kg") { amount *= 1000; unit = "g"; }
+  if (unit === "l" || unit === "lt") { amount *= 1000; unit = "ml"; }
   if (unit === "gr") unit = "g";
   if (unit === "cc") unit = "ml";
   if (unit === "u") unit = "un";
@@ -73,8 +73,7 @@ function extractMeasure(name: string) {
 function measureSimilarity(a: ReturnType<typeof extractMeasure>, b: ReturnType<typeof extractMeasure>) {
   if (!a || !b) return 0.55;
   if (a.unit !== b.unit) return 0;
-  const ratio = Math.min(a.amount, b.amount) / Math.max(a.amount, b.amount);
-  return ratio;
+  return Math.min(a.amount, b.amount) / Math.max(a.amount, b.amount);
 }
 
 function broadCategory(category: string | null) {
@@ -134,15 +133,15 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const searchFilter = productId ? { id: `eq.${productId}` } : { name: `ilike.*${query!.replace(/[,*]/g, " ")}*` };
-    const targets = await supabaseRest<Product[]>("dashboard_products", {
-      query: {
-        select: "id,supermarket,external_id,name,brand,category,url,image_url,regular_price,offer_price,unit,unit_price,in_stock,observed_at",
-        ...searchFilter,
-        order: "in_stock.desc,observed_at.desc",
-        limit: productId ? "1" : "12",
-      },
-    });
+    const targetQuery: Record<string, string> = {
+      select: "id,supermarket,external_id,name,brand,category,url,image_url,regular_price,offer_price,unit,unit_price,in_stock,observed_at",
+      order: "in_stock.desc,observed_at.desc",
+      limit: productId ? "1" : "12",
+    };
+    if (productId) targetQuery.id = `eq.${productId}`;
+    else targetQuery.name = `ilike.*${query!.replace(/[,*]/g, " ")}*`;
+
+    const targets = await supabaseRest<Product[]>("dashboard_products", { query: targetQuery });
 
     if (!targets.length) return NextResponse.json({ error: "No encontramos productos para analizar" }, { status: 404 });
     if (!productId) return NextResponse.json({ searchResults: targets });
@@ -163,7 +162,7 @@ export async function GET(request: NextRequest) {
       .sort((a, b) => b.similarity - a.similarity || numberValue(a.offer_price) - numberValue(b.offer_price))
       .slice(0, 20);
 
-    const competitiveSet = [target, ...competitors.filter((item) => item.relationship !== "substitute").slice(0, 9)];
+    const competitiveSet: Product[] = [target, ...competitors.filter((item) => item.relationship !== "substitute").slice(0, 9)];
     const prices = competitiveSet.map((item) => numberValue(item.offer_price)).filter((price) => price > 0);
     const marketAverage = prices.length ? prices.reduce((sum, price) => sum + price, 0) / prices.length : 0;
     const marketMin = prices.length ? Math.min(...prices) : 0;
