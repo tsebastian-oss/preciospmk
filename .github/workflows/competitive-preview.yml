@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - feature/competitive-pricing-intelligence
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
