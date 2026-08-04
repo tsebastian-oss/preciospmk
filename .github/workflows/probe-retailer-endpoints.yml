@@ -1,0 +1,87 @@
+name: Probe retailer endpoints
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  probe:
+    if: contains(github.event.head_commit.message, '[retailer-probe]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe public catalog endpoints
+        run: |
+          set +e
+          mkdir -p /tmp/retailer-probe
+          cat > /tmp/retailer-probe/urls.txt <<'EOF'
+          https://www.santaisabel.cl/api/catalog_system/pub/products/search?_from=0&_to=9
+          https://www.santaisabel.cl/api/io/_v/api/intelligent-search/product_search?query=despensa&page=0&count=10
+          https://www.santaisabel.cl/api/io/_v/api/intelligent-search/product_search?query=&page=0&count=10
+          https://www.unimarc.cl/api/catalog_system/pub/products/search?_from=0&_to=9
+          https://www.unimarc.cl/api/io/_v/api/intelligent-search/product_search?query=despensa&page=0&count=10
+          https://www.unimarc.cl/api/io/_v/api/intelligent-search/product_search?query=&page=0&count=10
+          https://www.unimarc.cl/api/products?limit=10
+          https://www.unimarc.cl/api/search?query=despensa
+          EOF
+
+          : > /tmp/retailer-probe/report.md
+          echo '# Retailer endpoint probe' >> /tmp/retailer-probe/report.md
+          echo >> /tmp/retailer-probe/report.md
+
+          i=0
+          while IFS= read -r url; do
+            i=$((i + 1))
+            headers="/tmp/retailer-probe/headers-$i.txt"
+            body="/tmp/retailer-probe/body-$i.txt"
+            meta=$(curl -L --compressed --max-time 30 -sS -D "$headers" -o "$body" -w '%{http_code}|%{url_effective}|%{content_type}|%{size_download}' \
+              -H 'User-Agent: Mozilla/5.0 (compatible; MGPPriceMonitor/1.0)' \
+              -H 'Accept: application/json,text/plain,*/*' \
+              "$url")
+            echo "## $url" >> /tmp/retailer-probe/report.md
+            echo >> /tmp/retailer-probe/report.md
+            echo "- Result: $meta" >> /tmp/retailer-probe/report.md
+            echo '- Headers:' >> /tmp/retailer-probe/report.md
+            echo '```' >> /tmp/retailer-probe/report.md
+            head -n 20 "$headers" >> /tmp/retailer-probe/report.md
+            echo '```' >> /tmp/retailer-probe/report.md
+            echo '- Body:' >> /tmp/retailer-probe/report.md
+            echo '```' >> /tmp/retailer-probe/report.md
+            head -c 3000 "$body" >> /tmp/retailer-probe/report.md
+            echo >> /tmp/retailer-probe/report.md
+            echo '```' >> /tmp/retailer-probe/report.md
+            echo >> /tmp/retailer-probe/report.md
+          done < /tmp/retailer-probe/urls.txt
+
+      - name: Publish probe report
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('/tmp/retailer-probe/report.md', 'utf8');
+            const title = 'Retailer endpoint probe';
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+            const existing = issues.find((issue) => issue.title === title && !issue.pull_request);
+            if (existing) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body
+              });
+            }
