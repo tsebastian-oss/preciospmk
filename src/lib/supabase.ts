@@ -5,13 +5,14 @@ type QueryOptions = {
   prefer?: string;
 };
 
+const DEFAULT_SUPABASE_URL = "https://yfpixszkiakwzrqdcfbw.supabase.co";
+const DEFAULT_PUBLISHABLE_KEY = "sb_publishable_4FrGlw8owGm5EtwMs9V5zQ_oBrH0c0-";
+
 function configuration() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const publishableKey = process.env.SUPABASE_PUBLISHABLE_KEY;
-  if (!url || !publishableKey) {
-    throw new Error("Supabase environment variables are missing");
-  }
-  return { url, publishableKey };
+  return {
+    url: process.env.NEXT_PUBLIC_SUPABASE_URL ?? DEFAULT_SUPABASE_URL,
+    publishableKey: process.env.SUPABASE_PUBLISHABLE_KEY ?? DEFAULT_PUBLISHABLE_KEY
+  };
 }
 
 export async function supabaseRest<T>(path: string, options: QueryOptions = {}): Promise<T> {
