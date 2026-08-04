@@ -1,6 +1,6 @@
 {
   "name": "mgp-super-precios",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "next": "15.4.6",
+    "next": "15.5.22",
     "react": "19.1.1",
     "react-dom": "19.1.1"
   },
