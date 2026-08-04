@@ -16,7 +16,9 @@ jobs:
       - name: Inspect storefront bundles
         run: |
           cat > /tmp/probe.py <<'PY'
-          import json, re, urllib.parse, urllib.request
+          import re
+          import urllib.parse
+          import urllib.request
           from collections import OrderedDict
 
           SITES = {
@@ -31,9 +33,9 @@ jobs:
 
           def fetch(url, timeout=30):
               req = urllib.request.Request(url, headers=HEADERS)
-              with urllib.request.urlopen(req, timeout=timeout) as r:
-                  data = r.read(5_000_000)
-                  return r.status, r.headers.get_content_type(), data.decode("utf-8", "replace"), r.geturl()
+              with urllib.request.urlopen(req, timeout=timeout) as response:
+                  data = response.read(4_000_000)
+                  return response.status, response.headers.get_content_type(), data.decode("utf-8", "replace"), response.geturl()
 
           def uniq(items):
               return list(OrderedDict.fromkeys(items))
@@ -48,40 +50,38 @@ jobs:
                   report += [f"- Homepage fetch failed: `{exc}`", ""]
                   continue
 
-              srcs = re.findall(r'<script[^>]+src=["\']([^"\']+)["\']', html, flags=re.I)
-              scripts = uniq([urllib.parse.urljoin(final_url, src) for src in srcs])[:30]
-              report += [f"- Script bundles discovered: {len(scripts)}", ""]
+              srcs = re.findall(r"<script[^>]+src=[\"']([^\"']+)[\"']", html, flags=re.I)
+              scripts = uniq([urllib.parse.urljoin(final_url, src) for src in srcs])[:18]
+              report += [f"- Script bundles inspected: {len(scripts)}", ""]
 
               findings = []
               hosts = []
               for script_url in scripts:
                   try:
-                      s, ct, js, resolved = fetch(script_url, timeout=25)
+                      _, _, js, resolved = fetch(script_url, timeout=25)
                   except Exception as exc:
                       findings.append(f"FETCH_ERROR {script_url} :: {exc}")
                       continue
 
-                  absolute_urls = re.findall(r'https?://[^"\'`\\\s<>]+', js)
-                  for url in absolute_urls:
+                  for url in re.findall(r"https?://[^\"'`\\\s<>]+", js):
                       low = url.lower()
                       if any(token in low for token in ["api", "graphql", "search", "product", "catalog", "santaisabel", "unimarc"]):
-                          findings.append(url[:500])
-                          try:
-                              hosts.append(urllib.parse.urlparse(url).netloc)
-                          except Exception:
-                              pass
+                          findings.append(url[:350])
+                          hosts.append(urllib.parse.urlparse(url).netloc)
 
-                  for match in re.finditer(r'.{0,180}(?:apis\.santaisabel\.cl|graphql|product_search|catalog_system|search/products|products/search|/api/).{0,260}', js, flags=re.I | re.S):
-                      snippet = re.sub(r'\s+', ' ', match.group(0)).strip()
-                      findings.append(f"SNIPPET {resolved} :: {snippet[:700]}")
+                  pattern = r".{0,100}(?:apis\.santaisabel\.cl|graphql|product_search|catalog_system|search/products|products/search|/api/).{0,160}"
+                  for match in re.finditer(pattern, js, flags=re.I | re.S):
+                      snippet = re.sub(r"\s+", " ", match.group(0)).strip()
+                      findings.append(f"SNIPPET {resolved} :: {snippet[:350]}")
 
-              findings = uniq(findings)[:120]
-              hosts = uniq(hosts)
-              report += ["### Relevant hosts", "```", *hosts[:50], "```", ""]
+              findings = uniq(findings)[:45]
+              hosts = uniq(hosts)[:30]
+              report += ["### Relevant hosts", "```", *hosts, "```", ""]
               report += ["### Endpoint and code findings", "```", *findings, "```", ""]
 
-          with open('/tmp/asset-probe-report.md', 'w', encoding='utf-8') as f:
-              f.write('\n'.join(report))
+          text = "\n".join(report)
+          with open('/tmp/asset-probe-report.md', 'w', encoding='utf-8') as file:
+              file.write(text[:60000])
           PY
           python /tmp/probe.py
 
