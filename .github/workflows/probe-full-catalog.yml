@@ -18,11 +18,9 @@ jobs:
           cat > /tmp/probe.py <<'PY'
           import gzip
           import io
-          import json
           import re
           import urllib.parse
           import urllib.request
-          import xml.etree.ElementTree as ET
           from collections import OrderedDict
 
           UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126 Safari/537.36'
@@ -47,114 +45,129 @@ jobs:
               return list(OrderedDict.fromkeys(xs))
 
           def sitemap_urls(url, depth=0, seen=None):
-              if seen is None: seen=set()
-              if depth > 2 or url in seen: return [], []
+              if seen is None:
+                  seen = set()
+              if depth > 2 or url in seen:
+                  return [], []
               seen.add(url)
               try:
-                  status, headers, body, final = fetch(url)
+                  _, _, body, _ = fetch(url)
               except Exception as exc:
                   return [], [f'ERROR {url}: {exc}']
-              locs = re.findall(r'<loc>(.*?)</loc>', body, flags=re.I|re.S)
+              locs = re.findall(r'<loc>(.*?)</loc>', body, flags=re.I | re.S)
               locs = [re.sub(r'&amp;', '&', x.strip()) for x in locs]
               nested = [x for x in locs if x.endswith('.xml') or '.xml?' in x or x.endswith('.xml.gz')]
               pages = [x for x in locs if x not in nested]
-              errors=[]
+              errors = []
               for child in nested[:100]:
-                  p,e=sitemap_urls(child, depth+1, seen)
-                  pages.extend(p); errors.extend(e)
+                  child_pages, child_errors = sitemap_urls(child, depth + 1, seen)
+                  pages.extend(child_pages)
+                  errors.extend(child_errors)
               return uniq(pages), errors
 
           def probe_json(url):
               try:
                   status, headers, body, final = fetch(url, max_bytes=2_000_000)
-                  info=f'{status} {final} {headers.get("content-type")} bytes={len(body)}'
-                  sample=body[:1200].replace('\n',' ')
-                  return info, sample
+                  info = f'{status} {final} {headers.get("content-type")} bytes={len(body)}'
+                  return info, body[:1200].replace('\n', ' ')
               except Exception as exc:
                   return f'ERROR {exc}', ''
 
-          report=['# Full catalog source probe','']
-          retailers={
+          report = ['# Full catalog source probe', '']
+          retailers = {
               'Lider': {
-                  'roots':['https://super.lider.cl/robots.txt','https://super.lider.cl/sitemap.xml','https://super.lider.cl/sitemap_index.xml'],
-                  'apis':[
+                  'roots': ['https://super.lider.cl/robots.txt', 'https://super.lider.cl/sitemap.xml', 'https://super.lider.cl/sitemap_index.xml'],
+                  'apis': [
                       'https://super.lider.cl/api/search?query=leche&page=1',
                       'https://super.lider.cl/api/products?limit=50',
                       'https://super.lider.cl/api/graphql',
                   ],
-                  'page':'https://super.lider.cl/v/productos-de-despensa-y-abarrotes'
+                  'page': 'https://super.lider.cl/v/productos-de-despensa-y-abarrotes'
               },
               'Jumbo': {
-                  'roots':['https://www.jumbo.cl/robots.txt','https://www.jumbo.cl/sitemap.xml','https://www.jumbo.cl/sitemap_index.xml'],
-                  'apis':[
+                  'roots': ['https://www.jumbo.cl/robots.txt', 'https://www.jumbo.cl/sitemap.xml', 'https://www.jumbo.cl/sitemap_index.xml'],
+                  'apis': [
                       'https://www.jumbo.cl/api/catalog_system/pub/products/search?_from=0&_to=49',
                       'https://api.jumbo.cl/api/catalog_system/pub/products/search?_from=0&_to=49',
                       'https://jumbo.vtexcommercestable.com.br/api/catalog_system/pub/products/search?_from=0&_to=49',
                       'https://jumbo.vtexcommercestable.com.br/api/catalog_system/pub/category/tree/3',
                   ],
-                  'page':'https://www.jumbo.cl/despensa'
+                  'page': 'https://www.jumbo.cl/despensa'
               },
               'Santa Isabel': {
-                  'roots':['https://www.santaisabel.cl/robots.txt','https://www.santaisabel.cl/sitemap.xml','https://www.santaisabel.cl/sitemap_index.xml'],
-                  'apis':[
+                  'roots': ['https://www.santaisabel.cl/robots.txt', 'https://www.santaisabel.cl/sitemap.xml', 'https://www.santaisabel.cl/sitemap_index.xml'],
+                  'apis': [
                       'https://santaisabel.vtexcommercestable.com.br/api/catalog_system/pub/products/search?_from=0&_to=49',
                       'https://santaisabel.vtexcommercestable.com.br/api/catalog_system/pub/category/tree/3',
                       'https://www.santaisabel.cl/api/catalog_system/pub/products/search?_from=0&_to=49',
                       'https://apis.santaisabel.cl/api/catalog_system/pub/products/search?_from=0&_to=49',
                   ],
-                  'page':'https://www.santaisabel.cl/'
+                  'page': 'https://www.santaisabel.cl/'
               }
           }
 
-          for name,cfg in retailers.items():
-              report += [f'## {name}','']
-              all_pages=[]; all_errors=[]
+          for name, cfg in retailers.items():
+              report += [f'## {name}', '']
+              all_pages = []
               for root in cfg['roots']:
-                  pages, errors=sitemap_urls(root)
+                  pages, errors = sitemap_urls(root)
                   if pages:
                       report += [f'- Sitemap root `{root}`: **{len(pages)} URLs**']
                       all_pages.extend(pages)
                   elif errors:
                       report += [f'- Sitemap root `{root}`: `{errors[0]}`']
-              all_pages=uniq(all_pages)
-              product_like=[u for u in all_pages if any(t in u.lower() for t in ['/p','/ip/','product','producto'])]
-              report += [f'- Unique sitemap URLs: **{len(all_pages)}**', f'- Product-like sitemap URLs: **{len(product_like)}**','']
-              report += ['### Sitemap samples','```',*all_pages[:8], '...', *all_pages[-5:] if all_pages else [], '```','']
+              all_pages = uniq(all_pages)
+              product_like = [u for u in all_pages if any(t in u.lower() for t in ['/p', '/ip/', 'product', 'producto'])]
+              report += [
+                  f'- Unique sitemap URLs: **{len(all_pages)}**',
+                  f'- Product-like sitemap URLs: **{len(product_like)}**',
+                  '',
+                  '### Sitemap samples',
+                  '```',
+                  *all_pages[:8],
+                  '...',
+                  *(all_pages[-5:] if all_pages else []),
+                  '```',
+                  ''
+              ]
 
-              report += ['### API probes','']
+              report += ['### API probes', '']
               for api in cfg['apis']:
-                  info,sample=probe_json(api)
-                  report += [f'#### `{api}`',f'- {info}','```',sample,'```','']
+                  info, sample = probe_json(api)
+                  report += [f'#### `{api}`', f'- {info}', '```', sample, '```', '']
 
               try:
-                  status,headers,html,final=fetch(cfg['page'])
-                  report += [f'### Page source `{cfg["page"]}`',f'- {status} `{final}` bytes={len(html)}','']
-                  script_srcs=uniq([urllib.parse.urljoin(final, x.replace('&amp;','&')) for x in re.findall(r'<script[^>]+src=["\']([^"\']+)',html,re.I)])
+                  status, _, html, final = fetch(cfg['page'])
+                  report += [f'### Page source `{cfg["page"]}`', f'- {status} `{final}` bytes={len(html)}', '']
+                  script_srcs = uniq([
+                      urllib.parse.urljoin(final, x.replace('&amp;', '&'))
+                      for x in re.findall(r'<script[^>]+src=["\']([^"\']+)', html, re.I)
+                  ])
                   report += [f'- Script bundles: {len(script_srcs)}']
-                  # Detect hydrated data and pagination/category hints.
-                  tokens=['__NEXT_DATA__','__renderData','totalResults','recordsFiltered','pageCount','pagination','category','departments','facets','productSearch','searchResult','catalog_system','vtex','offset','pageSize']
-                  findings=[]
+                  tokens = ['__NEXT_DATA__', '__renderData', 'totalResults', 'recordsFiltered', 'pageCount', 'pagination', 'category', 'departments', 'facets', 'productSearch', 'searchResult', 'catalog_system', 'vtex', 'offset', 'pageSize']
+                  findings = []
                   for token in tokens:
-                      pos=html.lower().find(token.lower())
-                      if pos>=0:
-                          findings.append(f'HTML[{token}] '+re.sub(r'\s+',' ',html[max(0,pos-250):pos+650])[:900])
+                      pos = html.lower().find(token.lower())
+                      if pos >= 0:
+                          findings.append(f'HTML[{token}] ' + re.sub(r'\s+', ' ', html[max(0, pos - 250):pos + 650])[:900])
                   for src in script_srcs[:20]:
-                      if any(x in src for x in ['maps.googleapis','ruxit','polyfills']): continue
+                      if any(x in src for x in ['maps.googleapis', 'ruxit', 'polyfills']):
+                          continue
                       try:
-                          _,_,js,resolved=fetch(src,max_bytes=8_000_000)
+                          _, _, js, resolved = fetch(src, max_bytes=8_000_000)
                       except Exception as exc:
-                          findings.append(f'BUNDLE_ERROR {src}: {exc}'); continue
-                      for token in ['catalog_system','product_search','productSearch','searchResult','totalResults','pageSize','offset','api.jumbo.cl','apis.santaisabel.cl','super.lider.cl/api','graphql']:
-                          p=js.lower().find(token.lower())
-                          if p>=0:
-                              findings.append(f'JS {resolved}[{token}] '+re.sub(r'\s+',' ',js[max(0,p-350):p+1000])[:1350])
-                  report += ['### Pagination/API hints','```',*findings[:35],'```','']
+                          findings.append(f'BUNDLE_ERROR {src}: {exc}')
+                          continue
+                      for token in ['catalog_system', 'product_search', 'productSearch', 'searchResult', 'totalResults', 'pageSize', 'offset', 'api.jumbo.cl', 'apis.santaisabel.cl', 'super.lider.cl/api', 'graphql']:
+                          pos = js.lower().find(token.lower())
+                          if pos >= 0:
+                              findings.append(f'JS {resolved}[{token}] ' + re.sub(r'\s+', ' ', js[max(0, pos - 350):pos + 1000])[:1350])
+                  report += ['### Pagination/API hints', '```', *findings[:35], '```', '']
               except Exception as exc:
-                  report += [f'- Page source error: `{exc}`','']
+                  report += [f'- Page source error: `{exc}`', '']
 
-          text='\n'.join(report)
-          with open('/tmp/full-catalog-probe.md','w',encoding='utf-8') as f:
-              f.write(text[:64000])
+          with open('/tmp/full-catalog-probe.md', 'w', encoding='utf-8') as file:
+              file.write('\n'.join(report)[:64000])
           PY
           python /tmp/probe.py
 
@@ -163,7 +176,7 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const body = fs.readFileSync('/tmp/full-catalog-probe.md','utf8');
+            const body = fs.readFileSync('/tmp/full-catalog-probe.md', 'utf8');
             const title = 'Full catalog source probe';
             const { data: issues } = await github.rest.issues.listForRepo({ owner: context.repo.owner, repo: context.repo.repo, state: 'open', per_page: 100 });
             const existing = issues.find(i => i.title === title && !i.pull_request);
