@@ -16,13 +16,14 @@ Aplicación para monitorear, comparar y almacenar precios históricos de superme
 - Histórico de observaciones de precio.
 - Ejecución manual y programada del scraping.
 - Conectores iniciales para Lider, Jumbo, Santa Isabel y Unimarc.
+- Persistencia mediante RPC protegida, sin exponer credenciales administrativas.
 
 ## Variables de entorno
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=
-SUPABASE_SERVICE_ROLE_KEY=
-CRON_SECRET=
+SUPABASE_PUBLISHABLE_KEY=
+SCRAPE_INGEST_SECRET=
 ```
 
-La migración inicial está en `supabase/migrations/20260804134500_initial_schema.sql`.
+Las migraciones están disponibles en `supabase/migrations`.
