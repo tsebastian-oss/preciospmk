@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
+const DEFAULT_SUPABASE_URL = "https://yfpixszkiakwzrqdcfbw.supabase.co";
+const DEFAULT_PUBLISHABLE_KEY = "sb_publishable_4FrGlw8owGm5EtwMs9V5zQ_oBrH0c0-";
 const PUBLIC_PATHS = ["/landing", "/login", "/api/auth/login", "/api/auth/logout"];
 const PRIVATE_API_PREFIXES = ["/api/dashboard", "/api/products", "/api/matches", "/api/scrape"];
 
@@ -20,8 +22,8 @@ function isPrivateApi(pathname: string) {
 
 function authConfig() {
   return {
-    supabaseUrl: process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL,
-    apiKey: process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY,
+    supabaseUrl: process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? DEFAULT_SUPABASE_URL,
+    apiKey: process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_PUBLISHABLE_KEY ?? DEFAULT_PUBLISHABLE_KEY,
   };
 }
 
@@ -29,7 +31,6 @@ async function sessionState(request: NextRequest): Promise<SessionState> {
   const accessToken = request.cookies.get("mgp_access_token")?.value;
   const refreshToken = request.cookies.get("mgp_refresh_token")?.value;
   const { supabaseUrl, apiKey } = authConfig();
-  if (!supabaseUrl || !apiKey) return { authenticated: false };
 
   if (accessToken) {
     try {
