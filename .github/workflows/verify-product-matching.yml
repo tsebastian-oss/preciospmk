@@ -1,0 +1,27 @@
+name: Verify product matching
+
+on:
+  deployment_status:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-matching:
+    if: github.event.deployment_status.state == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate public matching API
+        run: |
+          set -euo pipefail
+          public_url="https://preciospmk.vercel.app"
+          curl --fail --location --max-time 45 --silent --show-error \
+            "$public_url/api/matches?page=1&pageSize=5&sort=gap_desc" \
+            -o /tmp/matches.json
+          jq -e '
+            .total > 0 and
+            (.matches | length) > 0 and
+            ([.matches[] | .price_gap > 0] | all) and
+            ([.matches[] | (.store_listings | length) >= 2] | all)
+          ' /tmp/matches.json >/dev/null
+          echo "Product matching verification passed"
