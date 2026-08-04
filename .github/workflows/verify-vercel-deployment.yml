@@ -52,7 +52,7 @@ jobs:
             status=$(echo "$meta" | cut -d'|' -f1)
             if [ "$status" = "200" ] \
               && [[ "$final_url" != *"vercel.com/login"* ]] \
-              && grep -Eqi "MGP Price Intelligence|Resumen del mercado" "$body"; then
+              && grep -Eqi "MGP Retail Intelligence|Decisiones de precio y surtido|Retail Intelligence Command Center" "$body"; then
               PUBLIC_URL="$candidate"
               cp "$body" /tmp/vercel-check/home.html
               break
