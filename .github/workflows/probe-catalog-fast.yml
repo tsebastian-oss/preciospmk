@@ -1,0 +1,73 @@
+name: Fast catalog probe
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  probe:
+    if: contains(github.event.head_commit.message, '[catalog-fast]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Probe endpoints
+        run: |
+          cat > /tmp/probe.py <<'PY'
+          import gzip, io, re, urllib.request
+
+          H={'User-Agent':'Mozilla/5.0 Chrome/126','Accept':'*/*','Accept-Language':'es-CL,es;q=0.9'}
+          def get(url, limit=3000000):
+              req=urllib.request.Request(url,headers=H)
+              with urllib.request.urlopen(req,timeout=25) as r:
+                  raw=r.read(limit)
+                  if r.headers.get('content-encoding')=='gzip' or url.endswith('.gz'):
+                      try: raw=gzip.GzipFile(fileobj=io.BytesIO(raw)).read()
+                      except: pass
+                  return r.status,r.headers,raw.decode('utf-8','replace'),r.geturl()
+
+          report=['# Fast catalog probe','']
+          endpoints={
+            'Lider':[
+              'https://super.lider.cl/robots.txt','https://super.lider.cl/sitemap.xml','https://super.lider.cl/sitemap_index.xml',
+              'https://super.lider.cl/api/search?query=leche&page=1','https://super.lider.cl/api/products?limit=50'
+            ],
+            'Jumbo':[
+              'https://www.jumbo.cl/robots.txt','https://www.jumbo.cl/sitemap.xml',
+              'https://www.jumbo.cl/api/catalog_system/pub/products/search?_from=0&_to=49',
+              'https://api.jumbo.cl/api/catalog_system/pub/products/search?_from=0&_to=49',
+              'https://jumbo.vtexcommercestable.com.br/api/catalog_system/pub/products/search?_from=0&_to=49',
+              'https://jumbo.vtexcommercestable.com.br/api/catalog_system/pub/category/tree/3'
+            ],
+            'Santa Isabel':[
+              'https://www.santaisabel.cl/robots.txt','https://www.santaisabel.cl/sitemap.xml',
+              'https://santaisabel.vtexcommercestable.com.br/api/catalog_system/pub/products/search?_from=0&_to=49',
+              'https://santaisabel.vtexcommercestable.com.br/api/catalog_system/pub/category/tree/3',
+              'https://apis.santaisabel.cl/api/catalog_system/pub/products/search?_from=0&_to=49'
+            ]
+          }
+          for name,urls in endpoints.items():
+              report += [f'## {name}','']
+              for u in urls:
+                  try:
+                      st,h,b,final=get(u)
+                      locs=re.findall(r'<loc>(.*?)</loc>',b,re.I|re.S)
+                      report += [f'### `{u}`',f'- `{st}` `{h.get("content-type")}` bytes={len(b)} final=`{final}` locs={len(locs)}', '```', b[:1800].replace('\n',' '), '```','']
+                  except Exception as e:
+                      report += [f'### `{u}`',f'- ERROR `{e}`','']
+          open('/tmp/report.md','w').write('\n'.join(report)[:60000])
+          PY
+          python /tmp/probe.py
+
+      - name: Publish report
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs=require('fs'); const body=fs.readFileSync('/tmp/report.md','utf8'); const title='Fast catalog probe';
+            const {data:issues}=await github.rest.issues.listForRepo({owner:context.repo.owner,repo:context.repo.repo,state:'open',per_page:100});
+            const old=issues.find(i=>i.title===title&&!i.pull_request);
+            if(old) await github.rest.issues.update({owner:context.repo.owner,repo:context.repo.repo,issue_number:old.number,body});
+            else await github.rest.issues.create({owner:context.repo.owner,repo:context.repo.repo,title,body});
