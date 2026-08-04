@@ -1,0 +1,147 @@
+name: Probe Unimarc BFF
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  probe:
+    if: contains(github.event.head_commit.message, '[unimarc-probe]')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect token and JavaScript calls
+        run: |
+          cat > /tmp/unimarc_probe.py <<'PY'
+          import json
+          import re
+          import urllib.parse
+          import urllib.request
+          from collections import OrderedDict
+
+          ROOT = "https://www.unimarc.cl/"
+          TOKENS = [
+              "bff-unimarc-ecommerce.unimarc.cl",
+              "/api/getToken",
+              "getToken",
+              "productSearch",
+              "searchProducts",
+              "search/product",
+              "products/search",
+              "catalog",
+              "categories",
+              "facets",
+              "autocomplete",
+          ]
+          HEADERS = {
+              "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/126 Safari/537.36",
+              "Accept": "text/html,application/xhtml+xml,application/json,text/plain,application/javascript,*/*",
+              "Accept-Language": "es-CL,es;q=0.9,en;q=0.7",
+              "Referer": ROOT,
+              "Origin": "https://www.unimarc.cl",
+          }
+
+          def fetch(url, timeout=35, max_bytes=10_000_000):
+              request = urllib.request.Request(url, headers=HEADERS)
+              with urllib.request.urlopen(request, timeout=timeout) as response:
+                  data = response.read(max_bytes)
+                  return response.status, response.headers, data.decode("utf-8", "replace"), response.geturl()
+
+          def uniq(items):
+              return list(OrderedDict.fromkeys(items))
+
+          def contexts(text, token, before=700, after=1300, limit=20):
+              output = []
+              lower = text.lower()
+              needle = token.lower()
+              cursor = 0
+              while len(output) < limit:
+                  pos = lower.find(needle, cursor)
+                  if pos < 0:
+                      break
+                  fragment = text[max(0, pos-before):min(len(text), pos+len(token)+after)]
+                  output.append(re.sub(r"\s+", " ", fragment).strip()[:2400])
+                  cursor = pos + len(token)
+              return output
+
+          report = ["# Unimarc BFF probe", ""]
+
+          # Same-origin token endpoint used by the storefront.
+          for endpoint in ["https://www.unimarc.cl/api/getToken", "https://www.unimarc.cl/api/getToken/"]:
+              try:
+                  status, headers, body, final_url = fetch(endpoint, max_bytes=200_000)
+                  report += [f"## Token endpoint `{endpoint}`", f"- Result: {status} `{final_url}` `{headers.get('content-type')}`", "```", body[:6000], "```", ""]
+              except Exception as exc:
+                  report += [f"## Token endpoint `{endpoint}`", f"- Error: `{exc}`", ""]
+
+          status, headers, html, final_url = fetch(ROOT)
+          script_srcs = re.findall(r"<script[^>]+src=[\"']([^\"']+)[\"']", html, flags=re.I)
+          scripts = uniq([urllib.parse.urljoin(final_url, src.replace('&amp;', '&')) for src in script_srcs])
+          report += ["## Storefront scripts", "```", *scripts, "```", ""]
+
+          findings = []
+          candidate_paths = []
+          for script_url in scripts:
+              if "maps.googleapis.com" in script_url or "ruxitagent" in script_url or "polyfills" in script_url:
+                  continue
+              try:
+                  _, _, js, resolved = fetch(script_url)
+              except Exception as exc:
+                  findings.append(f"FETCH_ERROR {script_url} :: {exc}")
+                  continue
+
+              for token in TOKENS:
+                  for fragment in contexts(js, token):
+                      findings.append(f"### {resolved} [{token}]\n{fragment}")
+
+              # Extract literal strings likely to be BFF paths.
+              for literal in re.findall(r"[\"'`]([^\"'`]{2,220})[\"'`]", js):
+                  low = literal.lower()
+                  if literal.startswith('/') and any(word in low for word in ["product", "search", "catalog", "categor", "facet", "offer", "price", "token", "store"]):
+                      candidate_paths.append(literal)
+                  if "bff-unimarc" in low:
+                      candidate_paths.append(literal)
+
+          report += ["## Candidate literal endpoints", "```", *uniq(candidate_paths)[:250], "```", ""]
+          report += ["## Source contexts", ""]
+          for finding in uniq(findings)[:80]:
+              report += [finding, "```", ""]
+
+          text = "\n".join(report)
+          with open('/tmp/unimarc-bff-report.md', 'w', encoding='utf-8') as file:
+              file.write(text[:64000])
+          PY
+          python /tmp/unimarc_probe.py
+
+      - name: Publish probe report
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('/tmp/unimarc-bff-report.md', 'utf8');
+            const title = 'Unimarc BFF probe';
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100
+            });
+            const existing = issues.find((issue) => issue.title === title && !issue.pull_request);
+            if (existing) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body
+              });
+            }
