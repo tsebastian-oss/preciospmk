@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { FormEvent, useState } from "react";
+import { FormEvent, useState, type CSSProperties } from "react";
 import styles from "./competitive-analysis.module.css";
 
 type Product = {
@@ -46,11 +46,15 @@ type Analysis = {
 };
 
 const money = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
-const relationshipLabel = {
+const relationshipLabel: Record<Competitor["relationship"], string> = {
   equivalent: "Equivalente",
   direct_competitor: "Competidor directo",
   substitute: "Sustituto cercano",
 };
+
+function donutStyle(value: number): CSSProperties {
+  return { "--value": `${Math.min(100, value * 18 + 18)}%` } as CSSProperties;
+}
 
 export default function CompetitiveAnalysisPage() {
   const [query, setQuery] = useState("");
@@ -59,7 +63,7 @@ export default function CompetitiveAnalysisPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  async function search(event: FormEvent) {
+  async function search(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setLoading(true); setError(""); setAnalysis(null);
     try {
@@ -107,7 +111,7 @@ export default function CompetitiveAnalysisPage() {
 
     {results.length > 0 && <section className={styles.results}>
       <h2>Selecciona el producto de referencia</h2>
-      <div>{results.map((product) => <button key={product.id} onClick={() => analyze(product.id)}>
+      <div>{results.map((product) => <button key={product.id} type="button" onClick={() => analyze(product.id)}>
         <span className={styles.thumb}>{product.image_url ? <Image src={product.image_url} alt="" width={54} height={54} /> : "SKU"}</span>
         <span><strong>{product.name}</strong><small>{product.supermarket} · {product.brand || "Sin marca"}</small></span>
         <b>{money.format(Number(product.offer_price))}</b>
@@ -121,7 +125,7 @@ export default function CompetitiveAnalysisPage() {
           <div><span className={styles.largeThumb}>{analysis.target.image_url ? <Image src={analysis.target.image_url} alt="" width={88} height={88} /> : "SKU"}</span><div><h2>{analysis.target.name}</h2><p>{analysis.target.supermarket} · {analysis.target.brand || "Sin marca"}</p></div></div>
           <strong>{money.format(analysis.metrics.referencePrice)}</strong>
         </article>
-        <article className={`${styles.positionCard} ${styles[analysis.metrics.position.code]}`}>
+        <article className={`${styles.positionCard} ${styles[analysis.metrics.position.code] ?? ""}`}>
           <span>POSICIÓN DE PRECIO</span><strong>{analysis.metrics.position.diffPct >= 0 ? "+" : ""}{analysis.metrics.position.diffPct.toFixed(1)}%</strong><h2>{analysis.metrics.position.label}</h2><p>Frente al promedio del set competitivo</p>
         </article>
         <article className={styles.recommendationCard}>
@@ -140,9 +144,9 @@ export default function CompetitiveAnalysisPage() {
         <article className={styles.distribution}>
           <div className={styles.sectionHead}><span>MARKET POSITIONING</span><h2>Distribución competitiva</h2></div>
           <div className={styles.donuts}>
-            <div><i style={{ "--value": `${Math.min(100, positionCounts.low * 18 + 18)}%` } as React.CSSProperties} /><strong>{positionCounts.low}</strong><span>Más caros</span></div>
-            <div><i style={{ "--value": `${Math.min(100, positionCounts.equal * 18 + 18)}%` } as React.CSSProperties} /><strong>{positionCounts.equal}</strong><span>Equivalentes</span></div>
-            <div><i style={{ "--value": `${Math.min(100, positionCounts.high * 18 + 18)}%` } as React.CSSProperties} /><strong>{positionCounts.high}</strong><span>Más baratos</span></div>
+            <div><i style={donutStyle(positionCounts.low)} /><strong>{positionCounts.low}</strong><span>Más caros</span></div>
+            <div><i style={donutStyle(positionCounts.equal)} /><strong>{positionCounts.equal}</strong><span>Equivalentes</span></div>
+            <div><i style={donutStyle(positionCounts.high)} /><strong>{positionCounts.high}</strong><span>Más baratos</span></div>
           </div>
         </article>
         <article className={styles.aiCard}>
