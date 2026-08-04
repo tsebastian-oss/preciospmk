@@ -16,10 +16,22 @@ jobs:
         env:
           DEPLOYMENT_URL: ${{ github.event.deployment_status.environment_url }}
           DEPLOYMENT_SHA: ${{ github.event.deployment.sha }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set +e
           mkdir -p /tmp/vercel-check
           : > /tmp/vercel-check/candidates.txt
+
+          commit_message=$(curl -sS \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/commits/$DEPLOYMENT_SHA" \
+            | jq -r '.commit.message // ""')
+
+          run_scrape=false
+          if [[ "$commit_message" == *"[scrape-test]"* ]]; then
+            run_scrape=true
+          fi
 
           PUBLIC_URL=""
           candidates=(
@@ -47,20 +59,26 @@ jobs:
 
           if [ -n "$PUBLIC_URL" ]; then
             products_meta=$(curl -L --max-time 30 -sS -o /tmp/vercel-check/products.json -w '%{http_code}|%{url_effective}|%{content_type}' "$PUBLIC_URL/api/products")
-            scrape_meta=$(curl -L --max-time 75 -sS -o /tmp/vercel-check/scrape.json -w '%{http_code}|%{url_effective}|%{content_type}' "$PUBLIC_URL/api/scrape")
+            if [ "$run_scrape" = true ]; then
+              scrape_meta=$(curl -L --max-time 75 -sS -o /tmp/vercel-check/scrape.json -w '%{http_code}|%{url_effective}|%{content_type}' "$PUBLIC_URL/api/scrape")
+            else
+              scrape_meta="skipped (add [scrape-test] to the commit message to run)"
+              echo '{"skipped":true}' > /tmp/vercel-check/scrape.json
+            fi
           else
             products_meta="not-tested"
             scrape_meta="not-tested"
             echo '{"error":"No public production URL discovered"}' > /tmp/vercel-check/products.json
-            echo '{"error":"Vercel Authentication is enabled"}' > /tmp/vercel-check/scrape.json
+            echo '{"error":"No public production URL discovered"}' > /tmp/vercel-check/scrape.json
           fi
 
           {
-            echo "# Vercel production verification"
+            echo "# Production verification"
             echo
             echo "- Deployment URL: $DEPLOYMENT_URL"
             echo "- Public URL: ${PUBLIC_URL:-not discovered}"
             echo "- Commit: $DEPLOYMENT_SHA"
+            echo "- Commit message: $commit_message"
             echo "- Products API: $products_meta"
             echo "- Scrape API: $scrape_meta"
             echo
@@ -88,11 +106,26 @@ jobs:
           script: |
             const fs = require('fs');
             const body = fs.readFileSync('/tmp/vercel-check/report.md', 'utf8');
-            const sha = context.payload.deployment?.sha?.slice(0, 7) || 'unknown';
-            await github.rest.issues.create({
+            const title = 'Production verification';
+            const { data: issues } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: `Vercel verification ${sha}`,
-              body,
-              labels: []
+              state: 'open',
+              per_page: 100
             });
+            const existing = issues.find((issue) => issue.title === title && !issue.pull_request);
+            if (existing) {
+              await github.rest.issues.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing.number,
+                body
+              });
+            } else {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body
+              });
+            }
