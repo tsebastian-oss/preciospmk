@@ -27,3 +27,5 @@ SCRAPE_INGEST_SECRET=
 ```
 
 Las migraciones están disponibles en `supabase/migrations`.
+
+Última verificación de despliegue Git: 4 de agosto de 2026.
