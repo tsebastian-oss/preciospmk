@@ -20,29 +20,34 @@ jobs:
           set +e
           mkdir -p /tmp/vercel-check
 
-          home_status=$(curl --max-time 30 -sS -o /tmp/vercel-check/home.html -w '%{http_code}' "$DEPLOYMENT_URL/")
-          products_status=$(curl --max-time 30 -sS -o /tmp/vercel-check/products.json -w '%{http_code}' "$DEPLOYMENT_URL/api/products")
-          scrape_status=$(curl --max-time 75 -sS -o /tmp/vercel-check/scrape.json -w '%{http_code}' "$DEPLOYMENT_URL/api/scrape")
+          home_meta=$(curl -L --max-time 30 -sS -D /tmp/vercel-check/home.headers -o /tmp/vercel-check/home.html -w '%{http_code}|%{url_effective}|%{content_type}' "$DEPLOYMENT_URL/")
+          products_meta=$(curl -L --max-time 30 -sS -D /tmp/vercel-check/products.headers -o /tmp/vercel-check/products.json -w '%{http_code}|%{url_effective}|%{content_type}' "$DEPLOYMENT_URL/api/products")
+          scrape_meta=$(curl -L --max-time 75 -sS -D /tmp/vercel-check/scrape.headers -o /tmp/vercel-check/scrape.json -w '%{http_code}|%{url_effective}|%{content_type}' "$DEPLOYMENT_URL/api/scrape")
 
           {
             echo "# Vercel production verification"
             echo
-            echo "- URL: $DEPLOYMENT_URL"
+            echo "- Deployment URL: $DEPLOYMENT_URL"
             echo "- Commit: $DEPLOYMENT_SHA"
-            echo "- Homepage HTTP: $home_status"
-            echo "- Products API HTTP: $products_status"
-            echo "- Scrape API HTTP: $scrape_status"
+            echo "- Homepage: $home_meta"
+            echo "- Products API: $products_meta"
+            echo "- Scrape API: $scrape_meta"
             echo
             echo "## Products response"
-            echo '```json'
+            echo '```'
             head -c 5000 /tmp/vercel-check/products.json
             echo
             echo '```'
             echo
             echo "## Scrape response"
-            echo '```json'
+            echo '```'
             head -c 5000 /tmp/vercel-check/scrape.json
             echo
+            echo '```'
+            echo
+            echo "## Redirect headers"
+            echo '```'
+            head -n 40 /tmp/vercel-check/home.headers
             echo '```'
           } > /tmp/vercel-check/report.md
 
