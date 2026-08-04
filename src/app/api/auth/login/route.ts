@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 
+const USERNAME_EMAIL_MAP: Record<string, string> = {
+  mazokin13: "mazokin13@mgp-retail.internal",
+};
+
 export async function POST(request: NextRequest) {
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL;
   const apiKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -8,20 +12,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "La autenticación no está configurada" }, { status: 500 });
   }
 
-  let email = "";
+  let identifier = "";
   let password = "";
   try {
-    const body = await request.json() as { email?: string; password?: string };
-    email = body.email?.trim().toLowerCase() ?? "";
+    const body = await request.json() as { email?: string; username?: string; password?: string };
+    identifier = (body.username ?? body.email ?? "").trim().toLowerCase();
     password = body.password ?? "";
   } catch {
     return NextResponse.json({ error: "Solicitud inválida" }, { status: 400 });
   }
 
-  if (!email || !password) {
-    return NextResponse.json({ error: "Debes ingresar correo y contraseña" }, { status: 400 });
+  if (!identifier || !password) {
+    return NextResponse.json({ error: "Debes ingresar usuario y contraseña" }, { status: 400 });
   }
 
+  const email = USERNAME_EMAIL_MAP[identifier] ?? identifier;
   const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
     method: "POST",
     headers: {
@@ -36,12 +41,10 @@ export async function POST(request: NextRequest) {
     access_token?: string;
     refresh_token?: string;
     expires_in?: number;
-    error_description?: string;
-    msg?: string;
   };
 
   if (!response.ok || !payload.access_token) {
-    return NextResponse.json({ error: "Correo o contraseña incorrectos" }, { status: 401 });
+    return NextResponse.json({ error: "Usuario o contraseña incorrectos" }, { status: 401 });
   }
 
   const result = NextResponse.json({ ok: true });
