@@ -32,4 +32,6 @@ Las migraciones están disponibles en `supabase/migrations` y el código de la E
 
 Producción: https://preciospmk.vercel.app
 
-Última verificación end-to-end: 4 de agosto de 2026. Página pública, API de productos y API de scraping respondieron correctamente. La primera corrida real incorporó 39 precios de Jumbo; los conectores restantes requieren adaptadores específicos para aumentar su cobertura.
+Última verificación end-to-end: 4 de agosto de 2026. Página pública, API de productos y API de scraping respondieron correctamente.
+
+Última solicitud manual de corrida integral: 4 de agosto de 2026, 14:08 CLT.
