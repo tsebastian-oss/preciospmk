@@ -1,0 +1,156 @@
+name: Probe Lider product network
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  probe:
+    if: contains(github.event.head_commit.message, '[lider-network-probe]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install Playwright
+        run: |
+          mkdir -p /tmp/lider-probe
+          cd /tmp/lider-probe
+          npm init -y >/dev/null 2>&1
+          npm install playwright@1.55.0 >/dev/null 2>&1
+          npx playwright install --with-deps chromium >/dev/null 2>&1
+
+      - name: Capture listing requests
+        run: |
+          cd /tmp/lider-probe
+          cat > probe.mjs <<'JS'
+          import { chromium } from 'playwright';
+          import fs from 'node:fs';
+
+          const target = 'https://super.lider.cl/browse/destilados/la-boti/pisco/60338008_18800914_61791484';
+          const browser = await chromium.launch({ headless: true });
+          const context = await browser.newContext({
+            locale: 'es-CL',
+            timezoneId: 'America/Santiago',
+            viewport: { width: 1440, height: 1000 },
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+            extraHTTPHeaders: { 'accept-language': 'es-CL,es;q=0.9,en;q=0.7' },
+          });
+          const page = await context.newPage();
+          const captured = [];
+          const errors = [];
+
+          function relevant(url) {
+            return /graphql|orchestra|search|browse|product|catalog|shelf|query/i.test(url)
+              && !/google|facebook|doubleclick|analytics|beacon|quantum|ruxit|newrelic|adservice/i.test(url);
+          }
+
+          page.on('request', request => {
+            const url = request.url();
+            if (!relevant(url)) return;
+            captured.push({
+              type: 'request',
+              method: request.method(),
+              url,
+              resourceType: request.resourceType(),
+              headers: request.headers(),
+              postData: request.postData()?.slice(0, 30000) ?? null,
+            });
+          });
+
+          page.on('response', async response => {
+            const url = response.url();
+            if (!relevant(url)) return;
+            let body = null;
+            const contentType = response.headers()['content-type'] || '';
+            if (/json|text|graphql/i.test(contentType)) {
+              try { body = (await response.text()).slice(0, 50000); } catch {}
+            }
+            captured.push({
+              type: 'response',
+              status: response.status(),
+              url,
+              headers: response.headers(),
+              body,
+            });
+          });
+
+          page.on('requestfailed', request => {
+            if (relevant(request.url())) errors.push({ url: request.url(), failure: request.failure() });
+          });
+
+          let title = null;
+          let productCards = 0;
+          let bodyText = '';
+          try {
+            await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 90000 });
+            await page.waitForTimeout(20000);
+            title = await page.title();
+            productCards = await page.locator('[data-testid*="product"], [class*="product-card"], a[href*="/ip/"]').count();
+            bodyText = (await page.locator('body').innerText()).slice(0, 10000);
+            await page.mouse.wheel(0, 4000);
+            await page.waitForTimeout(8000);
+          } catch (error) {
+            errors.push({ pageError: error instanceof Error ? error.message : String(error) });
+          }
+
+          await page.screenshot({ path: '/tmp/lider-probe/page.png', fullPage: false }).catch(() => {});
+          await browser.close();
+
+          const requestPairs = [];
+          for (const item of captured) {
+            if (item.type === 'request') {
+              const response = captured.find(candidate => candidate.type === 'response' && candidate.url === item.url);
+              requestPairs.push({ request: item, response: response ?? null });
+            }
+          }
+
+          const report = [
+            '# Lider network probe',
+            '',
+            `- Target: ${target}`,
+            `- Page title: ${title}`,
+            `- Product-like DOM nodes: ${productCards}`,
+            `- Relevant requests captured: ${requestPairs.length}`,
+            '',
+            '## Page text sample',
+            '```',
+            bodyText,
+            '```',
+            '',
+            '## Network calls',
+            '',
+          ];
+
+          for (const [index, pair] of requestPairs.entries()) {
+            report.push(`### ${index + 1}. ${pair.request.method} \`${pair.request.url}\``);
+            report.push('#### Request headers', '```json', JSON.stringify(pair.request.headers, null, 2).slice(0, 15000), '```');
+            if (pair.request.postData) report.push('#### Request body', '```json', pair.request.postData, '```');
+            if (pair.response) {
+              report.push(`#### Response: ${pair.response.status}`);
+              report.push('```json', (pair.response.body || JSON.stringify(pair.response.headers, null, 2)).slice(0, 50000), '```');
+            }
+            report.push('');
+          }
+
+          if (errors.length) report.push('## Errors', '```json', JSON.stringify(errors, null, 2), '```');
+          fs.writeFileSync('/tmp/lider-probe/report.md', report.join('\n').slice(0, 65000));
+          JS
+          node probe.mjs
+
+      - name: Publish report
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('/tmp/lider-probe/report.md', 'utf8');
+            const title = 'Lider network probe';
+            const { data: issues } = await github.rest.issues.listForRepo({ owner: context.repo.owner, repo: context.repo.repo, state: 'open', per_page: 100 });
+            const existing = issues.find(issue => issue.title === title && !issue.pull_request);
+            if (existing) {
+              await github.rest.issues.update({ owner: context.repo.owner, repo: context.repo.repo, issue_number: existing.number, body });
+            } else {
+              await github.rest.issues.create({ owner: context.repo.owner, repo: context.repo.repo, title, body });
+            }
