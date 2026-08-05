@@ -31,7 +31,7 @@ begin
     '20 seconds',
     $cron$
       select net.http_post(
-        url := 'https://yfpixszkiakwzrqdcfbw.supabase.co/functions/v1/department-store-crawl-worker',
+        url := 'https://yfpixszkiakwzrqdcfbw.supabase.co/functions/v1/department-store-crawl-worker-v4',
         headers := jsonb_build_object('Content-Type', 'application/json'),
         body := '{}'::jsonb,
         timeout_milliseconds := 120000
