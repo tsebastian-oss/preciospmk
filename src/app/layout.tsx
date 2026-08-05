@@ -1,4 +1,5 @@
 import "./globals.css";
+import EnterpriseAlertCenter from "./EnterpriseAlertCenter";
 import EnterpriseSidebarLink from "./EnterpriseSidebarLink";
 
 export const metadata = {
@@ -9,5 +10,5 @@ export const metadata = {
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="es-CL"><body>{children}<EnterpriseSidebarLink /></body></html>;
+  return <html lang="es-CL"><body>{children}<EnterpriseSidebarLink /><EnterpriseAlertCenter /></body></html>;
 }
