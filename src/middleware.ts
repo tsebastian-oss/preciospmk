@@ -3,7 +3,16 @@ import { NextRequest, NextResponse } from "next/server";
 const DEFAULT_SUPABASE_URL = "https://yfpixszkiakwzrqdcfbw.supabase.co";
 const DEFAULT_PUBLISHABLE_KEY = "sb_publishable_4FrGlw8owGm5EtwMs9V5zQ_oBrH0c0-";
 const PUBLIC_PATHS = ["/landing", "/login", "/api/auth/login", "/api/auth/logout"];
-const PRIVATE_API_PREFIXES = ["/api/dashboard", "/api/products", "/api/matches", "/api/scrape", "/api/competitive-analysis", "/api/admin"];
+const PRIVATE_API_PREFIXES = [
+  "/api/dashboard",
+  "/api/products",
+  "/api/matches",
+  "/api/scrape",
+  "/api/competitive-analysis",
+  "/api/brand-intelligence",
+  "/api/price-movements",
+  "/api/admin",
+];
 
 type SessionState = {
   authenticated: boolean;
