@@ -10,7 +10,7 @@ type Analysis = {
   target:Product;
   competitors:Competitor[];
   metrics:{ referencePrice:number; marketMedian:number; marketMin:number; marketMax:number; rank:number; totalRanked:number; recommendedMin:number; recommendedMax:number; gapVsCheapest:number; position:{ code:"low"|"equal"|"high"|"overpriced"; label:string; diffPct:number }; equivalentCount:number; directCount:number; substituteCount:number };
-  ai:{ enabled:boolean; explanation:string; actions:string[]; risks:string[] };
+  ai:{ enabled:boolean; model:string|null; explanation:string; actions:string[]; risks:string[]; error?:string };
 };
 
 const money = new Intl.NumberFormat("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0});
@@ -45,7 +45,7 @@ export default function CompetitiveAnalysisPage(){
       <section className={styles.hero}>
         <article><span>PRODUCTO ANALIZADO</span><h2>{analysis.target.name}</h2><p>{analysis.target.supermarket} · {analysis.target.brand||"Sin marca"}</p><strong>{money.format(analysis.metrics.referencePrice)}</strong></article>
         <article className={styles[analysis.metrics.position.code]}><span>POSICIÓN DE PRECIO</span><strong>{analysis.metrics.position.diffPct>=0?"+":""}{analysis.metrics.position.diffPct.toFixed(1)}%</strong><h2>{analysis.metrics.position.label}</h2><p>Rango sugerido {money.format(analysis.metrics.recommendedMin)}–{money.format(analysis.metrics.recommendedMax)}</p></article>
-        <article><span>{analysis.ai.enabled?"ANÁLISIS GENERATIVO":"MOTOR HÍBRIDO"}</span><p className={styles.explanation}>{analysis.ai.explanation}</p>{analysis.ai.actions.length>0&&<ul>{analysis.ai.actions.map(action=><li key={action}>{action}</li>)}</ul>}</article>
+        <article><span>{analysis.ai.enabled?`GENERADO POR IA · ${analysis.ai.model||"OpenAI"}`:"ANÁLISIS ESTRUCTURADO"}</span><p className={styles.explanation}>{analysis.ai.explanation}</p>{analysis.ai.actions.length>0&&<><strong>Acciones recomendadas</strong><ul>{analysis.ai.actions.map(action=><li key={action}>{action}</li>)}</ul></>}{analysis.ai.risks.length>0&&<><strong>Riesgos detectados</strong><ul>{analysis.ai.risks.map(risk=><li key={risk}>{risk}</li>)}</ul></>}{!analysis.ai.enabled&&analysis.ai.error&&<small>{analysis.ai.error}</small>}</article>
       </section>
       <section className={styles.metrics}><article><span>Mediana</span><strong>{money.format(analysis.metrics.marketMedian)}</strong></article><article><span>Mínimo</span><strong>{money.format(analysis.metrics.marketMin)}</strong></article><article><span>Ranking</span><strong>{analysis.metrics.rank||"—"} / {analysis.metrics.totalRanked}</strong></article><article><span>Set competitivo</span><strong>{analysis.competitors.length}</strong></article></section>
       <section className={styles.competitors}>
