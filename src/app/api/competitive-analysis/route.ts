@@ -39,47 +39,18 @@ function deduplicate(products: ProductRecord[]) {
   return [...map.values()];
 }
 
-function outputText(payload: unknown) {
-  if (!payload || typeof payload !== "object") return "";
-  const record = payload as { output_text?: unknown; output?: unknown };
-  if (typeof record.output_text === "string") return record.output_text;
-  if (!Array.isArray(record.output)) return "";
-  const parts: string[] = [];
-  for (const item of record.output) {
-    if (!item || typeof item !== "object") continue;
-    const content = (item as { content?: unknown }).content;
-    if (!Array.isArray(content)) continue;
-    for (const piece of content) {
-      if (!piece || typeof piece !== "object") continue;
-      const text = (piece as { text?: unknown }).text;
-      if (typeof text === "string") parts.push(text);
-    }
-  }
-  return parts.join("\n");
-}
-
-function parseJsonObject(text: string) {
-  const start = text.indexOf("{");
-  const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) return null;
-  try {
-    return JSON.parse(text.slice(start, end + 1)) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
-
 type AiNarrative = {
   enabled: boolean;
   model: string | null;
   explanation: string;
   actions: string[];
   risks: string[];
+  error?: string;
 };
 
 async function createAiNarrative(request: NextRequest, target: ProductRecord, matches: CompetitorMatch[], fallback: string): Promise<AiNarrative> {
   const token = request.cookies.get("mgp_access_token")?.value;
-  if (!token) return { enabled: false, model: null, explanation: fallback, actions: [], risks: [] };
+  if (!token) return { enabled: false, model: null, explanation: fallback, actions: [], risks: [], error: "Sesión no disponible" };
 
   const compactMatches = matches.slice(0, 12).map((item) => ({
     id: item.id,
@@ -101,18 +72,39 @@ async function createAiNarrative(request: NextRequest, target: ProductRecord, ma
       body: JSON.stringify({ target, competitors: compactMatches }),
       cache: "no-store",
     });
-    const result = await response.json() as { enabled?: boolean; model?: string; payload?: unknown };
-    if (!response.ok || !result.enabled || !result.payload) {
-      return { enabled: false, model: result.model ?? null, explanation: fallback, actions: [], risks: [] };
+    const result = await response.json() as {
+      enabled?: boolean;
+      model?: string;
+      explanation?: string;
+      actions?: unknown[];
+      risks?: unknown[];
+      error?: string;
+    };
+
+    if (!response.ok || !result.enabled) {
+      return {
+        enabled: false,
+        model: result.model ?? null,
+        explanation: fallback,
+        actions: [],
+        risks: [],
+        error: result.error ?? `IA no disponible (${response.status})`,
+      };
     }
-    const parsed = parseJsonObject(outputText(result.payload));
-    if (!parsed) return { enabled: false, model: result.model ?? null, explanation: fallback, actions: [], risks: [] };
-    const explanation = typeof parsed.explanation === "string" ? parsed.explanation : fallback;
-    const actions = Array.isArray(parsed.actions) ? parsed.actions.filter((item): item is string => typeof item === "string").slice(0, 3) : [];
-    const risks = Array.isArray(parsed.risks) ? parsed.risks.filter((item): item is string => typeof item === "string").slice(0, 3) : [];
+
+    const explanation = typeof result.explanation === "string" && result.explanation.trim() ? result.explanation : fallback;
+    const actions = Array.isArray(result.actions) ? result.actions.filter((item): item is string => typeof item === "string").slice(0, 3) : [];
+    const risks = Array.isArray(result.risks) ? result.risks.filter((item): item is string => typeof item === "string").slice(0, 3) : [];
     return { enabled: true, model: result.model ?? null, explanation, actions, risks };
-  } catch {
-    return { enabled: false, model: null, explanation: fallback, actions: [], risks: [] };
+  } catch (error) {
+    return {
+      enabled: false,
+      model: null,
+      explanation: fallback,
+      actions: [],
+      risks: [],
+      error: error instanceof Error ? error.message : "Error al conectar con IA",
+    };
   }
 }
 
