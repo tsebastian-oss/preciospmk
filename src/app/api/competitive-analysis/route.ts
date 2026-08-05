@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { enterpriseAccess, scopeAllows, type EnterpriseAccessContext } from "@/lib/enterprise-auth";
 import { supabaseRest } from "@/lib/supabase";
 import {
   buildMetrics,
@@ -17,6 +18,22 @@ const SUPABASE_URL = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABAS
 
 function safeSearchTerm(value: string) {
   return value.replace(/[(),*]/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function inFilter(values: string[]) {
+  const clean = values.map((item) => item.replace(/["(),]/g, " ").replace(/\s+/g, " ").trim()).filter(Boolean);
+  return `in.(${clean.map((item) => `"${item}"`).join(",")})`;
+}
+
+function applyScope(
+  query: Record<string, string>,
+  access: EnterpriseAccessContext,
+  brands: string[],
+) {
+  if (!access.isSaasAdmin && access.retailers.length > 0) query.supermarket = inFilter(access.retailers);
+  if (!access.isSaasAdmin && access.categories.length > 0) query.category = inFilter(access.categories);
+  if (!access.isSaasAdmin && brands.length > 0) query.brand = inFilter(brands);
+  return query;
 }
 
 function distinctiveToken(product: ProductRecord) {
@@ -48,7 +65,14 @@ type AiNarrative = {
   error?: string;
 };
 
-async function createAiNarrative(request: NextRequest, target: ProductRecord, matches: CompetitorMatch[], fallback: string): Promise<AiNarrative> {
+async function createAiNarrative(
+  request: NextRequest,
+  target: ProductRecord,
+  matches: CompetitorMatch[],
+  fallback: string,
+  enabled: boolean,
+): Promise<AiNarrative> {
+  if (!enabled) return { enabled: false, model: null, explanation: fallback, actions: [], risks: [], error: "IA desactivada para esta organización" };
   const token = request.cookies.get("mgp_access_token")?.value;
   if (!token) return { enabled: false, model: null, explanation: fallback, actions: [], risks: [], error: "Sesión no disponible" };
 
@@ -108,41 +132,44 @@ async function createAiNarrative(request: NextRequest, target: ProductRecord, ma
   }
 }
 
-async function searchProducts(query: string) {
+async function searchProducts(query: string, access: EnterpriseAccessContext) {
   const cleaned = safeSearchTerm(query);
-  return supabaseRest<ProductRecord[]>("dashboard_products", {
-    query: {
-      select: PRODUCT_SELECT,
-      name: `ilike.*${cleaned}*`,
-      order: "in_stock.desc,observed_at.desc",
-      limit: "15",
-    },
-  });
+  const scopedQuery = applyScope({
+    select: PRODUCT_SELECT,
+    name: `ilike.*${cleaned}*`,
+    order: "in_stock.desc,observed_at.desc",
+    limit: "15",
+  }, access, access.brands);
+  return supabaseRest<ProductRecord[]>("dashboard_products", { query: scopedQuery });
 }
 
-async function candidatePool(target: ProductRecord) {
+async function candidatePool(target: ProductRecord, access: EnterpriseAccessContext) {
   const category = safeSearchTerm(categoryTerm(target.category));
   const token = safeSearchTerm(distinctiveToken(target));
+  const competitorBrands = [...new Set([...access.brands, ...access.competitors])];
   const base = { select: PRODUCT_SELECT, order: "in_stock.desc,observed_at.desc", limit: "1000" };
   const requests: Array<Promise<ProductRecord[]>> = [];
-  if (category) requests.push(supabaseRest<ProductRecord[]>("dashboard_products", { query: { ...base, category: `ilike.*${category}*` } }));
-  if (token) requests.push(supabaseRest<ProductRecord[]>("dashboard_products", { query: { ...base, name: `ilike.*${token}*` } }));
-  if (!requests.length) requests.push(supabaseRest<ProductRecord[]>("dashboard_products", { query: base }));
+  if (category) requests.push(supabaseRest<ProductRecord[]>("dashboard_products", { query: applyScope({ ...base, category: `ilike.*${category}*` }, access, competitorBrands) }));
+  if (token) requests.push(supabaseRest<ProductRecord[]>("dashboard_products", { query: applyScope({ ...base, name: `ilike.*${token}*` }, access, competitorBrands) }));
+  if (!requests.length) requests.push(supabaseRest<ProductRecord[]>("dashboard_products", { query: applyScope({ ...base }, access, competitorBrands) }));
   return deduplicate((await Promise.all(requests)).flat());
 }
 
 export async function GET(request: NextRequest) {
+  const authorization = await enterpriseAccess(request, "competitive");
+  if (authorization.response) return authorization.response;
+  const access = authorization.access!;
+
   const productId = request.nextUrl.searchParams.get("productId")?.trim() ?? "";
   const query = request.nextUrl.searchParams.get("q")?.trim() ?? "";
-
   if (!productId && query.length < 2) {
     return NextResponse.json({ error: "Ingresa al menos dos caracteres o selecciona un producto." }, { status: 400 });
   }
 
   try {
     if (!productId) {
-      const searchResults = await searchProducts(query);
-      return NextResponse.json({ searchResults });
+      const searchResults = await searchProducts(query, access);
+      return NextResponse.json({ searchResults, organizationId: access.organizationId });
     }
 
     const targets = await supabaseRest<ProductRecord[]>("dashboard_products", {
@@ -150,8 +177,13 @@ export async function GET(request: NextRequest) {
     });
     const target = targets[0];
     if (!target) return NextResponse.json({ error: "El producto seleccionado ya no está disponible." }, { status: 404 });
+    if (!scopeAllows(access, "retailers", target.supermarket)
+      || !scopeAllows(access, "brands", target.brand)
+      || !scopeAllows(access, "categories", target.category)) {
+      return NextResponse.json({ error: "El producto no pertenece al alcance de esta organización." }, { status: 403 });
+    }
 
-    const pool = await candidatePool(target);
+    const pool = await candidatePool(target, access);
     const competitors = pool
       .map((candidate) => scoreCompetitor(target, candidate))
       .filter((candidate): candidate is CompetitorMatch => candidate !== null)
@@ -165,9 +197,17 @@ export async function GET(request: NextRequest) {
 
     const metrics = buildMetrics(target, competitors);
     const fallback = deterministicExplanation(target, competitors, metrics);
-    const ai = await createAiNarrative(request, target, competitors, fallback);
+    const aiEnabled = access.isSaasAdmin || access.settings?.ai_enabled !== false;
+    const ai = await createAiNarrative(request, target, competitors, fallback, aiEnabled);
 
-    return NextResponse.json({ target, competitors, metrics, ai, generatedAt: new Date().toISOString() });
+    return NextResponse.json({
+      target,
+      competitors,
+      metrics,
+      ai,
+      organizationId: access.organizationId,
+      generatedAt: new Date().toISOString(),
+    });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
