@@ -23,7 +23,7 @@ export default function LoginPage() {
       });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error || "No fue posible iniciar sesión");
-      window.location.href = "/";
+      window.location.href = "/onboarding";
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Error de autenticación");
     } finally {
