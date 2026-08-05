@@ -8,12 +8,13 @@ MGP Intelligence is a multi-tenant SaaS for retailer and brand intelligence. Pub
 
 1. **Browser** — receives only data authorized for the signed-in user.
 2. **Next.js application** — validates the Supabase session and calls authenticated RPCs.
-3. **Supabase Auth** — establishes the user identity.
+3. **Supabase Auth** — establishes the user identity and delivers user invitations.
 4. **PostgreSQL / Row-Level Security** — enforces tenant isolation independently of the UI.
-5. **Supabase Vault / private schema** — stores provider secrets such as the administrator-managed AI key.
-6. **Public market-data layer** — catalog, prices, promotions and availability collected from monitored retailers.
+5. **Supabase Vault / private schema** — stores AI, email-provider and internal dispatch secrets.
+6. **Private Storage** — stores generated enterprise reports and exposes temporary signed URLs.
+7. **Public market-data layer** — catalog, prices, promotions and availability collected from monitored retailers.
 
-Tenant isolation is never based only on hiding menu items. PostgreSQL policies use `auth.uid()` and active organization membership for every enterprise table.
+Tenant isolation is never based only on hiding menu items. PostgreSQL policies use `auth.uid()` and active organization membership for every enterprise table. Market-data APIs additionally resolve the active organization, validate the contracted module and apply retailer, brand and category scopes.
 
 ## Organization model
 
@@ -24,9 +25,10 @@ Organization
 ├── Operational settings
 ├── Retailer / brand / category scope
 ├── Enabled modules and plan limits
-├── Alert rules
+├── Alert rules and events
+├── Notification deliveries
 ├── Match reviews
-├── Report jobs
+├── Report jobs and private files
 ├── Data-quality snapshots
 └── Audit events
 ```
@@ -46,7 +48,7 @@ Lifecycle states: `trial`, `active`, `suspended`, `archived`.
 | Owner | Accountable customer administrator | Full organization governance; at least one active owner must remain |
 | Admin | Operational administrator | Users, scopes, settings and alerts |
 | Analyst | Power user | Analysis, alerts, match review and reports |
-| Executive | Decision maker | Read access and executive reports |
+| Executive | Decision maker | Read access, alert acknowledgement and executive reports |
 | Viewer | Restricted consumer | Read-only access |
 
 MGP SaaS administrators are registered separately in the private `saas_admins` table and can govern all tenants.
@@ -60,12 +62,36 @@ MGP SaaS administrators are registered separately in the private `saas_admins` t
 - `organization_settings`
 - `organization_scopes`
 - `alert_rules`
+- `alert_events`
+- `notification_deliveries`
 - `match_reviews`
 - `report_jobs`
 - `data_quality_snapshots`
 - `audit_logs`
 
-All tables have Row-Level Security enabled. Anonymous access is revoked.
+All enterprise tables have Row-Level Security enabled. Anonymous access is revoked.
+
+## Tenant-scoped application access
+
+Every private analytical API resolves the active organization from an HttpOnly cookie or the user's saved organization. PostgreSQL then verifies:
+
+1. active membership or SaaS-administrator status;
+2. organization lifecycle status;
+3. whether the requested module is enabled;
+4. retailer, brand and category scope.
+
+The dashboard, product explorer, promotions, price matching, competitive AI, brand intelligence and price movements all apply these controls server-side. Hiding a menu item is therefore a convenience, not a security boundary.
+
+## User provisioning
+
+Administrators invite users from Enterprise Control. The invitation service:
+
+- checks the caller's organization role;
+- records the invitation and its expiry;
+- grants access immediately when the user already exists;
+- otherwise sends a Supabase Auth invitation;
+- provisions the user profile and organization membership when the invitation is accepted;
+- records the changes in the audit trail.
 
 ## Auditing
 
@@ -83,7 +109,7 @@ The audit record includes the organization, actor, action, entity, previous valu
 
 ## Data-quality framework
 
-The Data Quality Center records immutable time-stamped snapshots with:
+The Data Quality Center records hourly, immutable snapshots with:
 
 - crawl completion;
 - valid-price coverage;
@@ -107,22 +133,55 @@ Initial operating targets:
 
 Targets are operating objectives, not contractual SLA commitments until performance has been measured over an agreed period.
 
+## Alerting and notifications
+
+The alert evaluator runs every 15 minutes and supports:
+
+- price changes;
+- promotions;
+- stock-outs;
+- assortment changes;
+- new products;
+- data-quality thresholds;
+- pending match reviews.
+
+Events are deduplicated by rule and cooldown window. Every event is visible in the in-app notification center and creates governed delivery records. Email delivery supports Resend or Brevo and runs every five minutes with retry backoff. The provider API key is stored in Supabase Vault and email delivery remains disabled until the SaaS administrator configures a verified sender.
+
+## Enterprise reports
+
+Enterprise Control can generate:
+
+- executive reports;
+- brand and retailer scorecards;
+- pricing, promotion, availability and assortment reports;
+- data-quality reports;
+- audit exports.
+
+Validated formats:
+
+- PDF;
+- Excel (`.xlsx`);
+- CSV.
+
+Files are generated by an authenticated Supabase Edge Function, stored in the private `enterprise-reports` bucket and exposed through temporary signed download URLs. Report requests, processing state, failures and completion are recorded in `report_jobs` and audited.
+
 ## Application interfaces
 
 ### Customer and administrator context
 
-- `GET /api/enterprise/context`
-- `GET /api/enterprise/organization?organizationId=...`
+- `GET|POST /api/enterprise/context`
+- `GET|POST /api/enterprise/organization`
 
 ### SaaS administration
 
-- `GET /api/enterprise/admin`
-- `POST /api/enterprise/admin`
+- `GET|POST /api/enterprise/admin`
+- `GET|POST /api/admin/ai`
+- `GET|POST /api/admin/notifications`
 
 ### Tenant governance
 
-- `POST /api/enterprise/organization`
 - `GET|POST|DELETE /api/enterprise/alerts`
+- `GET|POST /api/enterprise/alert-events`
 - `GET /api/enterprise/audit`
 - `GET|POST /api/enterprise/data-quality`
 - `GET|POST /api/enterprise/match-reviews`
@@ -133,38 +192,43 @@ All endpoints require a valid HttpOnly session cookie. Permission checks are rep
 ## Security controls implemented
 
 - Tenant isolation with PostgreSQL RLS.
+- Active-tenant and module authorization on analytical APIs.
 - Granular roles.
 - HttpOnly, Secure production cookies.
 - Secrets outside the browser and repository.
 - Security-definer RPCs with explicit authorization checks.
 - Anonymous grants revoked from enterprise objects.
 - Automatic audit trails.
+- Private storage and expiring report URLs.
 - Defensive response headers: frame denial, MIME sniffing prevention, restricted browser permissions and strict referrer handling.
-- CI typecheck and production build validation.
+- CI typecheck, critical dependency audit and production build validation.
 - Dependency update automation through Dependabot.
+- Scheduled quality snapshots, alert evaluation and notification dispatch.
 
 ## Remaining enterprise roadmap
 
-These controls require external configuration or operating history and are deliberately not represented as completed:
+These controls require external configuration, independent verification or customer integrations and are deliberately not represented as completed:
 
 - SAML/OIDC SSO and SCIM provisioning;
 - mandatory MFA policy by organization;
 - external penetration test;
 - SOC 2 or ISO 27001 audit;
 - contractual SLA based on measured availability;
-- outbound alert provider and customer email-domain setup;
-- automated PDF/XLSX/PPTX report workers;
+- verified sender domain and Resend/Brevo API configuration;
+- PowerPoint report generation;
 - customer ERP, PIM, inventory, margin and sales integrations;
-- tested disaster-recovery runbook and status page.
+- tested disaster-recovery runbook and public status page.
 
 ## Release discipline
 
 Enterprise changes must pass:
 
 1. TypeScript validation.
-2. Next.js production build.
-3. Database migration review.
-4. RLS isolation test for a user without membership.
-5. SaaS administrator access test.
-6. Vercel preview deployment.
-7. Production deployment verification.
+2. Critical dependency audit.
+3. Next.js production build.
+4. Database migration review.
+5. RLS isolation test for a user without membership.
+6. SaaS-administrator access test.
+7. Alert evaluator and notification-delivery test.
+8. Vercel preview deployment.
+9. Production deployment verification.
