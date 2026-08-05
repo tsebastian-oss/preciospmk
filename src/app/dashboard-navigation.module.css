@@ -1,0 +1,77 @@
+.group {
+  margin: 2px 0 4px;
+  padding: 9px;
+  border: 1px solid rgba(255,255,255,.065);
+  border-radius: 14px;
+  background: rgba(255,255,255,.018);
+}
+
+.groupActive {
+  border-color: rgba(217,72,255,.16);
+  background: linear-gradient(145deg, rgba(217,72,255,.055), rgba(123,97,255,.018));
+}
+
+.groupTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 5px 8px;
+}
+
+.groupTitle span {
+  color: #d9d7e5;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .045em;
+}
+
+.groupTitle small {
+  color: #77768a;
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.group button.subitem {
+  min-height: 42px;
+  padding: 10px 10px 10px 12px;
+  border-radius: 10px;
+}
+
+.group button.subitem + button.subitem {
+  margin-top: 4px;
+}
+
+.group button.subitem span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+}
+
+.subDot {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 5px;
+  border-radius: 50%;
+  background: #69687a;
+}
+
+.group button.subitem:global(.active) .subDot {
+  background: #d948ff;
+  box-shadow: 0 0 0 4px rgba(217,72,255,.1);
+}
+
+.aiBadge {
+  padding: 4px 6px;
+  border: 1px solid rgba(111,240,178,.16);
+  border-radius: 999px;
+  color: #6ff0b2;
+  background: rgba(111,240,178,.065);
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 950;
+  letter-spacing: .08em;
+}
