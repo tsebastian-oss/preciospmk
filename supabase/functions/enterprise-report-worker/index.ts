@@ -8,6 +8,7 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -37,9 +38,9 @@ function csvEscape(value: unknown) {
 }
 
 function toCsv(rows: Record<string, unknown>[]) {
-  if (!rows.length) return "Sin datos\n";
+  if (!rows.length) return "\uFEFFSin datos\n";
   const headers = [...new Set(rows.flatMap((row) => Object.keys(row)))];
-  return [headers.map(csvEscape).join(","), ...rows.map((row) => headers.map((key) => csvEscape(row[key])).join(","))].join("\n");
+  return `\uFEFF${[headers.map(csvEscape).join(","), ...rows.map((row) => headers.map((key) => csvEscape(row[key])).join(","))].join("\n")}`;
 }
 
 function wrapText(text: string, maxChars: number) {
@@ -59,6 +60,15 @@ function wrapText(text: string, maxChars: number) {
   return lines.length ? lines : [""];
 }
 
+function parameterText(parameters: Record<string, unknown>, key: string) {
+  const value = parameters[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function safeFilePart(value: unknown) {
+  return safeText(value).toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "datos";
+}
+
 type Product = {
   id: string;
   supermarket: string;
@@ -74,9 +84,26 @@ type Product = {
   discount_pct: number | string | null;
   url: string;
 };
+type HistoricalPrice = {
+  price_date: string;
+  observed_at: string;
+  supermarket: string;
+  external_id: string;
+  name: string;
+  brand: string | null;
+  category: string | null;
+  url: string;
+  regular_price: number | string | null;
+  offer_price: number | string | null;
+  effective_price: number | string;
+  unit: string | null;
+  unit_price: number | string | null;
+  in_stock: boolean;
+};
 type ReportJob = { id: string; organization_id: string; report_type: string; format: "pdf" | "xlsx" | "csv"; status: string; parameters: Record<string, unknown> };
 type Organization = { id: string; name: string; slug: string; organization_type: string; plan: string };
 type Scope = { retailers: string[]; brands: string[]; competitors: string[]; categories: string[] };
+type ReportData = { summary: Record<string, unknown>[]; rows: Record<string, unknown>[]; metadata?: Record<string, unknown> };
 
 async function fetchProducts(service: ReturnType<typeof createClient>, scope: Scope) {
   const rows: Product[] = [];
@@ -135,7 +162,83 @@ function summaryRows(products: Product[]) {
   ];
 }
 
-async function reportData(service: ReturnType<typeof createClient>, job: ReportJob, scope: Scope) {
+async function historicalPricingData(service: ReturnType<typeof createClient>, job: ReportJob, scope: Scope): Promise<ReportData> {
+  const startDate = parameterText(job.parameters, "startDate");
+  const endDate = parameterText(job.parameters, "endDate");
+  const selectedRetailer = parameterText(job.parameters, "supermarket");
+  if (!startDate || !endDate || !DATE_PATTERN.test(startDate) || !DATE_PATTERN.test(endDate) || startDate > endDate) {
+    throw new Error("invalid_export_period");
+  }
+  if (selectedRetailer && scope.retailers?.length && !scope.retailers.some((item) => item.toLowerCase() === selectedRetailer.toLowerCase())) {
+    throw new Error("retailer_not_allowed");
+  }
+
+  const maxRows = job.format === "xlsx" ? 50_000 : 150_000;
+  const pageSize = 1000;
+  const sourceRows: HistoricalPrice[] = [];
+  let lastBatchSize = 0;
+  for (let offset = 0; offset < maxRows; offset += pageSize) {
+    let query = service.from("enterprise_price_export_rows")
+      .select("price_date,observed_at,supermarket,external_id,name,brand,category,url,regular_price,offer_price,effective_price,unit,unit_price,in_stock")
+      .gte("price_date", startDate)
+      .lte("price_date", endDate)
+      .order("price_date", { ascending: false })
+      .order("supermarket", { ascending: true })
+      .order("external_id", { ascending: true })
+      .range(offset, Math.min(offset + pageSize - 1, maxRows - 1));
+    if (selectedRetailer) query = query.eq("supermarket", selectedRetailer);
+    else if (scope.retailers?.length) query = query.in("supermarket", scope.retailers);
+    if (scope.brands?.length) query = query.in("brand", scope.brands);
+    if (scope.categories?.length) query = query.in("category", scope.categories);
+    const { data, error } = await query;
+    if (error) throw new Error(error.message);
+    const batch = (data ?? []) as HistoricalPrice[];
+    sourceRows.push(...batch);
+    lastBatchSize = batch.length;
+    if (batch.length < pageSize) break;
+  }
+
+  const rows = sourceRows.map((item) => ({
+    Fecha: item.price_date,
+    Cadena: item.supermarket,
+    SKU: item.external_id,
+    Producto: item.name,
+    Marca: item.brand ?? "",
+    Categoria: item.category ?? "",
+    PrecioRegular: item.regular_price === null ? "" : numberValue(item.regular_price),
+    PrecioOferta: item.offer_price === null ? "" : numberValue(item.offer_price),
+    PrecioEfectivo: numberValue(item.effective_price),
+    Unidad: item.unit ?? "",
+    PrecioUnitario: item.unit_price === null ? "" : numberValue(item.unit_price),
+    Stock: item.in_stock ? "Disponible" : "Sin stock",
+    Observado: item.observed_at,
+    Fuente: item.url,
+  }));
+  const uniqueProducts = new Set(sourceRows.map((item) => `${item.supermarket}:${item.external_id}`)).size;
+  const retailers = new Set(sourceRows.map((item) => item.supermarket)).size;
+  const averagePrice = sourceRows.length ? sourceRows.reduce((sum, item) => sum + numberValue(item.effective_price), 0) / sourceRows.length : 0;
+  const truncated = sourceRows.length >= maxRows && lastBatchSize === pageSize;
+
+  return {
+    summary: [
+      { Indicador: "Desde", Valor: startDate },
+      { Indicador: "Hasta", Valor: endDate },
+      { Indicador: "Cadena", Valor: selectedRetailer ?? "Todas las autorizadas" },
+      { Indicador: "Observaciones exportadas", Valor: rows.length },
+      { Indicador: "SKU unicos", Valor: uniqueProducts },
+      { Indicador: "Cadenas", Valor: retailers },
+      { Indicador: "Precio efectivo promedio", Valor: Math.round(averagePrice) },
+      { Indicador: "Archivo truncado", Valor: truncated ? "Si" : "No" },
+    ],
+    rows,
+    metadata: { startDate, endDate, supermarket: selectedRetailer, truncated, maxRows, uniqueProducts, retailers },
+  };
+}
+
+async function reportData(service: ReturnType<typeof createClient>, job: ReportJob, scope: Scope): Promise<ReportData> {
+  if (job.report_type === "pricing" && job.parameters?.dataset === "historical_prices") {
+    return historicalPricingData(service, job, scope);
+  }
   if (job.report_type === "audit") {
     const { data, error } = await service.from("audit_logs")
       .select("created_at,action,entity_type,entity_id,actor_user_id,metadata")
@@ -159,14 +262,17 @@ async function reportData(service: ReturnType<typeof createClient>, job: ReportJ
   return { summary: summaryRows(products), rows: productRows(products, job.report_type) };
 }
 
-function buildWorkbook(organization: Organization, reportType: string, summary: Record<string, unknown>[], rows: Record<string, unknown>[]) {
+function buildWorkbook(organization: Organization, reportType: string, parameters: Record<string, unknown>, summary: Record<string, unknown>[], rows: Record<string, unknown>[]) {
   const workbook = XLSX.utils.book_new();
-  const metadata = [
+  const metadata: Array<{ Campo: string; Valor: unknown }> = [
     { Campo: "Organizacion", Valor: organization.name },
     { Campo: "Tipo de reporte", Valor: reportType },
     { Campo: "Plan", Valor: organization.plan },
     { Campo: "Generado", Valor: new Date().toISOString() },
   ];
+  for (const [key, value] of Object.entries(parameters)) {
+    if (["string", "number", "boolean"].includes(typeof value) || value === null) metadata.push({ Campo: key, Valor: value ?? "" });
+  }
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(metadata), "Metadata");
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(summary), "Resumen");
   XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), "Detalle");
@@ -235,6 +341,16 @@ async function buildPdf(organization: Organization, reportType: string, summary:
   return await document.save();
 }
 
+function reportFileLabel(job: ReportJob) {
+  if (job.report_type === "pricing" && job.parameters?.dataset === "historical_prices") {
+    const start = safeFilePart(job.parameters.startDate);
+    const end = safeFilePart(job.parameters.endDate);
+    const retailer = safeFilePart(job.parameters.supermarket ?? "todas-las-cadenas");
+    return `precios-${start}-${end}-${retailer}`;
+  }
+  return safeFilePart(job.report_type);
+}
+
 Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
@@ -267,19 +383,19 @@ Deno.serve(async (request: Request) => {
     let mime: string;
     let extension: string;
     if (job.format === "xlsx") {
-      bytes = new Uint8Array(buildWorkbook(organization as Organization, job.report_type, report.summary, report.rows));
+      bytes = new Uint8Array(buildWorkbook(organization as Organization, job.report_type, job.parameters, report.summary, report.rows));
       mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
       extension = "xlsx";
     } else if (job.format === "csv") {
       bytes = new TextEncoder().encode(toCsv(report.rows));
-      mime = "text/csv";
+      mime = "text/csv; charset=utf-8";
       extension = "csv";
     } else {
       bytes = await buildPdf(organization as Organization, job.report_type, report.summary, report.rows);
       mime = "application/pdf";
       extension = "pdf";
     }
-    const storagePath = `${job.organization_id}/${job.id}.${extension}`;
+    const storagePath = `${job.organization_id}/${job.id}-${reportFileLabel(job)}.${extension}`;
     const { error: uploadError } = await service.storage.from("enterprise-reports").upload(storagePath, bytes, { contentType: mime, upsert: true });
     if (uploadError) throw new Error(uploadError.message);
     const { data: signed, error: signedError } = await service.storage.from("enterprise-reports").createSignedUrl(storagePath, 60 * 60 * 24 * 7);
@@ -288,7 +404,16 @@ Deno.serve(async (request: Request) => {
     const { data: completed, error: updateError } = await service.from("report_jobs").update({
       status: "completed",
       result_url: signed.signedUrl,
-      result_metadata: { storagePath, mime, bytes: bytes.byteLength, rows: report.rows.length, summaryRows: report.summary.length, expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() },
+      result_metadata: {
+        storagePath,
+        mime,
+        bytes: bytes.byteLength,
+        rows: report.rows.length,
+        summaryRows: report.summary.length,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        parameters: job.parameters,
+        ...(report.metadata ?? {}),
+      },
       completed_at: completedAt,
       expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     }).eq("id", job.id).select("*").single();
