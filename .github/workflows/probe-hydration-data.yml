@@ -103,7 +103,7 @@ jobs:
           python /tmp/shape_probe.py
 
       - name: Publish shape report
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');

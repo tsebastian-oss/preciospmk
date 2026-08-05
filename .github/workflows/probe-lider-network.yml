@@ -141,7 +141,7 @@ jobs:
           node probe.mjs
 
       - name: Publish report
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
