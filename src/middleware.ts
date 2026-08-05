@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 
 const DEFAULT_SUPABASE_URL = "https://yfpixszkiakwzrqdcfbw.supabase.co";
 const DEFAULT_PUBLISHABLE_KEY = "sb_publishable_4FrGlw8owGm5EtwMs9V5zQ_oBrH0c0-";
-const PUBLIC_PATHS = ["/landing", "/login", "/api/auth/login", "/api/auth/logout"];
 const PRIVATE_API_PREFIXES = [
   "/api/dashboard",
   "/api/products",
@@ -14,6 +13,13 @@ const PRIVATE_API_PREFIXES = [
   "/api/admin",
   "/api/enterprise",
 ];
+const PRIVATE_PAGE_PREFIXES = [
+  "/dashboard",
+  "/competitive-analysis",
+  "/admin",
+  "/enterprise",
+  "/onboarding",
+];
 
 type SessionState = {
   authenticated: boolean;
@@ -24,6 +30,10 @@ type SessionState = {
 
 function isPrivateApi(pathname: string) {
   return PRIVATE_API_PREFIXES.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+}
+
+function isPrivatePage(pathname: string) {
+  return PRIVATE_PAGE_PREFIXES.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
 
 function authConfig() {
@@ -125,16 +135,16 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname === "/login" && session.authenticated) {
-    const dashboardUrl = request.nextUrl.clone();
-    dashboardUrl.pathname = "/";
-    return applySessionCookies(NextResponse.redirect(dashboardUrl), session);
+    const onboardingUrl = request.nextUrl.clone();
+    onboardingUrl.pathname = "/onboarding";
+    return applySessionCookies(NextResponse.redirect(onboardingUrl), session);
   }
 
   if (isPrivateApi(pathname) && !session.authenticated) {
     return applyHeaders(NextResponse.json({ error: "No autorizado" }, { status: 401 }));
   }
 
-  if ((pathname.startsWith("/dashboard") || pathname.startsWith("/competitive-analysis") || pathname.startsWith("/admin") || pathname.startsWith("/enterprise")) && !session.authenticated) {
+  if (isPrivatePage(pathname) && !session.authenticated) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
     return applyHeaders(NextResponse.redirect(loginUrl));

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { enterpriseAccess, scopeAllows } from "@/lib/enterprise-auth";
 import { supabaseRestWithCount } from "@/lib/supabase";
 
-const SUPERMARKETS = new Set(["Lider", "Jumbo", "Santa Isabel"]);
+const RETAILERS = new Set(["Lider", "Jumbo", "Santa Isabel", "Unimarc", "Paris", "Falabella", "Ripley"]);
 const SORTS: Record<string, string> = {
   price_asc: "in_stock.desc,offer_price.asc,name.asc",
   price_desc: "in_stock.desc,offer_price.desc,name.asc",
@@ -44,13 +44,13 @@ export async function GET(request: NextRequest) {
   const page = integer(params.get("page"), 1, 1, 10_000);
   const pageSize = integer(params.get("pageSize"), 25, 10, 50);
   const q = safeSearch(params.get("q") ?? "");
-  const requestedSupermarket = params.get("supermarket") ?? "";
-  const supermarket = SUPERMARKETS.has(requestedSupermarket) ? requestedSupermarket : "";
+  const requestedRetailer = params.get("supermarket") ?? "";
+  const retailer = RETAILERS.has(requestedRetailer) ? requestedRetailer : "";
   const category = safeFilter(params.get("category") ?? "");
   const stock = params.get("stock") ?? "all";
   const sort = SORTS[params.get("sort") ?? ""] ?? SORTS.price_asc;
 
-  if (supermarket && !scopeAllows(access, "retailers", supermarket)) {
+  if (retailer && !scopeAllows(access, "retailers", retailer)) {
     return NextResponse.json({ error: "Ese retailer no pertenece al alcance contratado." }, { status: 403 });
   }
   if (category && !scopeAllows(access, "categories", category)) {
@@ -58,20 +58,22 @@ export async function GET(request: NextRequest) {
   }
 
   const query: Record<string, string> = {
-    select: "id,supermarket,external_id,name,brand,category,url,image_url,regular_price,offer_price,unit,unit_price,in_stock,observed_at,savings,discount_pct",
+    select: "id,supermarket,retailer_type,industry_slug,external_id,name,brand,category,seller,variant,url,image_url,regular_price,offer_price,unit,unit_price,in_stock,observed_at,savings,discount_pct",
     order: sort,
     limit: String(pageSize),
     offset: String((page - 1) * pageSize),
   };
 
-  if (q) query.or = `(name.ilike.*${q}*,brand.ilike.*${q}*,external_id.ilike.*${q}*)`;
-  if (supermarket) query.supermarket = `eq.${supermarket}`;
+  if (q) query.or = `(name.ilike.*${q}*,brand.ilike.*${q}*,external_id.ilike.*${q}*,seller.ilike.*${q}*)`;
+  if (retailer) query.supermarket = `eq.${retailer}`;
   else if (!access.isSaasAdmin && access.retailers.length > 0) query.supermarket = inFilter(access.retailers);
 
   if (category) query.category = `eq.${category}`;
   else if (!access.isSaasAdmin && access.categories.length > 0) query.category = inFilter(access.categories);
 
   if (!access.isSaasAdmin && access.brands.length > 0) query.brand = inFilter(access.brands);
+  if (access.industrySlug === "grocery") query.retailer_type = "eq.supermarket";
+  else if (access.industrySlug && access.industrySlug !== "all") query.industry_slug = `eq.${access.industrySlug}`;
   if (stock === "in") query.in_stock = "eq.true";
   if (stock === "out") query.in_stock = "eq.false";
   if (offerOnly) query.discount_pct = "gt.0";
@@ -86,6 +88,8 @@ export async function GET(request: NextRequest) {
       total,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
       organizationId: access.organizationId,
+      industrySlug: access.industrySlug,
+      industryName: access.industryName,
     });
   } catch (error) {
     return NextResponse.json(

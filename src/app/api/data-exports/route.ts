@@ -34,6 +34,7 @@ type Availability = {
   lastDate: string | null;
   observations: number;
   products: number;
+  industrySlug?: string | null;
   retailers: Array<{ supermarket: string; observations: number }>;
 };
 
@@ -91,7 +92,12 @@ export async function GET(request: NextRequest) {
   if (availabilityResult.response) return availabilityResult.response;
 
   const exports = (jobsResult.data ?? []).filter((job) => job.parameters?.dataset === "historical_prices");
-  return noStore({ exports, availability: availabilityResult.data ?? null });
+  return noStore({
+    exports,
+    availability: availabilityResult.data ?? null,
+    industrySlug: authorization.access?.industrySlug ?? null,
+    industryName: authorization.access?.industryName ?? null,
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -99,6 +105,9 @@ export async function POST(request: NextRequest) {
   if (authorization.response) return authorization.response;
   const organizationId = authorization.access?.organizationId;
   if (!organizationId) return noStore({ error: "No fue posible resolver la organización." }, { status: 403 });
+  if (!authorization.access?.industryConfigured) {
+    return noStore({ error: "Selecciona primero la industria de tu organización." }, { status: 409 });
+  }
 
   const body = await request.json().catch(() => ({})) as {
     startDate?: unknown;
@@ -138,6 +147,8 @@ export async function POST(request: NextRequest) {
       startDate,
       endDate,
       supermarket,
+      industrySlug: authorization.access.industrySlug,
+      industryName: authorization.access.industryName,
       requestedRangeDays: rangeDays,
     },
   });
@@ -148,7 +159,7 @@ export async function POST(request: NextRequest) {
   const token = request.cookies.get("mgp_access_token")?.value;
   if (!token) return noStore({ error: "Tu sesión expiró. Ingresa nuevamente." }, { status: 401 });
 
-  const workerResponse = await fetch(`${SUPABASE_URL}/functions/v1/enterprise-report-worker`, {
+  const workerResponse = await fetch(`${SUPABASE_URL}/functions/v1/enterprise-data-export-worker`, {
     method: "POST",
     headers: {
       apikey: SUPABASE_KEY,
