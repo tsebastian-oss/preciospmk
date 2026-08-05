@@ -1,5 +1,4 @@
 import "./globals.css";
-import DashboardCompetitiveLink from "./DashboardCompetitiveLink";
 
 export const metadata = {
   title: "MGP Retail Intelligence | Pricing, Assortment & Market Data",
@@ -9,5 +8,5 @@ export const metadata = {
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="es-CL"><body>{children}<DashboardCompetitiveLink /></body></html>;
+  return <html lang="es-CL"><body>{children}</body></html>;
 }
