@@ -16,6 +16,24 @@ type AlertPayload = {
   enabled?: boolean;
 };
 
+function normalizedCondition(alertType: string, condition: Record<string, unknown> = {}) {
+  const requestedThreshold = Number(condition.threshold ?? 0);
+  if (alertType === "data_quality") {
+    return {
+      metric: typeof condition.metric === "string" ? condition.metric : "capture_completion_pct",
+      operator: typeof condition.operator === "string" && ["lt", "lte"].includes(condition.operator) ? condition.operator : "lt",
+      threshold: requestedThreshold > 50 && requestedThreshold <= 100 ? requestedThreshold : 98,
+    };
+  }
+  if (["match_review", "new_product", "stock_out", "assortment_change", "promotion"].includes(alertType)) {
+    return { operator: "gte", threshold: requestedThreshold >= 1 ? requestedThreshold : 1 };
+  }
+  if (alertType === "price_change") {
+    return { operator: "gte", threshold: requestedThreshold > 0 ? requestedThreshold : 10 };
+  }
+  return condition;
+}
+
 export async function GET(request: NextRequest) {
   const organizationId = request.nextUrl.searchParams.get("organizationId");
   if (!organizationId) return NextResponse.json({ error: "Falta organizationId" }, { status: 400 });
@@ -40,7 +58,7 @@ export async function POST(request: NextRequest) {
     p_alert_type: payload.alertType,
     p_severity: payload.severity,
     p_scope: payload.scope ?? {},
-    p_condition: payload.condition ?? {},
+    p_condition: normalizedCondition(payload.alertType, payload.condition),
     p_channels: payload.channels ?? ["email"],
     p_recipients: payload.recipients ?? [],
     p_enabled: payload.enabled ?? true,
