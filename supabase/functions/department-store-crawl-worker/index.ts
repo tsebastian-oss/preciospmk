@@ -7,7 +7,7 @@ type CatalogTask = {
   id: number;
   run_id: number;
   supermarket: string;
-  kind: TaskKind;
+  kind: string;
   payload: JsonRecord;
   attempts: number;
 };
@@ -55,49 +55,38 @@ const ALLOWED_HOSTS = new Set([
   "www.falabella.com",
   "simple.ripley.cl",
 ]);
-const BATCH_SIZE = 5;
+const BATCH_SIZE = 4;
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store",
-    },
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
   });
 }
 
-function asRecord(value: unknown): JsonRecord | undefined {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as JsonRecord
-    : undefined;
+function object(value: unknown): JsonRecord | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : null;
 }
 
-function text(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+function stringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function numberValue(value: unknown): number | undefined {
-  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-  let normalized = trimmed.replace(/[^0-9,.-]/g, "");
-  if (!normalized) return undefined;
+function numericValue(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string") return null;
+  let normalized = value.trim().replace(/[^0-9,.-]/g, "");
+  if (!normalized) return null;
   const comma = normalized.lastIndexOf(",");
   const dot = normalized.lastIndexOf(".");
-  if (comma > dot) {
-    normalized = normalized.replace(/\./g, "").replace(",", ".");
-  } else if (dot > comma && /^-?\d{1,3}(\.\d{3})+$/.test(normalized)) {
-    normalized = normalized.replace(/\./g, "");
-  } else {
-    normalized = normalized.replace(/,/g, "");
-  }
+  if (comma > dot) normalized = normalized.replace(/\./g, "").replace(",", ".");
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(normalized)) normalized = normalized.replace(/\./g, "");
+  else normalized = normalized.replace(/,/g, "");
   const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : undefined;
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
-function decodeHtml(value: string): string {
+function decodeEntities(value: string): string {
   return value
     .replace(/&amp;/g, "&")
     .replace(/&quot;/g, '"')
@@ -110,27 +99,29 @@ function decodeHtml(value: string): string {
     .trim();
 }
 
-function assertAllowedUrl(rawUrl: string): URL {
+function allowedUrl(rawUrl: string): URL {
   const url = new URL(rawUrl);
   if (url.protocol !== "https:" || !ALLOWED_HOSTS.has(url.hostname.toLowerCase())) {
     throw new Error(`Blocked crawl URL host: ${url.hostname}`);
   }
   url.hash = "";
+  for (const key of ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"]) {
+    url.searchParams.delete(key);
+  }
   return url;
 }
 
-function canonicalUrl(rawUrl: string): string {
-  const url = assertAllowedUrl(rawUrl);
-  for (const parameter of ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"]) {
-    url.searchParams.delete(parameter);
+function urlHash(value: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
   }
-  return url.toString();
+  return (hash >>> 0).toString(36);
 }
 
 async function rpc<T>(name: string, body: unknown): Promise<T> {
-  if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
-    throw new Error("Supabase service credentials are unavailable");
-  }
+  if (!SUPABASE_URL || !SERVICE_ROLE_KEY) throw new Error("Supabase service credentials are unavailable");
   const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
     method: "POST",
     headers: {
@@ -145,13 +136,13 @@ async function rpc<T>(name: string, body: unknown): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-async function fetchText(rawUrl: string, timeoutMs = 40_000): Promise<string> {
-  const url = assertAllowedUrl(rawUrl);
+async function fetchPublic(rawUrl: string, timeoutMs = 45_000): Promise<string> {
+  const url = allowedUrl(rawUrl);
   const response = await fetch(url, {
     headers: {
       "user-agent": USER_AGENT,
       accept: "text/html,application/xhtml+xml,application/xml,text/xml,application/ld+json,text/plain,*/*",
-      "accept-language": "es-CL,es;q=0.9,en;q=0.6",
+      "accept-language": "es-CL,es;q=0.9,en;q=0.5",
       "cache-control": "no-cache",
     },
     redirect: "follow",
@@ -161,278 +152,246 @@ async function fetchText(rawUrl: string, timeoutMs = 40_000): Promise<string> {
   return response.text();
 }
 
-function xmlLocations(xml: string): string[] {
-  return Array.from(xml.matchAll(/<loc[^>]*>([\s\S]*?)<\/loc>/gi), (match) => decodeHtml(match[1]))
-    .filter(Boolean);
+function locationsFromXml(xml: string): string[] {
+  const locations = Array.from(xml.matchAll(/<loc[^>]*>([\s\S]*?)<\/loc>/gi), (match) => decodeEntities(match[1]));
+  return [...new Set(locations.filter(Boolean))];
 }
 
-function looksLikeSitemap(rawUrl: string): boolean {
+function isSitemapUrl(rawUrl: string): boolean {
   try {
-    const url = new URL(rawUrl);
-    const candidate = `${url.pathname}${url.search}`.toLowerCase();
-    return candidate.includes("sitemap") || candidate.endsWith(".xml") || candidate.endsWith(".xml.gz") || candidate.includes(".xml?");
+    const value = `${new URL(rawUrl).pathname}${new URL(rawUrl).search}`.toLowerCase();
+    return value.includes("sitemap") || value.endsWith(".xml") || value.endsWith(".xml.gz") || value.includes(".xml?");
   } catch {
     return false;
   }
 }
 
-function looksLikeProductUrl(retailer: string, rawUrl: string): boolean {
-  let url: URL;
-  try {
-    url = assertAllowedUrl(rawUrl);
-  } catch {
-    return false;
-  }
-  const path = decodeURIComponent(url.pathname).toLowerCase();
-  if (retailer === "Paris") return path.endsWith(".html") && !path.includes("/search") && !path.includes("/category");
+function isProductUrl(retailer: string, rawUrl: string): boolean {
+  let path: string;
+  try { path = decodeURIComponent(allowedUrl(rawUrl).pathname).toLowerCase(); }
+  catch { return false; }
+  if (retailer === "Paris") return path.endsWith(".html") && !path.includes("/search");
   if (retailer === "Falabella") return path.includes("/falabella-cl/product/");
   if (retailer === "Ripley") {
-    if (["/minisitios/", "/evento/", "/search/", "/landing/", "/blog/"].some((fragment) => path.includes(fragment))) return false;
+    if (["/minisitios/", "/evento/", "/search/", "/landing/", "/blog/"].some((part) => path.includes(part))) return false;
     return /-mpm[0-9a-z]+$/.test(path) || /-[0-9]{6,}$/.test(path);
   }
   return false;
 }
 
-function categoryFromUrl(rawUrl: string): string | null {
-  try {
-    const ignored = new Set(["falabella-cl", "product", "productos", "simple", "cl"]);
-    const parts = new URL(rawUrl).pathname.split("/").filter(Boolean)
-      .map((item) => decodeURIComponent(item).replace(/[-_]+/g, " ").trim())
-      .filter((item) => item && !ignored.has(item.toLowerCase()) && !/^\d+$/.test(item) && !item.toLowerCase().endsWith(".html"));
-    return parts.length > 1 ? parts.slice(0, -1).join(" > ") : null;
-  } catch {
-    return null;
-  }
-}
-
-function taskPayload(task: CatalogTask, overrides: JsonRecord = {}): JsonRecord {
+function inheritedPayload(task: CatalogTask, values: JsonRecord): JsonRecord {
   return {
-    mode: text(task.payload.mode) ?? "pilot",
-    root_url: text(task.payload.root_url) ?? text(task.payload.url) ?? null,
-    max_depth: numberValue(task.payload.max_depth) ?? 4,
-    max_product_urls: numberValue(task.payload.max_product_urls) ?? null,
-    crawl_delay_ms: numberValue(task.payload.crawl_delay_ms) ?? 1000,
-    ...overrides,
+    mode: stringValue(task.payload.mode) ?? "pilot",
+    root_url: stringValue(task.payload.root_url) ?? stringValue(task.payload.url),
+    max_depth: numericValue(task.payload.max_depth) ?? 4,
+    max_product_urls: numericValue(task.payload.max_product_urls),
+    crawl_delay_ms: numericValue(task.payload.crawl_delay_ms) ?? 1000,
+    ...values,
   };
 }
 
-function chunk<T>(items: T[], size: number): T[][] {
-  const groups: T[][] = [];
-  for (let index = 0; index < items.length; index += size) groups.push(items.slice(index, index + size));
-  return groups;
+function groups<T>(items: T[], size: number): T[][] {
+  const output: T[][] = [];
+  for (let index = 0; index < items.length; index += size) output.push(items.slice(index, index + size));
+  return output;
 }
 
-async function processSitemap(task: CatalogTask): Promise<ProcessedTask> {
-  const rawUrl = text(task.payload.url);
-  const depth = Math.max(0, numberValue(task.payload.depth) ?? 0);
-  const maxDepth = Math.max(1, numberValue(task.payload.max_depth) ?? 4);
-  const mode = text(task.payload.mode) === "full" ? "full" : "pilot";
-  if (!rawUrl) throw new Error("Invalid retail sitemap payload");
+async function sitemapTask(task: CatalogTask): Promise<ProcessedTask> {
+  const rawUrl = stringValue(task.payload.url);
+  if (!rawUrl) throw new Error("Invalid retail_sitemap payload: missing url");
+  const depth = Math.max(0, numericValue(task.payload.depth) ?? 0);
+  const maxDepth = Math.max(1, numericValue(task.payload.max_depth) ?? 4);
+  const pilot = stringValue(task.payload.mode) !== "full";
   if (depth > maxDepth) return { products: [], newTasks: [] };
 
-  const xml = await fetchText(rawUrl, 50_000);
-  const locations = [...new Set(xmlLocations(xml).map((location) => {
-    try { return canonicalUrl(location); } catch { return ""; }
-  }).filter(Boolean))];
-  if (!locations.length) throw new Error(`Sitemap returned no locations: ${rawUrl}`);
+  const xml = await fetchPublic(rawUrl, 50_000);
+  const safeLocations = locationsFromXml(xml).map((location) => {
+    try { return allowedUrl(location).toString(); }
+    catch { return null; }
+  }).filter((location): location is string => Boolean(location));
+  if (!safeLocations.length) throw new Error(`Sitemap returned no allowed locations: ${rawUrl}`);
 
-  let childSitemaps = locations.filter(looksLikeSitemap);
-  let productUrls = locations.filter((location) => looksLikeProductUrl(task.supermarket, location));
-  if (mode === "pilot") {
-    childSitemaps = childSitemaps.slice(0, 2);
-    const requestedLimit = Math.max(25, numberValue(task.payload.max_product_urls) ?? 120);
-    productUrls = productUrls.slice(0, Math.min(requestedLimit, 120));
+  let sitemapUrls = safeLocations.filter(isSitemapUrl);
+  let productUrls = safeLocations.filter((location) => isProductUrl(task.supermarket, location));
+  if (pilot) {
+    sitemapUrls = sitemapUrls.slice(0, 2);
+    productUrls = productUrls.slice(0, 80);
   }
 
   const newTasks: QueueTask[] = [];
-  for (const childUrl of childSitemaps) {
+  for (const child of sitemapUrls) {
     newTasks.push({
-      task_key: `retail-sitemap:${task.supermarket.toLowerCase()}:${childUrl}`,
+      task_key: `retail-sitemap:${task.supermarket.toLowerCase()}:${urlHash(child)}`,
       supermarket: task.supermarket,
       kind: "retail_sitemap",
-      payload: taskPayload(task, { url: childUrl, depth: depth + 1 }),
+      payload: inheritedPayload(task, { url: child, depth: depth + 1 }),
     });
   }
-
-  for (const urls of chunk(productUrls, BATCH_SIZE)) {
-    const first = urls[0];
+  for (const batch of groups(productUrls, BATCH_SIZE)) {
     newTasks.push({
-      task_key: `retail-product-batch:${task.supermarket.toLowerCase()}:${btoa(first).replace(/=+$/g, "").slice(-80)}`,
+      task_key: `retail-product-batch:${task.supermarket.toLowerCase()}:${urlHash(batch.join("|"))}`,
       supermarket: task.supermarket,
       kind: "retail_product_batch",
-      payload: taskPayload(task, { urls }),
+      payload: inheritedPayload(task, { urls: batch }),
     });
   }
 
   return { products: [], newTasks };
 }
 
-function jsonLdScripts(html: string): string[] {
+function scriptsJsonLd(html: string): string[] {
   return Array.from(html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi), (match) => match[1].trim());
 }
 
-function nodeTypes(node: JsonRecord): string[] {
-  const raw = node["@type"];
-  return Array.isArray(raw) ? raw.map(String) : [String(raw ?? "")];
+function typesOf(node: JsonRecord): string[] {
+  const value = node["@type"];
+  return Array.isArray(value) ? value.map(String) : [String(value ?? "")];
 }
 
-function collectProductNodes(value: unknown, output: JsonRecord[] = [], inheritedParent?: string): JsonRecord[] {
+function productNodes(value: unknown, output: JsonRecord[] = [], parentId: string | null = null): JsonRecord[] {
   if (Array.isArray(value)) {
-    for (const item of value) collectProductNodes(item, output, inheritedParent);
+    for (const child of value) productNodes(child, output, parentId);
     return output;
   }
-  const node = asRecord(value);
+  const node = object(value);
   if (!node) return output;
-  const types = nodeTypes(node);
-  const ownId = text(node.sku) ?? text(node.productID) ?? text(node.mpn) ?? inheritedParent;
-  if (types.includes("Product")) output.push(inheritedParent && !node.isVariantOf ? { ...node, isVariantOf: { sku: inheritedParent } } : node);
-  if (Array.isArray(node.hasVariant)) collectProductNodes(node.hasVariant, output, ownId);
-  if (Array.isArray(node["@graph"])) collectProductNodes(node["@graph"], output, inheritedParent);
-  if (Array.isArray(node.itemListElement)) collectProductNodes(node.itemListElement, output, inheritedParent);
-  if (node.item && typeof node.item === "object") collectProductNodes(node.item, output, inheritedParent);
+  const nodeId = stringValue(node.sku) ?? stringValue(node.productID) ?? stringValue(node.mpn) ?? parentId;
+  if (typesOf(node).includes("Product")) {
+    output.push(parentId && !node.isVariantOf ? { ...node, isVariantOf: { sku: parentId } } : node);
+  }
+  if (node.hasVariant) productNodes(node.hasVariant, output, nodeId);
+  if (node["@graph"]) productNodes(node["@graph"], output, parentId);
+  if (node.itemListElement) productNodes(node.itemListElement, output, parentId);
+  if (node.item) productNodes(node.item, output, parentId);
   return output;
 }
 
-function flattenOffers(raw: unknown): JsonRecord[] {
-  if (Array.isArray(raw)) return raw.flatMap(flattenOffers);
-  const record = asRecord(raw);
+function offersOf(value: unknown): JsonRecord[] {
+  if (Array.isArray(value)) return value.flatMap(offersOf);
+  const record = object(value);
   if (!record) return [];
-  const nested = Array.isArray(record.offers) ? record.offers.flatMap(flattenOffers) : [];
-  return nested.length ? nested : [record];
+  if (record.offers) {
+    const nested = offersOf(record.offers);
+    if (nested.length) return nested;
+  }
+  return [record];
 }
 
-function sellerInfo(offer: JsonRecord, product: JsonRecord): { seller: string | null; sellerId: string | null } {
-  const rawSeller = offer.seller ?? product.seller ?? product.manufacturer;
-  const seller = asRecord(rawSeller);
-  return {
-    seller: text(rawSeller) ?? text(seller?.name) ?? text(seller?.legalName) ?? null,
-    sellerId: text(seller?.identifier) ?? text(seller?.taxID) ?? text(offer.sellerId) ?? null,
-  };
-}
-
-function imageUrl(raw: unknown): string | null {
-  const candidate = Array.isArray(raw) ? raw[0] : raw;
-  const record = asRecord(candidate);
-  return text(candidate) ?? text(record?.url) ?? text(record?.contentUrl) ?? null;
-}
-
-function brandName(raw: unknown): string | null {
-  const record = asRecord(raw);
-  return text(raw) ?? text(record?.name) ?? null;
-}
-
-function parentSku(product: JsonRecord): string | null {
-  const parent = asRecord(product.isVariantOf);
-  return text(parent?.sku) ?? text(parent?.productID) ?? text(parent?.mpn) ?? null;
-}
-
-function externalIdFromUrl(rawUrl: string): string {
-  const path = new URL(rawUrl).pathname.split("/").filter(Boolean);
-  return decodeURIComponent(path.at(-1) ?? rawUrl).replace(/\.html$/i, "");
-}
-
-function chooseOffer(product: JsonRecord): JsonRecord {
-  const offers = flattenOffers(product.offers);
+function bestOffer(product: JsonRecord): JsonRecord {
+  const offers = offersOf(product.offers);
   if (!offers.length) return {};
-  const priced = offers.map((offer) => ({
-    offer,
-    price: numberValue(offer.price ?? offer.lowPrice ?? offer.salePrice ?? asRecord(offer.priceSpecification)?.price),
-  })).filter((item) => item.price !== undefined && item.price >= 0);
-  priced.sort((left, right) => (left.price ?? Number.MAX_SAFE_INTEGER) - (right.price ?? Number.MAX_SAFE_INTEGER));
-  return priced[0]?.offer ?? offers[0];
+  return offers.sort((left, right) => {
+    const leftPrice = numericValue(left.price ?? left.lowPrice ?? left.salePrice ?? object(left.priceSpecification)?.price) ?? Number.MAX_SAFE_INTEGER;
+    const rightPrice = numericValue(right.price ?? right.lowPrice ?? right.salePrice ?? object(right.priceSpecification)?.price) ?? Number.MAX_SAFE_INTEGER;
+    return leftPrice - rightPrice;
+  })[0];
 }
 
-function mapProductNode(retailer: string, pageUrl: string, product: JsonRecord, parser: string): ScrapedProduct | null {
-  const name = text(product.name) ?? text(product.headline);
+function imageOf(value: unknown): string | null {
+  const candidate = Array.isArray(value) ? value[0] : value;
+  const record = object(candidate);
+  return stringValue(candidate) ?? stringValue(record?.url) ?? stringValue(record?.contentUrl);
+}
+
+function brandOf(value: unknown): string | null {
+  return stringValue(value) ?? stringValue(object(value)?.name);
+}
+
+function categoryFromUrl(rawUrl: string): string | null {
+  try {
+    const parts = new URL(rawUrl).pathname.split("/").filter(Boolean)
+      .map((part) => decodeURIComponent(part).replace(/[-_]+/g, " "))
+      .filter((part) => !["falabella cl", "product", "simple"].includes(part.toLowerCase()) && !/^\d+$/.test(part) && !part.endsWith(".html"));
+    return parts.length > 1 ? parts.slice(0, -1).join(" > ") : null;
+  } catch { return null; }
+}
+
+function idFromUrl(rawUrl: string): string {
+  return decodeURIComponent(new URL(rawUrl).pathname.split("/").filter(Boolean).at(-1) ?? rawUrl).replace(/\.html$/i, "");
+}
+
+function productFromNode(retailer: string, pageUrl: string, node: JsonRecord): ScrapedProduct | null {
+  const name = stringValue(node.name) ?? stringValue(node.headline);
   if (!name) return null;
-  const offer = chooseOffer(product);
-  const offerPrice = numberValue(offer.price ?? offer.lowPrice ?? offer.salePrice ?? asRecord(offer.priceSpecification)?.price) ?? 0;
-  const highPrice = numberValue(offer.highPrice ?? product.highPrice);
-  const listPrice = numberValue(offer.listPrice ?? offer.regularPrice ?? asRecord(offer.priceSpecification)?.maxPrice);
-  const regularPrice = [highPrice, listPrice].filter((item): item is number => item !== undefined && item > offerPrice).sort((a, b) => b - a)[0] ?? null;
-  const rawUrl = text(product.url) ?? text(product["@id"]) ?? pageUrl;
-  let canonical = pageUrl;
-  try { canonical = canonicalUrl(rawUrl.startsWith("http") ? rawUrl : new URL(rawUrl, pageUrl).toString()); } catch { /* keep page URL */ }
-  const externalId = String(product.sku ?? product.productID ?? product.gtin13 ?? product.gtin ?? product.mpn ?? externalIdFromUrl(canonical)).trim();
+  const offer = bestOffer(node);
+  const offerPrice = numericValue(offer.price ?? offer.lowPrice ?? offer.salePrice ?? object(offer.priceSpecification)?.price) ?? 0;
+  const candidateRegular = numericValue(offer.highPrice ?? offer.listPrice ?? offer.regularPrice ?? object(offer.priceSpecification)?.maxPrice);
+  const rawProductUrl = stringValue(node.url) ?? stringValue(node["@id"]) ?? pageUrl;
+  let productUrl = pageUrl;
+  try { productUrl = allowedUrl(rawProductUrl.startsWith("http") ? rawProductUrl : new URL(rawProductUrl, pageUrl).toString()).toString(); }
+  catch { productUrl = allowedUrl(pageUrl).toString(); }
+  const externalId = String(node.sku ?? node.productID ?? node.gtin13 ?? node.gtin ?? node.mpn ?? idFromUrl(productUrl)).trim();
   if (!externalId) return null;
-  const availability = String(offer.availability ?? product.availability ?? "").toLowerCase();
-  const { seller, sellerId } = sellerInfo(offer, product);
-  const variant = text(product.color) ?? text(product.size) ?? text(product.model) ?? text(product.pattern) ?? null;
+
+  const sellerValue = offer.seller ?? node.seller ?? node.manufacturer;
+  const sellerRecord = object(sellerValue);
+  const parent = object(node.isVariantOf);
+  const availability = String(offer.availability ?? node.availability ?? "").toLowerCase();
   return {
     supermarket: retailer,
     external_id: externalId,
-    parent_external_id: parentSku(product),
+    parent_external_id: stringValue(parent?.sku) ?? stringValue(parent?.productID) ?? stringValue(parent?.mpn),
     name,
-    brand: brandName(product.brand),
-    category: text(product.category) ?? categoryFromUrl(canonical),
-    seller,
-    seller_id: sellerId,
-    variant,
-    url: canonical,
-    image_url: imageUrl(product.image),
-    regular_price: regularPrice,
+    brand: brandOf(node.brand),
+    category: stringValue(node.category) ?? categoryFromUrl(productUrl),
+    seller: stringValue(sellerValue) ?? stringValue(sellerRecord?.name) ?? stringValue(sellerRecord?.legalName),
+    seller_id: stringValue(sellerRecord?.identifier) ?? stringValue(sellerRecord?.taxID) ?? stringValue(offer.sellerId),
+    variant: stringValue(node.color) ?? stringValue(node.size) ?? stringValue(node.model) ?? stringValue(node.pattern),
+    url: productUrl,
+    image_url: imageOf(node.image),
+    regular_price: candidateRegular !== null && candidateRegular > offerPrice ? candidateRegular : null,
     offer_price: offerPrice,
     unit: null,
     unit_price: null,
     in_stock: availability ? !availability.includes("outofstock") && !availability.includes("soldout") && !availability.includes("discontinued") : offerPrice > 0,
     observed_at: new Date().toISOString(),
-    source_metadata: {
-      parser,
-      schemaType: nodeTypes(product),
-      priceCurrency: text(offer.priceCurrency) ?? null,
-      priceMissing: offerPrice <= 0,
-    },
+    source_metadata: { parser: "json_ld", schemaType: typesOf(node), priceCurrency: stringValue(offer.priceCurrency), priceMissing: offerPrice <= 0 },
   };
 }
 
-function metaContent(html: string, property: string): string | undefined {
-  const escaped = property.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const patterns = [
+function meta(html: string, key: string): string | null {
+  const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  for (const pattern of [
     new RegExp(`<meta[^>]+(?:property|name)=["']${escaped}["'][^>]+content=["']([^"']*)["']`, "i"),
     new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["']${escaped}["']`, "i"),
-  ];
-  for (const pattern of patterns) {
+  ]) {
     const match = html.match(pattern);
-    if (match) return decodeHtml(match[1]);
+    if (match?.[1]) return decodeEntities(match[1]);
   }
-  return undefined;
+  return null;
 }
 
-function regexText(html: string, patterns: RegExp[]): string | undefined {
+function regexCapture(html: string, patterns: RegExp[]): string | null {
   for (const pattern of patterns) {
     const match = html.match(pattern);
-    if (match?.[1]) return decodeHtml(match[1].replace(/\\u002F/g, "/").replace(/\\"/g, '"'));
+    if (match?.[1]) return decodeEntities(match[1].replace(/\\u002F/g, "/").replace(/\\"/g, '"'));
   }
-  return undefined;
+  return null;
 }
 
-function htmlFallback(retailer: string, pageUrl: string, html: string): ScrapedProduct | null {
-  const name = metaContent(html, "og:title") ?? regexText(html, [/<title[^>]*>([\s\S]*?)<\/title>/i]);
+function fallbackProduct(retailer: string, pageUrl: string, html: string): ScrapedProduct | null {
+  const name = meta(html, "og:title") ?? regexCapture(html, [/<title[^>]*>([\s\S]*?)<\/title>/i]);
   if (!name) return null;
-  const externalId = regexText(html, [
+  const externalId = regexCapture(html, [
     /["'](?:sku|skuId|sku_id)["']\s*:\s*["']([^"']+)["']/i,
     /["'](?:productID|productId|product_id)["']\s*:\s*["']?([0-9a-z-]+)["']?/i,
-  ]) ?? externalIdFromUrl(pageUrl);
-  const offerPrice = numberValue(metaContent(html, "product:price:amount") ?? regexText(html, [
-    /["'](?:salePrice|offerPrice|currentPrice|price)["']\s*:\s*["']?([0-9.,]+)["']?/i,
-  ])) ?? 0;
-  const possibleRegular = numberValue(regexText(html, [/["'](?:listPrice|regularPrice|originalPrice)["']\s*:\s*["']?([0-9.,]+)["']?/i]));
-  const seller = regexText(html, [/["'](?:sellerName|seller_name)["']\s*:\s*["']([^"']+)["']/i]);
-  const brand = metaContent(html, "product:brand") ?? regexText(html, [/["']brand["']\s*:\s*(?:\{[^{}]*["']name["']\s*:\s*)?["']([^"']+)["']/i]);
-  const availability = `${metaContent(html, "product:availability") ?? ""} ${regexText(html, [/["']availability["']\s*:\s*["']([^"']+)["']/i]) ?? ""}`.toLowerCase();
+  ]) ?? idFromUrl(pageUrl);
+  const offerPrice = numericValue(meta(html, "product:price:amount") ?? regexCapture(html, [/["'](?:salePrice|offerPrice|currentPrice|price)["']\s*:\s*["']?([0-9.,]+)["']?/i])) ?? 0;
+  const regular = numericValue(regexCapture(html, [/["'](?:listPrice|regularPrice|originalPrice)["']\s*:\s*["']?([0-9.,]+)["']?/i]));
+  const availability = `${meta(html, "product:availability") ?? ""} ${regexCapture(html, [/["']availability["']\s*:\s*["']([^"']+)["']/i]) ?? ""}`.toLowerCase();
   return {
     supermarket: retailer,
     external_id: externalId,
     parent_external_id: null,
     name,
-    brand: brand ?? null,
-    category: metaContent(html, "product:category") ?? categoryFromUrl(pageUrl),
-    seller: seller ?? null,
+    brand: meta(html, "product:brand") ?? regexCapture(html, [/["']brand["']\s*:\s*(?:\{[^{}]*["']name["']\s*:\s*)?["']([^"']+)["']/i]),
+    category: meta(html, "product:category") ?? categoryFromUrl(pageUrl),
+    seller: regexCapture(html, [/["'](?:sellerName|seller_name)["']\s*:\s*["']([^"']+)["']/i]),
     seller_id: null,
     variant: null,
-    url: canonicalUrl(pageUrl),
-    image_url: metaContent(html, "og:image") ?? null,
-    regular_price: possibleRegular && possibleRegular > offerPrice ? possibleRegular : null,
+    url: allowedUrl(pageUrl).toString(),
+    image_url: meta(html, "og:image"),
+    regular_price: regular !== null && regular > offerPrice ? regular : null,
     offer_price: offerPrice,
     unit: null,
     unit_price: null,
@@ -442,93 +401,84 @@ function htmlFallback(retailer: string, pageUrl: string, html: string): ScrapedP
   };
 }
 
-function parseProductPage(retailer: string, pageUrl: string, html: string): ScrapedProduct[] {
+function parsePage(retailer: string, pageUrl: string, html: string): ScrapedProduct[] {
   const products = new Map<string, ScrapedProduct>();
-  for (const script of jsonLdScripts(html)) {
+  for (const script of scriptsJsonLd(html)) {
     try {
-      const parsed = JSON.parse(script) as unknown;
-      for (const node of collectProductNodes(parsed)) {
-        const product = mapProductNode(retailer, pageUrl, node, "json_ld");
+      for (const node of productNodes(JSON.parse(script))) {
+        const product = productFromNode(retailer, pageUrl, node);
         if (product) products.set(product.external_id, product);
       }
-    } catch {
-      // Ignore malformed analytics JSON-LD blocks and continue with other blocks.
-    }
+    } catch { /* malformed analytics block */ }
   }
   if (!products.size) {
-    const fallback = htmlFallback(retailer, pageUrl, html);
+    const fallback = fallbackProduct(retailer, pageUrl, html);
     if (fallback) products.set(fallback.external_id, fallback);
   }
-  return Array.from(products.values());
+  return [...products.values()];
 }
 
-async function processProductPage(task: CatalogTask): Promise<ProcessedTask> {
-  const rawUrl = text(task.payload.url);
-  if (!rawUrl) throw new Error("Invalid retail product page payload");
-  const html = await fetchText(rawUrl, 45_000);
-  const products = parseProductPage(task.supermarket, rawUrl, html);
-  if (!products.length) throw new Error(`No public product metadata found at ${rawUrl}`);
+async function productPageTask(task: CatalogTask): Promise<ProcessedTask> {
+  const url = stringValue(task.payload.url);
+  if (!url) throw new Error("Invalid retail_product_page payload: missing url");
+  const products = parsePage(task.supermarket, url, await fetchPublic(url));
+  if (!products.length) throw new Error(`No public product metadata found at ${url}`);
   return { products, newTasks: [] };
 }
 
-async function processProductBatch(task: CatalogTask): Promise<ProcessedTask> {
+async function productBatchTask(task: CatalogTask): Promise<ProcessedTask> {
   const urls = Array.isArray(task.payload.urls)
-    ? task.payload.urls.map(text).filter((item): item is string => Boolean(item)).slice(0, BATCH_SIZE)
+    ? task.payload.urls.map(stringValue).filter((value): value is string => Boolean(value)).slice(0, BATCH_SIZE)
     : [];
-  if (!urls.length) throw new Error("Invalid retail product batch payload");
-  const delay = Math.max(250, Math.min(15_000, numberValue(task.payload.crawl_delay_ms) ?? 1000));
+  if (!urls.length) throw new Error("Invalid retail_product_batch payload: missing urls");
+  const delay = Math.max(250, Math.min(15_000, numericValue(task.payload.crawl_delay_ms) ?? 1000));
   const products = new Map<string, ScrapedProduct>();
   const failures: string[] = [];
-
   for (let index = 0; index < urls.length; index += 1) {
-    const url = urls[index];
     try {
-      const html = await fetchText(url, 45_000);
-      for (const product of parseProductPage(task.supermarket, url, html)) products.set(product.external_id, product);
+      for (const product of parsePage(task.supermarket, urls[index], await fetchPublic(urls[index]))) {
+        products.set(product.external_id, product);
+      }
     } catch (error) {
       failures.push(error instanceof Error ? error.message : String(error));
     }
     if (index < urls.length - 1) await new Promise((resolve) => setTimeout(resolve, delay));
   }
-
   if (!products.size && failures.length) throw new Error(failures.slice(0, 3).join(" | "));
-  return { products: Array.from(products.values()), newTasks: [] };
+  return { products: [...products.values()], newTasks: [] };
 }
 
-async function processTask(task: CatalogTask): Promise<ProcessedTask> {
-  if (task.kind === "retail_sitemap") return processSitemap(task);
-  if (task.kind === "retail_product_batch") return processProductBatch(task);
-  return processProductPage(task);
-}
-
-async function enqueueTasks(runId: number, tasks: QueueTask[]): Promise<number> {
+async function enqueue(runId: number, tasks: QueueTask[]): Promise<number> {
   let inserted = 0;
   for (let index = 0; index < tasks.length; index += 250) {
-    inserted += await rpc<number>("enqueue_department_store_tasks_service", {
-      p_run_id: runId,
-      p_tasks: tasks.slice(index, index + 250),
-    });
+    inserted += await rpc<number>("enqueue_department_store_tasks_service", { p_run_id: runId, p_tasks: tasks.slice(index, index + 250) });
   }
   return inserted;
 }
 
-async function handleTask(task: CatalogTask): Promise<JsonRecord> {
+async function executeTask(task: CatalogTask): Promise<ProcessedTask> {
+  const kind = String(task.kind ?? "").trim();
+  switch (kind) {
+    case "retail_sitemap": return await sitemapTask(task);
+    case "retail_product_batch": return await productBatchTask(task);
+    case "retail_product_page": return await productPageTask(task);
+    default: throw new Error(`Unsupported department-store task kind: ${kind || "<empty>"}`);
+  }
+}
+
+async function handle(task: CatalogTask): Promise<JsonRecord> {
   try {
-    const result = await processTask(task);
-    const tasksInserted = await enqueueTasks(task.run_id, result.newTasks);
+    const result = await executeTask(task);
+    if (!result || !Array.isArray(result.products) || !Array.isArray(result.newTasks)) {
+      throw new Error(`Invalid processor result for ${task.kind}`);
+    }
+    const tasksInserted = await enqueue(task.run_id, result.newTasks);
     const completion = await rpc<JsonRecord>("complete_department_store_task_service", {
       p_task_id: task.id,
       p_products: result.products,
       p_error: null,
     });
-    return {
-      taskId: task.id,
-      retailer: task.supermarket,
-      kind: task.kind,
-      products: result.products.length,
-      tasksInserted,
-      completion,
-    };
+    return { taskId: task.id, retailer: task.supermarket, kind: task.kind, products: result.products.length, tasksInserted, completion };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const completion = await rpc<JsonRecord>("complete_department_store_task_service", {
@@ -544,14 +494,13 @@ Deno.serve(async (request: Request) => {
   if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   const body = await request.text();
   if (body && body !== "{}") return json({ error: "request_body_not_accepted" }, 400);
-
   try {
     const tasks = await rpc<CatalogTask[]>("claim_department_store_tasks_service", { p_limit: 2 });
-    if (!tasks.length) {
+    if (!Array.isArray(tasks) || !tasks.length) {
       const status = await rpc<JsonRecord>("department_store_crawl_status_service", { p_run_id: null });
       return json({ ok: true, claimed: 0, status });
     }
-    const results = await Promise.all(tasks.map(handleTask));
+    const results = await Promise.all(tasks.map(handle));
     const status = await rpc<JsonRecord>("department_store_crawl_status_service", { p_run_id: tasks[0].run_id });
     return json({ ok: true, claimed: tasks.length, results, status });
   } catch (error) {
