@@ -9,6 +9,9 @@ on:
       - main
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,5 +22,7 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      - name: Dependency security gate
+        run: npm audit --audit-level=critical
       - run: npm run typecheck
       - run: npm run build
