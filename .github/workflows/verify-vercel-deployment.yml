@@ -125,7 +125,7 @@ jobs:
           } > /tmp/vercel-check/report.md
 
       - name: Publish verification report
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
