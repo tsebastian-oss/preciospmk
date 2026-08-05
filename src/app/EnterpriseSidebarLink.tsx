@@ -10,11 +10,30 @@ type Organization = {
   plan: string;
   role: string;
   settings?: { default_world?: "retailer" | "brand" } | null;
+  scopes?: { modules?: string[] } | null;
 };
 type ContextData = {
   isSaasAdmin?: boolean;
   activeOrganizationId?: string | null;
   organizations?: Organization[];
+};
+
+const MODULE_BY_LABEL: Record<string, { retailer?: string; brand?: string }> = {
+  "Executive Overview": { retailer: "overview", brand: "brand-overview" },
+  "Price Image Index": { retailer: "price-image" },
+  "Price Matching": { retailer: "pricing" },
+  "Competitive Analysis": { retailer: "competitive" },
+  Promotions: { retailer: "promotions" },
+  "Assortment Gaps": { retailer: "assortment-gaps" },
+  "Price Movements": { retailer: "price-movements" },
+  "Basket Simulator": { retailer: "basket" },
+  "Product Explorer": { retailer: "products" },
+  "Digital Shelf": { brand: "digital-shelf" },
+  "Pricing & Promotions": { brand: "brand-pricing" },
+  Availability: { brand: "availability" },
+  "Competitor Benchmark": { brand: "benchmark" },
+  "Retailer Scorecards": { brand: "scorecards" },
+  "Launch Tracker": { brand: "launch-tracker" },
 };
 
 export default function EnterpriseSidebarLink() {
@@ -37,6 +56,44 @@ export default function EnterpriseSidebarLink() {
     () => organizations.find((item) => item.id === data?.activeOrganizationId) ?? organizations[0] ?? null,
     [organizations, data?.activeOrganizationId],
   );
+
+  useEffect(() => {
+    if (!active) return;
+    const desiredWorld = active.settings?.default_world ?? (active.type === "brand" ? "brand" : "retailer");
+    const currentHash = window.location.hash.replace("#", "");
+    const brandHash = ["brand-overview", "digital-shelf", "brand-pricing", "availability", "benchmark", "scorecards", "launch-tracker"].includes(currentHash);
+    const retailerHash = Boolean(currentHash) && !brandHash;
+    if (active.type === "brand" && retailerHash) {
+      window.localStorage.setItem("mgp-intelligence-world", "brand");
+      window.location.hash = "brand-overview";
+      return;
+    }
+    if (active.type === "retailer" && brandHash) {
+      window.localStorage.setItem("mgp-intelligence-world", "retailer");
+      window.location.hash = "retailer-overview";
+      return;
+    }
+    if (!currentHash) window.localStorage.setItem("mgp-intelligence-world", desiredWorld);
+
+    const allowed = active.scopes?.modules ?? [];
+    const world = active.type === "platform"
+      ? (window.localStorage.getItem("mgp-intelligence-world") === "brand" ? "brand" : "retailer")
+      : active.type;
+    document.querySelectorAll<HTMLButtonElement>(".sidebar nav button").forEach((button) => {
+      const label = button.querySelector("span")?.textContent?.trim() ?? "";
+      const moduleName = MODULE_BY_LABEL[label]?.[world];
+      button.style.display = moduleName && allowed.length > 0 && !allowed.includes(moduleName) ? "none" : "";
+    });
+    document.querySelectorAll<HTMLElement>('[class*="navGroup"]').forEach((group) => {
+      const visible = [...group.querySelectorAll<HTMLButtonElement>("button")].some((button) => button.style.display !== "none");
+      group.style.display = visible ? "" : "none";
+    });
+    const switcherButtons = document.querySelectorAll<HTMLButtonElement>('[class*="worldSwitcher"] button');
+    if (switcherButtons.length >= 2) {
+      switcherButtons[0].style.display = active.type === "brand" ? "none" : "";
+      switcherButtons[1].style.display = active.type === "retailer" ? "none" : "";
+    }
+  }, [active]);
 
   async function switchOrganization(organizationId: string) {
     const next = organizations.find((item) => item.id === organizationId);
