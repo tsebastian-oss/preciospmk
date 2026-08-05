@@ -42,6 +42,9 @@ export type EnterpriseAccessContext = {
   modules: string[];
   limits: Record<string, number>;
   settings: Record<string, unknown> | null;
+  industrySlug: string | null;
+  industryName: string | null;
+  industryConfigured: boolean;
   isSaasAdmin: boolean;
 };
 
