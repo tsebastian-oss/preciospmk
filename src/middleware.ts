@@ -12,6 +12,7 @@ const PRIVATE_API_PREFIXES = [
   "/api/brand-intelligence",
   "/api/price-movements",
   "/api/admin",
+  "/api/enterprise",
 ];
 
 type SessionState = {
@@ -20,10 +21,6 @@ type SessionState = {
   refreshToken?: string;
   expiresIn?: number;
 };
-
-function isPublic(pathname: string) {
-  return PUBLIC_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
-}
 
 function isPrivateApi(pathname: string) {
   return PRIVATE_API_PREFIXES.some((path) => pathname === path || pathname.startsWith(`${path}/`));
@@ -80,33 +77,42 @@ async function sessionState(request: NextRequest): Promise<SessionState> {
   }
 }
 
+function applyHeaders(response: NextResponse) {
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  return response;
+}
+
 function applySessionCookies(response: NextResponse, session: SessionState) {
-  if (!session.accessToken) return response;
-  const secure = process.env.NODE_ENV === "production";
-  response.cookies.set("mgp_access_token", session.accessToken, {
-    httpOnly: true,
-    secure,
-    sameSite: "lax",
-    path: "/",
-    maxAge: Math.max(60, session.expiresIn ?? 3600),
-  });
-  if (session.refreshToken) {
-    response.cookies.set("mgp_refresh_token", session.refreshToken, {
+  if (session.accessToken) {
+    const secure = process.env.NODE_ENV === "production";
+    response.cookies.set("mgp_access_token", session.accessToken, {
       httpOnly: true,
       secure,
       sameSite: "lax",
       path: "/",
-      maxAge: 60 * 60 * 24 * 30,
+      maxAge: Math.max(60, session.expiresIn ?? 3600),
     });
+    if (session.refreshToken) {
+      response.cookies.set("mgp_refresh_token", session.refreshToken, {
+        httpOnly: true,
+        secure,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 60 * 60 * 24 * 30,
+      });
+    }
   }
-  return response;
+  return applyHeaders(response);
 }
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (pathname.startsWith("/_next/") || pathname === "/favicon.ico" || pathname.match(/\.(?:png|jpg|jpeg|svg|webp|ico)$/)) {
-    return NextResponse.next();
+    return applyHeaders(NextResponse.next());
   }
 
   const session = await sessionState(request);
@@ -115,7 +121,7 @@ export async function middleware(request: NextRequest) {
     if (session.authenticated) return applySessionCookies(NextResponse.next(), session);
     const landingUrl = request.nextUrl.clone();
     landingUrl.pathname = "/landing";
-    return NextResponse.rewrite(landingUrl);
+    return applyHeaders(NextResponse.rewrite(landingUrl));
   }
 
   if (pathname === "/login" && session.authenticated) {
@@ -125,13 +131,13 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isPrivateApi(pathname) && !session.authenticated) {
-    return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    return applyHeaders(NextResponse.json({ error: "No autorizado" }, { status: 401 }));
   }
 
-  if ((pathname.startsWith("/dashboard") || pathname.startsWith("/competitive-analysis") || pathname.startsWith("/admin")) && !session.authenticated) {
+  if ((pathname.startsWith("/dashboard") || pathname.startsWith("/competitive-analysis") || pathname.startsWith("/admin") || pathname.startsWith("/enterprise")) && !session.authenticated) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
-    return NextResponse.redirect(loginUrl);
+    return applyHeaders(NextResponse.redirect(loginUrl));
   }
 
   return applySessionCookies(NextResponse.next(), session);

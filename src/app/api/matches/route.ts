@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { enterpriseAccess } from "@/lib/enterprise-auth";
 import { supabaseRestWithCount } from "@/lib/supabase";
 
 const SORTS: Record<string, string> = {
@@ -19,7 +20,16 @@ function safeSearch(value: string) {
   return value.replace(/[,*()]/g, " ").replace(/\s+/g, " ").trim().slice(0, 100);
 }
 
+function inFilter(values: string[]) {
+  const clean = values.map((item) => item.replace(/["(),]/g, " ").replace(/\s+/g, " ").trim()).filter(Boolean);
+  return `in.(${clean.map((item) => `"${item}"`).join(",")})`;
+}
+
 export async function GET(request: NextRequest) {
+  const authorization = await enterpriseAccess(request, "pricing");
+  if (authorization.response) return authorization.response;
+  const access = authorization.access!;
+
   const params = request.nextUrl.searchParams;
   const page = integer(params.get("page"), 1, 1, 10_000);
   const pageSize = integer(params.get("pageSize"), 20, 10, 50);
@@ -34,21 +44,21 @@ export async function GET(request: NextRequest) {
     offset: String((page - 1) * pageSize),
   };
 
-  if (q) {
-    query.or = `(canonical_name.ilike.*${q}*,canonical_brand.ilike.*${q}*,category.ilike.*${q}*)`;
-  }
+  if (q) query.or = `(canonical_name.ilike.*${q}*,canonical_brand.ilike.*${q}*,category.ilike.*${q}*)`;
   if (minSavings > 0) query.savings_pct = `gte.${minSavings}`;
+  if (!access.isSaasAdmin && access.brands.length > 0) query.canonical_brand = inFilter(access.brands);
+  if (!access.isSaasAdmin && access.categories.length > 0) query.category = inFilter(access.categories);
 
   try {
     const result = await supabaseRestWithCount<unknown[]>("product_match_summary", { query });
     const total = result.count ?? result.data.length;
-
     return NextResponse.json({
       matches: result.data,
       page,
       pageSize,
       total,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      organizationId: access.organizationId,
     });
   } catch (error) {
     return NextResponse.json(
