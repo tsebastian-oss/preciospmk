@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
+import { enterpriseAccess, type EnterpriseAccessContext } from "@/lib/enterprise-auth";
 import { supabaseRest } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
 const PRODUCT_SELECT = "id,supermarket,external_id,name,brand,category,url,image_url,regular_price,offer_price,unit,unit_price,in_stock,observed_at,savings,discount_pct";
-const RETAILERS = ["Lider", "Jumbo", "Santa Isabel"] as const;
+const DEFAULT_RETAILERS = ["Lider", "Jumbo", "Santa Isabel"];
 
 type Product = {
   id: string;
@@ -47,6 +48,11 @@ function safeSearch(input: string) {
   return input.replace(/[,*()]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
 }
 
+function inFilter(values: string[]) {
+  const clean = values.map((item) => item.replace(/["(),]/g, " ").replace(/\s+/g, " ").trim()).filter(Boolean);
+  return `in.(${clean.map((item) => `"${item}"`).join(",")})`;
+}
+
 function price(product: Product) {
   const offer = Number(product.offer_price ?? 0);
   const regular = Number(product.regular_price ?? 0);
@@ -82,43 +88,81 @@ function topEntries(map: Map<string, number>, limit: number) {
     .map(([name, products]) => ({ name, products }));
 }
 
-async function searchProducts(term: string) {
+function selectedAllowedBrand(term: string, access: EnterpriseAccessContext) {
+  if (access.isSaasAdmin || access.brands.length === 0) return term;
+  const normalizedTerm = normalize(term);
+  return access.brands.find((brand) => {
+    const normalizedBrand = normalize(brand);
+    return normalizedBrand === normalizedTerm
+      || normalizedBrand.includes(normalizedTerm)
+      || normalizedTerm.includes(normalizedBrand);
+  }) ?? null;
+}
+
+function scopedQuery(
+  query: Record<string, string>,
+  access: EnterpriseAccessContext,
+  includeBrandScope: boolean,
+) {
+  if (!access.isSaasAdmin && access.retailers.length > 0) query.supermarket = inFilter(access.retailers);
+  if (!access.isSaasAdmin && access.categories.length > 0) query.category = inFilter(access.categories);
+  if (!access.isSaasAdmin && includeBrandScope && access.brands.length > 0) query.brand = inFilter(access.brands);
+  return query;
+}
+
+async function searchProducts(term: string, access: EnterpriseAccessContext) {
   return supabaseRest<Product[]>("dashboard_products", {
-    query: {
+    query: scopedQuery({
       select: PRODUCT_SELECT,
       or: `(brand.ilike.*${term}*,name.ilike.*${term}*)`,
       order: "in_stock.desc,observed_at.desc",
       limit: "1000",
-    },
+    }, access, true),
   });
 }
 
-async function categoryPool(category: string | null) {
+async function categoryPool(category: string | null, selectedBrand: string, access: EnterpriseAccessContext) {
   const token = safeSearch(categoryToken(category));
   if (!token) return [] as Product[];
-  return supabaseRest<Product[]>("dashboard_products", {
-    query: {
-      select: PRODUCT_SELECT,
-      category: `ilike.*${token}*`,
-      order: "in_stock.desc,observed_at.desc",
-      limit: "2000",
-    },
-  });
+  const query: Record<string, string> = {
+    select: PRODUCT_SELECT,
+    category: `ilike.*${token}*`,
+    order: "in_stock.desc,observed_at.desc",
+    limit: "2000",
+  };
+  if (!access.isSaasAdmin && access.retailers.length > 0) query.supermarket = inFilter(access.retailers);
+  if (!access.isSaasAdmin && access.competitors.length > 0) {
+    query.brand = inFilter([...new Set([selectedBrand, ...access.competitors])]);
+  }
+  return supabaseRest<Product[]>("dashboard_products", { query });
 }
 
 export async function GET(request: NextRequest) {
-  const term = safeSearch(request.nextUrl.searchParams.get("q") ?? "");
-  if (term.length < 2) {
+  const authorization = await enterpriseAccess(request, "brand-overview");
+  if (authorization.response) return authorization.response;
+  const access = authorization.access!;
+
+  const requestedTerm = safeSearch(request.nextUrl.searchParams.get("q") ?? "");
+  if (requestedTerm.length < 2) {
     return NextResponse.json({ error: "Ingresa al menos dos caracteres para buscar una marca." }, { status: 400 });
   }
+  if (access.organizationType === "brand" && access.brands.length === 0 && !access.isSaasAdmin) {
+    return NextResponse.json({ error: "El administrador debe configurar al menos una marca para esta organización." }, { status: 403 });
+  }
+  const allowedBrand = selectedAllowedBrand(requestedTerm, access);
+  if (!allowedBrand) {
+    return NextResponse.json({ error: "La marca solicitada no pertenece al alcance contratado." }, { status: 403 });
+  }
+  const term = safeSearch(allowedBrand);
+  const retailers = access.retailers.length > 0 ? access.retailers : DEFAULT_RETAILERS;
 
   try {
-    const searchResults = await searchProducts(term);
+    const searchResults = await searchProducts(term, access);
     if (!searchResults.length) {
       return NextResponse.json({
         selectedBrand: null,
-        suggestions: [],
-        error: "No encontramos una marca o producto asociado a esa búsqueda.",
+        suggestions: access.brands.map((brand) => ({ brand, products: 0 })),
+        error: "No encontramos una marca o producto asociado a esa búsqueda dentro del alcance contratado.",
       }, { status: 404 });
     }
 
@@ -147,7 +191,7 @@ export async function GET(request: NextRequest) {
       categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + 1);
     }
     const primaryCategory = [...categoryCounts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] ?? null;
-    const marketPool = await categoryPool(primaryCategory);
+    const marketPool = await categoryPool(primaryCategory, selectedBrand, access);
 
     const brandPrices = usableProducts.map(price).filter((item) => item > 0);
     const marketPrices = marketPool.map(price).filter((item) => item > 0);
@@ -159,7 +203,7 @@ export async function GET(request: NextRequest) {
     const imageCoverage = usableProducts.filter((item) => Boolean(item.image_url)).length;
     const strongTitles = usableProducts.filter((item) => item.name.trim().length >= 20).length;
 
-    const retailerScorecards = RETAILERS.map((retailer) => {
+    const retailerScorecards = retailers.map((retailer) => {
       const rows = usableProducts.filter((item) => item.supermarket === retailer);
       const prices = rows.map(price).filter((item) => item > 0);
       const averagePrice = average(prices);
@@ -170,7 +214,7 @@ export async function GET(request: NextRequest) {
       const availabilityPct = pct(available, rows.length);
       const imageCoveragePct = pct(images, rows.length);
       const titleQualityPct = pct(titleQuality, rows.length);
-      const distributionScore = Math.min(100, pct(rows.length, Math.max(1, totalProducts / RETAILERS.length)));
+      const distributionScore = Math.min(100, pct(rows.length, Math.max(1, totalProducts / retailers.length)));
       const digitalShelfScore = Math.round(
         availabilityPct * 0.4 + imageCoveragePct * 0.2 + titleQualityPct * 0.15 + distributionScore * 0.25,
       );
@@ -194,16 +238,16 @@ export async function GET(request: NextRequest) {
     for (const product of usableProducts) {
       const key = canonicalProductKey(product);
       if (!key) continue;
-      const retailers = canonical.get(key) ?? new Set<string>();
-      retailers.add(product.supermarket);
-      canonical.set(key, retailers);
+      const productRetailers = canonical.get(key) ?? new Set<string>();
+      productRetailers.add(product.supermarket);
+      canonical.set(key, productRetailers);
     }
     const coverageGaps = [...canonical.entries()]
-      .filter(([, retailers]) => retailers.size < RETAILERS.length)
-      .map(([productKey, retailers]) => ({
+      .filter(([, productRetailers]) => productRetailers.size < retailers.length)
+      .map(([productKey, productRetailers]) => ({
         productKey,
-        presentIn: [...retailers],
-        missingIn: RETAILERS.filter((retailer) => !retailers.has(retailer)),
+        presentIn: [...productRetailers],
+        missingIn: retailers.filter((retailer) => !productRetailers.has(retailer)),
       }))
       .sort((left, right) => right.missingIn.length - left.missingIn.length)
       .slice(0, 20);
@@ -253,15 +297,15 @@ export async function GET(request: NextRequest) {
     const titleQualityPct = pct(strongTitles, totalProducts);
     const priceIndex = categoryAveragePrice > 0 ? brandAveragePrice / categoryAveragePrice * 100 : 0;
     const digitalShelfScore = Math.round(
-      availabilityPct * 0.35 + imageCoveragePct * 0.2 + titleQualityPct * 0.15 + pct(retailerPresence, RETAILERS.length) * 0.3,
+      availabilityPct * 0.35 + imageCoveragePct * 0.2 + titleQualityPct * 0.15 + pct(retailerPresence, retailers.length) * 0.3,
     );
 
     const opportunities: string[] = [];
     const risks: string[] = [];
-    const weakestRetailer = retailerScorecards
+    const weakestRetailer = [...retailerScorecards]
       .filter((item) => item.listings > 0)
       .sort((left, right) => left.availabilityPct - right.availabilityPct)[0];
-    const lowestCoverageRetailer = retailerScorecards.sort((left, right) => left.listings - right.listings)[0];
+    const lowestCoverageRetailer = [...retailerScorecards].sort((left, right) => left.listings - right.listings)[0];
 
     if (weakestRetailer && weakestRetailer.availabilityPct < 80) {
       opportunities.push(`Recuperar disponibilidad en ${weakestRetailer.retailer}: hoy está en ${weakestRetailer.availabilityPct.toFixed(0)}%.`);
@@ -269,9 +313,7 @@ export async function GET(request: NextRequest) {
     if (lowestCoverageRetailer && lowestCoverageRetailer.listings < totalProducts / Math.max(1, retailerPresence) * 0.65) {
       opportunities.push(`Revisar distribución en ${lowestCoverageRetailer.retailer}: su cobertura es sensiblemente menor al resto.`);
     }
-    if (imageCoveragePct < 90) {
-      opportunities.push(`Completar imágenes de producto: la cobertura visual actual es ${imageCoveragePct.toFixed(0)}%.`);
-    }
+    if (imageCoveragePct < 90) opportunities.push(`Completar imágenes de producto: la cobertura visual actual es ${imageCoveragePct.toFixed(0)}%.`);
     if (promotionPct < 10 && competitors.some((item) => item.promotionPct >= 15)) {
       opportunities.push("La marca está menos activa promocionalmente que competidores relevantes de la categoría.");
     }
@@ -310,6 +352,7 @@ export async function GET(request: NextRequest) {
       recentProducts,
       opportunities: opportunities.slice(0, 5),
       risks: risks.slice(0, 5),
+      organizationId: access.organizationId,
       generatedAt: new Date().toISOString(),
     });
   } catch (error) {
