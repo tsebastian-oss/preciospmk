@@ -1,4 +1,5 @@
 import "./globals.css";
+import DailyPricingChartPortal from "./DailyPricingChartPortal";
 import EnterpriseAdminQuickLinks from "./EnterpriseAdminQuickLinks";
 import EnterpriseAlertCenter from "./EnterpriseAlertCenter";
 import EnterpriseReportCenter from "./EnterpriseReportCenter";
@@ -13,5 +14,5 @@ export const metadata = {
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="es-CL"><body>{children}<EnterpriseSidebarLink /><EnterpriseAdminQuickLinks /><EnterpriseAlertCenter /><EnterpriseReportCenter /><EnterpriseReportFormatGuard /></body></html>;
+  return <html lang="es-CL"><body>{children}<EnterpriseSidebarLink /><EnterpriseAdminQuickLinks /><EnterpriseAlertCenter /><EnterpriseReportCenter /><EnterpriseReportFormatGuard /><DailyPricingChartPortal /></body></html>;
 }
