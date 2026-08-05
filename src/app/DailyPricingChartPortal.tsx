@@ -21,7 +21,14 @@ type TrendPayload = {
   firstDate: string | null;
   lastDate: string | null;
   refreshedAt: string | null;
+  latestObservationAt: string | null;
   partialDay: boolean;
+  live: boolean;
+  pollingSeconds: number;
+  historicalDaysFrozen: boolean;
+  currentDayObservations: number;
+  previousDayObservations: number;
+  currentDayCoveragePct: number | null;
   trimLowerPct: number;
   trimUpperPct: number;
   minimumPresencePct: number;
@@ -52,6 +59,7 @@ const money = new Intl.NumberFormat("es-CL", {
 });
 const compact = new Intl.NumberFormat("es-CL", { notation: "compact", maximumFractionDigits: 1 });
 const count = new Intl.NumberFormat("es-CL");
+const DEFAULT_POLLING_SECONDS = 20;
 
 function numeric(value: number | null | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
@@ -66,6 +74,15 @@ function shortDate(value: string) {
 function longDate(value: string) {
   return new Intl.DateTimeFormat("es-CL", { weekday: "short", day: "numeric", month: "long" })
     .format(new Date(`${value}T12:00:00`));
+}
+
+function timeLabel(value: string | null | undefined) {
+  if (!value) return "esperando datos";
+  return new Intl.DateTimeFormat("es-CL", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(value));
 }
 
 function changeLabel(current: number | null, previous: number | null) {
@@ -91,7 +108,9 @@ export default function DailyPricingChartPortal() {
   const [days, setDays] = useState(30);
   const [payload, setPayload] = useState<TrendPayload | null>(null);
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
+  const [syncWarning, setSyncWarning] = useState("");
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
 
   useEffect(() => {
@@ -117,24 +136,62 @@ export default function DailyPricingChartPortal() {
 
   useEffect(() => {
     if (!target) return;
-    const controller = new AbortController();
-    setLoading(true);
-    setError("");
-    fetch(`/api/daily-pricing-trend?days=${days}`, { cache: "no-store", signal: controller.signal })
-      .then(async (response) => {
+
+    let disposed = false;
+    let inFlight = false;
+    let controller: AbortController | null = null;
+
+    const loadTrend = async (initial: boolean) => {
+      if (inFlight || disposed) return;
+      inFlight = true;
+      controller?.abort();
+      controller = new AbortController();
+      if (initial) setLoading(true);
+      else setSyncing(true);
+
+      try {
+        const response = await fetch(`/api/daily-pricing-trend?days=${days}&live=${Date.now()}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
         const data = await response.json() as TrendPayload;
         if (!response.ok) throw new Error(data.error ?? "No fue posible cargar la tendencia de pricing");
+        if (disposed) return;
         setPayload(data);
-        setHoverIndex(null);
-      })
-      .catch((reason) => {
+        setError("");
+        setSyncWarning("");
+        if (initial) setHoverIndex(null);
+      } catch (reason) {
         if (reason instanceof DOMException && reason.name === "AbortError") return;
-        setError(reason instanceof Error ? reason.message : "No fue posible cargar la tendencia de pricing");
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
+        if (disposed) return;
+        const message = reason instanceof Error ? reason.message : "No fue posible cargar la tendencia de pricing";
+        if (initial) setError(message);
+        else setSyncWarning("Sincronización temporalmente interrumpida");
+      } finally {
+        inFlight = false;
+        if (!disposed) {
+          setLoading(false);
+          setSyncing(false);
+        }
+      }
+    };
+
+    void loadTrend(true);
+    const pollingSeconds = payload?.pollingSeconds ?? DEFAULT_POLLING_SECONDS;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") void loadTrend(false);
+    }, Math.max(10, pollingSeconds) * 1000);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") void loadTrend(false);
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      disposed = true;
+      controller?.abort();
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
   }, [target, days]);
 
   const rows = payload?.data ?? [];
@@ -171,6 +228,7 @@ export default function DailyPricingChartPortal() {
 
   const activeIndex = rows.length ? Math.min(hoverIndex ?? rows.length - 1, rows.length - 1) : 0;
   const activeRow = rows[activeIndex];
+  const pollingSeconds = payload?.pollingSeconds ?? DEFAULT_POLLING_SECONDS;
 
   function selectPoint(event: MouseEvent<SVGRectElement>) {
     if (rows.length <= 1) return;
@@ -186,17 +244,24 @@ export default function DailyPricingChartPortal() {
         <div>
           <div className={styles.eyebrowRow}>
             <span>DAILY PRICING TREND</span>
+            <b className={styles.liveBadge}><i />EN VIVO</b>
             {payload?.partialDay && <b>HOY EN CURSO</b>}
           </div>
           <h2>Evolución diaria de precios por categoría</h2>
-          <p>Precio promedio robusto de una canasta estable de SKU, consolidado entre las cadenas monitoreadas.</p>
+          <p>El día actual se recalcula con cada nueva captura. Las fechas cerradas permanecen fijas como histórico.</p>
         </div>
-        <div className={styles.rangeControl} aria-label="Rango del gráfico">
-          {[30, 60, 90].map((period) => <button key={period} className={days === period ? styles.rangeActive : ""} onClick={() => setDays(period)}>{period}D</button>)}
+        <div className={styles.headerControls}>
+          <div className={styles.liveMeta}>
+            <i className={syncing ? styles.syncing : ""} />
+            <div><strong>{syncWarning || "Actualización automática"}</strong><small>Último dato {timeLabel(payload?.latestObservationAt ?? payload?.refreshedAt)} · cada {pollingSeconds}s</small></div>
+          </div>
+          <div className={styles.rangeControl} aria-label="Rango del gráfico">
+            {[30, 60, 90].map((period) => <button key={period} className={days === period ? styles.rangeActive : ""} onClick={() => setDays(period)}>{period}D</button>)}
+          </div>
         </div>
       </header>
 
-      {loading && !payload ? <div className={styles.loading}><i /><span>Construyendo serie diaria…</span></div> : error ? <div className={styles.error}>{error}</div> : !rows.length ? <div className={styles.empty}>Todavía no existen tomas suficientes para construir la serie diaria.</div> : <>
+      {loading && !payload ? <div className={styles.loading}><i /><span>Construyendo serie diaria…</span></div> : error && !payload ? <div className={styles.error}>{error}</div> : !rows.length ? <div className={styles.empty}>Todavía no existen tomas suficientes para construir la serie diaria.</div> : <>
         <div className={styles.seriesCards}>
           {SERIES.map((series) => {
             const latest = numeric(rows.at(-1)?.[series.key]);
@@ -211,7 +276,7 @@ export default function DailyPricingChartPortal() {
         </div>
 
         <div className={styles.activeSnapshot}>
-          <strong>{activeRow ? longDate(activeRow.date) : "—"}</strong>
+          <strong>{activeRow ? longDate(activeRow.date) : "—"}{activeIndex === rows.length - 1 && payload?.partialDay ? " · en vivo" : ""}</strong>
           <div>{SERIES.map((series) => {
             const price = numeric(activeRow?.[series.key]);
             const skus = numeric(activeRow?.[series.skuKey]);
@@ -220,7 +285,7 @@ export default function DailyPricingChartPortal() {
         </div>
 
         <div className={styles.chartWrap}>
-          <svg viewBox={`0 0 ${chart.width} ${chart.height}`} role="img" aria-label="Gráfico de evolución diaria de precios promedio para bebidas no alcohólicas, abarrotes y bebidas alcohólicas">
+          <svg viewBox={`0 0 ${chart.width} ${chart.height}`} role="img" aria-label="Gráfico en vivo de evolución diaria de precios promedio para bebidas no alcohólicas, abarrotes y bebidas alcohólicas">
             <defs>
               <filter id="pricingGlow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="3" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
             </defs>
@@ -243,8 +308,8 @@ export default function DailyPricingChartPortal() {
         </div>
 
         <footer className={styles.footer}>
-          <div><span>Metodología</span><strong>Promedio recortado 5%–95%</strong><small>Solo SKU presentes en al menos {payload?.minimumPresencePct ?? 60}% de las tomas del período.</small></div>
-          <div><span>Histórico disponible</span><strong>{payload?.availableDays ?? rows.length} días</strong><small>{(payload?.availableDays ?? 0) < 7 ? "La serie ganará profundidad con cada nueva captura diaria." : `Ventana solicitada: ${days} días.`}</small></div>
+          <div><span>Metodología</span><strong>Promedio recortado 5%–95%</strong><small>Cada fecha usa su captura diaria consolidada; una vez cerrado el día, ese punto no vuelve a modificarse.</small></div>
+          <div><span>Feed en vivo</span><strong>{count.format(payload?.currentDayObservations ?? 0)} SKU hoy</strong><small>El punto de hoy incorpora nuevas tomas automáticamente cada {pollingSeconds} segundos.</small></div>
         </footer>
       </>}
     </article>,
