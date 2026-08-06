@@ -3,11 +3,11 @@ import { enterpriseAccess } from "@/lib/enterprise-auth";
 import { supabaseRestWithCount } from "@/lib/supabase";
 
 const SORTS: Record<string, string> = {
-  gap_desc: "price_gap.desc,canonical_name.asc",
-  savings_desc: "savings_pct.desc,price_gap.desc",
-  price_asc: "best_price.asc,canonical_name.asc",
-  updated_desc: "last_updated.desc,canonical_name.asc",
-  name_asc: "canonical_name.asc",
+  gap_desc: "supermarkets.desc,price_gap.desc,canonical_name.asc",
+  savings_desc: "supermarkets.desc,savings_pct.desc,price_gap.desc",
+  price_asc: "supermarkets.desc,best_price.asc,canonical_name.asc",
+  updated_desc: "supermarkets.desc,last_updated.desc,canonical_name.asc",
+  name_asc: "supermarkets.desc,canonical_name.asc",
 };
 
 function integer(value: string | null, fallback: number, min: number, max: number) {
@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
   const pageSize = integer(params.get("pageSize"), 20, 10, 50);
   const q = safeSearch(params.get("q") ?? "");
   const minSavings = integer(params.get("minSavings"), 0, 0, 100);
+  const coverage = params.get("coverage") === "partial" ? "partial" : "full";
   const sort = SORTS[params.get("sort") ?? ""] ?? SORTS.gap_desc;
 
   const query: Record<string, string> = {
@@ -42,6 +43,7 @@ export async function GET(request: NextRequest) {
     order: sort,
     limit: String(pageSize),
     offset: String((page - 1) * pageSize),
+    supermarkets: coverage === "full" ? "eq.3" : "gte.2",
   };
 
   if (q) query.or = `(canonical_name.ilike.*${q}*,canonical_brand.ilike.*${q}*,category.ilike.*${q}*)`;
@@ -58,6 +60,8 @@ export async function GET(request: NextRequest) {
       pageSize,
       total,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      coverage,
+      requiredChains: coverage === "full" ? ["Lider", "Jumbo", "Santa Isabel"] : [],
       organizationId: access.organizationId,
     });
   } catch (error) {
