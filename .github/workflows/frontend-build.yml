@@ -3,7 +3,6 @@ name: Frontend Build
 on:
   push:
     branches:
-      - agent/unified-frontend-v4
       - main
   pull_request:
     branches:
