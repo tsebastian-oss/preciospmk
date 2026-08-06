@@ -8,6 +8,8 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const PRODUCT_FILTER_CHUNK = 75;
 
 type ExportJob = {
   id: string;
@@ -20,6 +22,7 @@ type ExportJob = {
 type Scope = { retailers: string[]; brands: string[]; categories: string[] };
 type Settings = { industry_slug: string | null };
 type HistoricalPrice = {
+  product_id: string;
   price_date: string;
   observed_at: string;
   supermarket: string;
@@ -47,6 +50,11 @@ function response(body: unknown, status = 200) {
 function text(parameters: Record<string, unknown>, key: string) {
   const value = parameters[key];
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+function uuidArray(parameters: Record<string, unknown>, key: string) {
+  const value = parameters[key];
+  if (!Array.isArray(value)) return [] as string[];
+  return [...new Set(value.filter((item): item is string => typeof item === "string" && UUID_PATTERN.test(item)))].slice(0, 500);
 }
 function numberValue(value: unknown) {
   const parsed = Number(value ?? 0);
@@ -76,6 +84,11 @@ function workbook(metadata: Record<string, unknown>[], rows: Record<string, unkn
     sheet["!cols"] = Array.from({ length: range.e.c + 1 }, (_, index) => ({ wch: index < 5 ? 22 : 18 }));
   }
   return new Uint8Array(XLSX.write(book, { type: "array", bookType: "xlsx", compression: true }) as ArrayBuffer);
+}
+function chunks<T>(items: T[], size: number) {
+  const result: T[][] = [];
+  for (let index = 0; index < items.length; index += size) result.push(items.slice(index, index + size));
+  return result;
 }
 
 Deno.serve(async (request: Request) => {
@@ -109,9 +122,12 @@ Deno.serve(async (request: Request) => {
   const startDate = text(job.parameters, "startDate");
   const endDate = text(job.parameters, "endDate");
   const selectedRetailer = text(job.parameters, "supermarket");
+  const selectedCategory = text(job.parameters, "category");
+  const selectedProductIds = uuidArray(job.parameters, "productIds");
   if (!startDate || !endDate || !DATE_PATTERN.test(startDate) || !DATE_PATTERN.test(endDate) || startDate > endDate) {
     return response({ error: "invalid_export_period" }, 400);
   }
+  if (selectedProductIds.length && !selectedCategory) return response({ error: "category_required_for_product_filter" }, 400);
 
   const service = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
   await service.from("report_jobs").update({ status: "processing", started_at: new Date().toISOString(), error_message: null }).eq("id", job.id);
@@ -131,30 +147,57 @@ Deno.serve(async (request: Request) => {
     if (selectedRetailer && allowed.retailers?.length && !allowed.retailers.some((item) => item.toLowerCase() === selectedRetailer.toLowerCase())) {
       throw new Error("retailer_not_allowed");
     }
+    if (selectedCategory && allowed.categories?.length && !allowed.categories.some((item) => item.toLowerCase() === selectedCategory.toLowerCase())) {
+      throw new Error("category_not_allowed");
+    }
 
     const maxRows = job.format === "xlsx" ? 50_000 : 150_000;
     const sourceRows: HistoricalPrice[] = [];
     const pageSize = 1000;
-    let lastBatchSize = 0;
-    for (let offset = 0; offset < maxRows; offset += pageSize) {
-      let query = service.from("enterprise_price_export_rows")
-        .select("price_date,observed_at,supermarket,retailer_type,industry_slug,external_id,name,brand,category,url,regular_price,offer_price,effective_price,unit,unit_price,in_stock")
-        .gte("price_date", startDate).lte("price_date", endDate)
-        .order("price_date", { ascending: false }).order("supermarket", { ascending: true }).order("external_id", { ascending: true })
-        .range(offset, Math.min(offset + pageSize - 1, maxRows - 1));
-      if (selectedRetailer) query = query.eq("supermarket", selectedRetailer);
-      else if (allowed.retailers?.length) query = query.in("supermarket", allowed.retailers);
-      if (allowed.brands?.length) query = query.in("brand", allowed.brands);
-      if (allowed.categories?.length) query = query.in("category", allowed.categories);
-      if (industry === "grocery") query = query.eq("retailer_type", "supermarket");
-      else if (industry && industry !== "all") query = query.eq("industry_slug", industry);
-      const { data, error } = await query;
-      if (error) throw new Error(error.message);
-      const batch = (data ?? []) as HistoricalPrice[];
-      sourceRows.push(...batch);
-      lastBatchSize = batch.length;
-      if (batch.length < pageSize) break;
+
+    async function fetchRows(productIds: string[] | null, remaining: number) {
+      let fetched = 0;
+      for (let offset = 0; offset < remaining; offset += pageSize) {
+        const batchLimit = Math.min(pageSize, remaining - offset);
+        let query = service.from("enterprise_price_export_rows")
+          .select("product_id,price_date,observed_at,supermarket,retailer_type,industry_slug,external_id,name,brand,category,url,regular_price,offer_price,effective_price,unit,unit_price,in_stock")
+          .gte("price_date", startDate).lte("price_date", endDate)
+          .order("price_date", { ascending: false }).order("supermarket", { ascending: true }).order("external_id", { ascending: true })
+          .range(offset, offset + batchLimit - 1);
+        if (selectedRetailer) query = query.eq("supermarket", selectedRetailer);
+        else if (allowed.retailers?.length) query = query.in("supermarket", allowed.retailers);
+        if (allowed.brands?.length) query = query.in("brand", allowed.brands);
+        if (allowed.categories?.length) query = query.in("category", allowed.categories);
+        if (selectedCategory) query = query.eq("category", selectedCategory);
+        if (productIds?.length) query = query.in("product_id", productIds);
+        if (industry === "grocery") query = query.eq("retailer_type", "supermarket");
+        else if (industry && industry !== "all") query = query.eq("industry_slug", industry);
+        const { data, error } = await query;
+        if (error) throw new Error(error.message);
+        const batch = (data ?? []) as HistoricalPrice[];
+        sourceRows.push(...batch);
+        fetched += batch.length;
+        if (batch.length < batchLimit || sourceRows.length >= maxRows) break;
+      }
+      return fetched;
     }
+
+    if (selectedProductIds.length) {
+      for (const productChunk of chunks(selectedProductIds, PRODUCT_FILTER_CHUNK)) {
+        if (sourceRows.length >= maxRows) break;
+        await fetchRows(productChunk, maxRows - sourceRows.length);
+      }
+    } else {
+      await fetchRows(null, maxRows);
+    }
+
+    sourceRows.sort((left, right) => {
+      const date = right.price_date.localeCompare(left.price_date);
+      if (date) return date;
+      const retailer = left.supermarket.localeCompare(right.supermarket, "es");
+      if (retailer) return retailer;
+      return left.external_id.localeCompare(right.external_id, "es");
+    });
 
     const rows = sourceRows.map((item) => ({
       Fecha: item.price_date,
@@ -173,14 +216,16 @@ Deno.serve(async (request: Request) => {
       Observado: item.observed_at,
       Fuente: item.url,
     }));
-    const uniqueProducts = new Set(sourceRows.map((item) => `${item.supermarket}:${item.external_id}`)).size;
-    const truncated = sourceRows.length >= maxRows && lastBatchSize === pageSize;
+    const uniqueProducts = new Set(sourceRows.map((item) => item.product_id)).size;
+    const truncated = sourceRows.length >= maxRows;
     const metadata = [
       { Indicador: "Organización", Valor: organization.name },
       { Indicador: "Industria", Valor: industry ?? "Sin configurar" },
       { Indicador: "Desde", Valor: startDate },
       { Indicador: "Hasta", Valor: endDate },
       { Indicador: "Cadena", Valor: selectedRetailer ?? "Todas las autorizadas" },
+      { Indicador: "Categoría inteligente", Valor: selectedCategory ?? "Todas las categorías" },
+      { Indicador: "Filtro de productos", Valor: selectedProductIds.length ? `${selectedProductIds.length} SKU seleccionados` : "Todos los productos de la categoría" },
       { Indicador: "Observaciones exportadas", Valor: rows.length },
       { Indicador: "SKU únicos", Valor: uniqueProducts },
       { Indicador: "Archivo truncado", Valor: truncated ? "Sí" : "No" },
@@ -199,7 +244,7 @@ Deno.serve(async (request: Request) => {
       extension = "csv";
     }
 
-    const label = `precios-${safePart(startDate)}-${safePart(endDate)}-${safePart(selectedRetailer ?? "todas")}-${safePart(industry ?? "industria")}`;
+    const label = `precios-${safePart(startDate)}-${safePart(endDate)}-${safePart(selectedRetailer ?? "todas")}-${safePart(selectedCategory ?? "categorias")}-${selectedProductIds.length ? `${selectedProductIds.length}-sku` : "todos"}`;
     const storagePath = `${job.organization_id}/${job.id}-${label}.${extension}`;
     const { error: uploadError } = await service.storage.from("enterprise-reports").upload(storagePath, bytes, { contentType: mime, upsert: true });
     if (uploadError) throw new Error(uploadError.message);
@@ -211,8 +256,20 @@ Deno.serve(async (request: Request) => {
       status: "completed",
       result_url: signed.signedUrl,
       result_metadata: {
-        storagePath, mime, bytes: bytes.byteLength, rows: rows.length, uniqueProducts, truncated, maxRows,
-        industrySlug: industry, startDate, endDate, supermarket: selectedRetailer,
+        storagePath,
+        mime,
+        bytes: bytes.byteLength,
+        rows: rows.length,
+        uniqueProducts,
+        truncated,
+        maxRows,
+        industrySlug: industry,
+        startDate,
+        endDate,
+        supermarket: selectedRetailer,
+        category: selectedCategory,
+        selectedProductCount: selectedProductIds.length,
+        intelligentFiltering: true,
         expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
       },
       completed_at: completedAt,
