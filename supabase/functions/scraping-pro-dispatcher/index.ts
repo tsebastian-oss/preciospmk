@@ -31,7 +31,6 @@ function json(body: unknown, status = 200) {
 async function invoke(target: Target): Promise<Result> {
   if (!SUPABASE_URL) throw new Error("SUPABASE_URL unavailable");
   const started = Date.now();
-
   try {
     const response = await fetch(`${SUPABASE_URL}/functions/v1/${target.slug}`, {
       method: "POST",
@@ -69,7 +68,6 @@ async function invoke(target: Target): Promise<Result> {
 async function runPool(targets: Target[]): Promise<Result[]> {
   const results: Result[] = [];
   let cursor = 0;
-
   async function worker() {
     while (true) {
       const index = cursor++;
@@ -77,27 +75,16 @@ async function runPool(targets: Target[]): Promise<Result[]> {
       results[index] = await invoke(targets[index]);
     }
   }
-
-  await Promise.all(
-    Array.from(
-      { length: Math.min(MAX_CONCURRENCY, targets.length) },
-      () => worker(),
-    ),
-  );
+  await Promise.all(Array.from({ length: Math.min(MAX_CONCURRENCY, targets.length) }, () => worker()));
   return results;
 }
 
 Deno.serve(async (request: Request) => {
-  if (request.method !== "POST") {
-    return json({ error: "method_not_allowed" }, 405);
-  }
+  if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   const body = await request.text();
-  if (body && body !== "{}") {
-    return json({ error: "request_body_not_accepted" }, 400);
-  }
+  if (body && body !== "{}") return json({ error: "request_body_not_accepted" }, 400);
 
-  const now = new Date();
-  const minute = now.getUTCMinutes();
+  const minute = new Date().getUTCMinutes();
   const targets: Target[] = [
     { slug: "catalog-crawl-worker", retailer: "Jumbo/Santa Isabel", timeoutMs: 55_000 },
     { slug: "catalog-crawl-worker", retailer: "Jumbo/Santa Isabel", timeoutMs: 55_000 },
@@ -109,36 +96,25 @@ Deno.serve(async (request: Request) => {
     { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
     { slug: "falabella-listing-worker", retailer: "Falabella", timeoutMs: 125_000 },
     { slug: "falabella-listing-worker", retailer: "Falabella", timeoutMs: 125_000 },
+    { slug: "pharmacy-crawl-worker", retailer: "Salcobrand/Cruz Verde/Ahumada", timeoutMs: 125_000 },
   ];
 
   if (minute % 3 === 0) {
-    targets.push({
-      slug: "lider-discovery-worker",
-      retailer: "Lider discovery",
-      timeoutMs: 55_000,
-    });
+    targets.push({ slug: "lider-discovery-worker", retailer: "Lider discovery", timeoutMs: 55_000 });
   }
   if (minute % 5 === 0) {
-    targets.push({
-      slug: "jumbo-price-refresh-worker",
-      retailer: "Jumbo price refresh",
-      timeoutMs: 55_000,
-    });
+    targets.push({ slug: "jumbo-price-refresh-worker", retailer: "Jumbo price refresh", timeoutMs: 55_000 });
   }
 
   const started = Date.now();
   const results = await runPool(targets);
   const failures = results.filter((item) => !item.ok);
-
-  return json(
-    {
-      ok: failures.length === 0,
-      dispatched: targets.length,
-      succeeded: results.length - failures.length,
-      failed: failures.length,
-      durationMs: Date.now() - started,
-      results,
-    },
-    failures.length === results.length ? 502 : 200,
-  );
+  return json({
+    ok: failures.length === 0,
+    dispatched: targets.length,
+    succeeded: results.length - failures.length,
+    failed: failures.length,
+    durationMs: Date.now() - started,
+    results,
+  }, failures.length === results.length ? 502 : 200);
 });
