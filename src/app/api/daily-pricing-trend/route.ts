@@ -5,15 +5,14 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 type DailyPricingPayload = {
-  data: Array<{
-    date: string;
-    nonAlcoholic: number | null;
-    grocery: number | null;
-    alcoholic: number | null;
-    nonAlcoholicSkus: number | null;
-    grocerySkus: number | null;
-    alcoholicSkus: number | null;
+  series: Array<{
+    id: string;
+    label: string;
+    dimension: "category" | "brand";
+    kind: "group" | "smart" | "brand";
+    points: Array<{ date: string; price: number | null; skus: number | null }>;
   }>;
+  selectedSeries: string[];
   daysRequested: number;
   availableDays: number;
   firstDate: string | null;
@@ -32,12 +31,21 @@ type DailyPricingPayload = {
   trimUpperPct: number;
   minimumPresencePct: number;
   currency: string;
+  maxSeries: number;
 };
 
 function clampDays(value: string | null) {
   const parsed = Number(value ?? 30);
   if (![30, 60, 90].includes(parsed)) return 30;
   return parsed;
+}
+
+function selectedSeries(request: NextRequest) {
+  return [...new Set(request.nextUrl.searchParams.getAll("series")
+    .flatMap((value) => value.split(","))
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0 && value.length <= 180 && /^(group|smart|brand):/.test(value)))]
+    .slice(0, 8);
 }
 
 function liveResponse(payload: DailyPricingPayload) {
@@ -55,14 +63,17 @@ export async function GET(request: NextRequest) {
   if (authorization.response) return authorization.response;
 
   const days = clampDays(request.nextUrl.searchParams.get("days"));
-  const result = await enterpriseRpc<DailyPricingPayload>(request, "enterprise_daily_pricing_trend", {
+  const series = selectedSeries(request);
+  const result = await enterpriseRpc<DailyPricingPayload>(request, "enterprise_daily_pricing_trend_v2", {
     p_organization_id: authorization.access?.organizationId,
     p_days: days,
+    p_series: series.length ? series : null,
   });
 
   if (result.response) return result.response;
   return liveResponse(result.data ?? {
-    data: [],
+    series: [],
+    selectedSeries: series,
     daysRequested: days,
     availableDays: 0,
     firstDate: null,
@@ -76,10 +87,11 @@ export async function GET(request: NextRequest) {
     currentDayObservations: 0,
     previousDayObservations: 0,
     currentDayCoveragePct: null,
-    method: "trimmed_mean_live_daily_basket",
+    method: "trimmed_mean_live_dynamic_series",
     trimLowerPct: 5,
     trimUpperPct: 95,
     minimumPresencePct: 0,
     currency: "CLP",
+    maxSeries: 8,
   });
 }
