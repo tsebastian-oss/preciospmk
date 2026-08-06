@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import DataExportSmartFilters from "./DataExportSmartFilters";
 import platformStyles from "./platform-dashboard.module.css";
 import styles from "./DataExportPortal.module.css";
 
@@ -16,6 +17,9 @@ type ExportJob = {
     startDate?: string;
     endDate?: string;
     supermarket?: string | null;
+    category?: string | null;
+    productIds?: string[];
+    selectedProductCount?: number;
   };
   result_url: string | null;
   result_metadata: {
@@ -98,6 +102,8 @@ export default function DataExportPortal() {
   const [startDate, setStartDate] = useState(offsetDate(-6));
   const [endDate, setEndDate] = useState(offsetDate(0));
   const [supermarket, setSupermarket] = useState("");
+  const [category, setCategory] = useState("");
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [format, setFormat] = useState<ExportFormat>("xlsx");
   const datesInitialized = useRef(false);
 
@@ -185,6 +191,12 @@ export default function DataExportPortal() {
     setEndDate(nextEnd);
   }
 
+  function changeSupermarket(value: string) {
+    setSupermarket(value);
+    setCategory("");
+    setSelectedProductIds([]);
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
     setGenerating(true);
@@ -193,7 +205,14 @@ export default function DataExportPortal() {
       const response = await fetch("/api/data-exports", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ startDate, endDate, supermarket: supermarket || null, format }),
+        body: JSON.stringify({
+          startDate,
+          endDate,
+          supermarket: supermarket || null,
+          category: category || null,
+          productIds: selectedProductIds,
+          format,
+        }),
       });
       const payload = await response.json() as CreatePayload;
       if (!response.ok || !payload.job) throw new Error(payload.error || payload.detail || "No fue posible generar el archivo");
@@ -219,7 +238,7 @@ export default function DataExportPortal() {
   const contentPortal = active && mainTarget ? createPortal(
     <section className={styles.workspaceRoot}>
       <header className={styles.hero}>
-        <div><span>DATA MANAGEMENT</span><h1>Descarga de bases</h1><p>Exporta el histórico de precios respetando las cadenas, marcas y categorías autorizadas para tu organización.</p></div>
+        <div><span>DATA MANAGEMENT</span><h1>Descarga de bases</h1><p>Exporta el histórico de precios respetando la industria, cadenas, marcas, categorías y productos autorizados para tu organización.</p></div>
         <div className={styles.coverage}><span>Histórico disponible</span><strong>{availability?.firstDate && availability.lastDate ? `${displayDate(availability.firstDate)} — ${displayDate(availability.lastDate)}` : "Cargando…"}</strong><small>{integer.format(availability?.observations ?? 0)} observaciones · {integer.format(availability?.products ?? 0)} productos</small></div>
       </header>
 
@@ -234,15 +253,23 @@ export default function DataExportPortal() {
           <div className={styles.fieldGrid}>
             <label><span>Desde</span><input type="date" value={startDate} min={availability?.firstDate ?? undefined} max={endDate} onChange={(event) => setStartDate(event.target.value)} required /></label>
             <label><span>Hasta</span><input type="date" value={endDate} min={startDate} max={availability?.lastDate ?? offsetDate(0)} onChange={(event) => setEndDate(event.target.value)} required /></label>
-            <label className={styles.full}><span>Cadena</span><select value={supermarket} onChange={(event) => setSupermarket(event.target.value)}><option value="">Todas las cadenas autorizadas</option>{retailerOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+            <label className={styles.full}><span>Cadena</span><select value={supermarket} onChange={(event) => changeSupermarket(event.target.value)}><option value="">Todas las cadenas autorizadas</option>{retailerOptions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
           </div>
+
+          <DataExportSmartFilters
+            supermarket={supermarket}
+            category={category}
+            selectedProductIds={selectedProductIds}
+            onCategoryChange={setCategory}
+            onSelectedProductIdsChange={setSelectedProductIds}
+          />
 
           <div className={styles.formatBlock}><span>Formato de salida</span><div className={styles.formats}>
             <button type="button" className={format === "xlsx" ? styles.selected : ""} onClick={() => setFormat("xlsx")}><b>XLSX</b><strong>Excel</strong><small>Ideal para análisis y tablas dinámicas</small></button>
             <button type="button" className={format === "csv" ? styles.selected : ""} onClick={() => setFormat("csv")}><b>CSV</b><strong>Base plana</strong><small>Recomendado para períodos extensos</small></button>
           </div></div>
 
-          <div className={styles.columns}><span>Columnas incluidas</span><p>Fecha, cadena, SKU, producto, marca, categoría, precio regular, precio oferta, precio efectivo, unidad, precio unitario, stock, observación y URL de origen.</p></div>
+          <div className={styles.columns}><span>Columnas incluidas</span><p>Fecha, cadena, industria, SKU, producto, marca, categoría, precio regular, precio oferta, precio efectivo, unidad, precio unitario, stock, observación y URL de origen.</p></div>
 
           <button className={styles.generate} disabled={generating || !startDate || !endDate}>{generating ? <><i /> Generando archivo…</> : <>↓ Generar y descargar</>}</button>
           <small className={styles.limit}>Los archivos se almacenan temporalmente durante siete días. Para volúmenes grandes, CSV ofrece mejor rendimiento.</small>
@@ -253,10 +280,12 @@ export default function DataExportPortal() {
           {loading ? <div className={styles.loading}><i />Cargando historial…</div> : !history.length ? <div className={styles.empty}>Todavía no existen archivos generados.</div> : <div className={styles.history}>{history.map((job) => {
             const expired = Boolean(job.result_metadata?.expiresAt && new Date(job.result_metadata.expiresAt).getTime() < Date.now());
             const downloadable = job.status === "completed" && job.result_url && !expired;
+            const selection = [job.parameters.supermarket || "Todas las cadenas", job.parameters.category].filter(Boolean).join(" · ");
             return <article key={job.id}>
               <div className={styles.jobTop}><b>{job.format.toUpperCase()}</b><span className={styles[job.status]}>{expired ? "Expirada" : statusLabel(job.status)}</span></div>
-              <strong>{job.parameters.supermarket || "Todas las cadenas"}</strong>
+              <strong>{selection}</strong>
               <p>{displayDate(job.parameters.startDate)} — {displayDate(job.parameters.endDate)}</p>
+              {Boolean(job.parameters.selectedProductCount) && <small className={styles.warning}>{integer.format(job.parameters.selectedProductCount ?? 0)} SKU seleccionados</small>}
               <div className={styles.jobMeta}><span>{integer.format(job.result_metadata?.rows ?? 0)} filas</span><span>{job.result_metadata?.bytes ? bytes.format(job.result_metadata.bytes / 1_000_000) : displayDateTime(job.requested_at)}</span></div>
               {job.result_metadata?.truncated && <small className={styles.warning}>Archivo limitado a {integer.format(job.result_metadata.maxRows ?? 0)} filas.</small>}
               {job.status === "failed" && <small className={styles.warning}>{job.error_message || "No fue posible generar el archivo."}</small>}
