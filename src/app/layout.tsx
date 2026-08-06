@@ -5,6 +5,7 @@ import EnterpriseAlertCenter from "./EnterpriseAlertCenter";
 import EnterpriseReportCenter from "./EnterpriseReportCenter";
 import EnterpriseReportFormatGuard from "./EnterpriseReportFormatGuard";
 import EnterpriseSidebarLink from "./EnterpriseSidebarLink";
+import PriceMatchLabelGuard from "./PriceMatchLabelGuard";
 
 export const metadata = {
   title: "MGP Intelligence | Retailer & Brand Intelligence",
@@ -14,5 +15,5 @@ export const metadata = {
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="es-CL"><body>{children}<EnterpriseSidebarLink /><EnterpriseAdminQuickLinks /><EnterpriseAlertCenter /><EnterpriseReportCenter /><EnterpriseReportFormatGuard /><DailyPricingChartPortal /></body></html>;
+  return <html lang="es-CL"><body>{children}<EnterpriseSidebarLink /><EnterpriseAdminQuickLinks /><EnterpriseAlertCenter /><EnterpriseReportCenter /><EnterpriseReportFormatGuard /><PriceMatchLabelGuard /><DailyPricingChartPortal /></body></html>;
 }
