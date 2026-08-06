@@ -14,7 +14,9 @@ const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY
   ?? "sb_publishable_4FrGlw8owGm5EtwMs9V5zQ_oBrH0c0-";
 
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_RANGE_DAYS = 366;
+const MAX_SELECTED_PRODUCTS = 500;
 
 type ExportJob = {
   id: string;
@@ -61,6 +63,10 @@ function chileDate() {
 
 function parseDate(value: unknown) {
   return typeof value === "string" && DATE_PATTERN.test(value) ? value : null;
+}
+
+function cleanText(value: unknown, max: number) {
+  return typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null;
 }
 
 function daysBetween(start: string, end: string) {
@@ -113,15 +119,27 @@ export async function POST(request: NextRequest) {
     startDate?: unknown;
     endDate?: unknown;
     supermarket?: unknown;
+    category?: unknown;
+    productIds?: unknown;
     format?: unknown;
   };
   const startDate = parseDate(body.startDate);
   const endDate = parseDate(body.endDate);
   const format = body.format === "csv" ? "csv" : body.format === "xlsx" ? "xlsx" : null;
-  const supermarket = typeof body.supermarket === "string" && body.supermarket.trim() ? body.supermarket.trim() : null;
+  const supermarket = cleanText(body.supermarket, 120);
+  const category = cleanText(body.category, 240);
+  const productIds = Array.isArray(body.productIds)
+    ? [...new Set(body.productIds.filter((item): item is string => typeof item === "string" && UUID_PATTERN.test(item)))].slice(0, MAX_SELECTED_PRODUCTS)
+    : [];
 
   if (!startDate || !endDate || !format) {
     return noStore({ error: "Selecciona un período y un formato válido." }, { status: 400 });
+  }
+  if (Array.isArray(body.productIds) && productIds.length !== body.productIds.length) {
+    return noStore({ error: `La selección contiene productos inválidos o supera el máximo de ${MAX_SELECTED_PRODUCTS} SKU.` }, { status: 400 });
+  }
+  if (productIds.length && !category) {
+    return noStore({ error: "Selecciona una categoría antes de elegir productos específicos." }, { status: 400 });
   }
   if (startDate > endDate) {
     return noStore({ error: "La fecha inicial no puede ser posterior a la fecha final." }, { status: 400 });
@@ -147,8 +165,12 @@ export async function POST(request: NextRequest) {
       startDate,
       endDate,
       supermarket,
+      category,
+      productIds,
+      selectedProductCount: productIds.length,
       industrySlug: authorization.access.industrySlug,
       industryName: authorization.access.industryName,
+      intelligentFiltering: true,
       requestedRangeDays: rangeDays,
     },
   });
