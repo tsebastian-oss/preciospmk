@@ -20,12 +20,19 @@ type ProductOption = {
   industrySlug: string | null;
 };
 
+type RetailerCount = {
+  supermarket: string;
+  products: number;
+};
+
 type FilterPayload = {
   filters?: {
     industrySlug: string | null;
     aiFiltered: boolean;
+    balancedByRetailer?: boolean;
     categories: CategoryOption[];
     products: ProductOption[];
+    retailerCounts?: RetailerCount[];
     productCount: number;
     truncated: boolean;
     limit: number;
@@ -54,6 +61,7 @@ export default function DataExportSmartFilters({
 }: Props) {
   const [categories, setCategories] = useState<CategoryOption[]>([]);
   const [products, setProducts] = useState<ProductOption[]>([]);
+  const [retailerCounts, setRetailerCounts] = useState<RetailerCount[]>([]);
   const [productCount, setProductCount] = useState(0);
   const [truncated, setTruncated] = useState(false);
   const [industryName, setIndustryName] = useState<string | null>(null);
@@ -78,6 +86,7 @@ export default function DataExportSmartFilters({
         if (!response.ok || !payload.filters) throw new Error(payload.error || "No fue posible cargar los filtros inteligentes");
         setCategories(payload.filters.categories ?? []);
         setProducts(payload.filters.products ?? []);
+        setRetailerCounts(payload.filters.retailerCounts ?? []);
         setProductCount(payload.filters.productCount ?? 0);
         setTruncated(Boolean(payload.filters.truncated));
         setIndustryName(payload.industryName ?? null);
@@ -97,6 +106,15 @@ export default function DataExportSmartFilters({
   }, [supermarket, category, search]);
 
   const selected = useMemo(() => new Set(selectedProductIds), [selectedProductIds]);
+  const retailerSummary = useMemo(
+    () => retailerCounts.map((item) => `${item.supermarket}: ${integer.format(item.products)}`).join(" · "),
+    [retailerCounts],
+  );
+  const selectedRetailers = useMemo(() => {
+    if (!selectedProductIds.length) return [] as string[];
+    const visibleById = new Map(products.map((product) => [product.id, product.supermarket]));
+    return [...new Set(selectedProductIds.map((id) => visibleById.get(id)).filter((value): value is string => Boolean(value)))];
+  }, [products, selectedProductIds]);
 
   function selectCategory(value: string) {
     setSearch("");
@@ -111,8 +129,8 @@ export default function DataExportSmartFilters({
     onSelectedProductIdsChange([...next]);
   }
 
-  function selectVisible() {
-    const next = new Set(selectedProductIds);
+  function selectBalancedSample() {
+    const next = new Set<string>();
     for (const product of products) {
       if (next.size >= MAX_SELECTED_PRODUCTS) break;
       next.add(product.id);
@@ -145,16 +163,17 @@ export default function DataExportSmartFilters({
         <div>
           <span>Productos de {category}</span>
           <small>{integer.format(productCount)} SKU detectados por la clasificación inteligente</small>
+          {retailerSummary && <small>{retailerSummary}</small>}
         </div>
         <div className={styles.actions}>
-          <button type="button" className={!selectedProductIds.length ? styles.active : ""} onClick={() => onSelectedProductIdsChange([])}>Todos</button>
-          <button type="button" onClick={selectVisible} disabled={!products.length}>Seleccionar visibles</button>
+          <button type="button" className={!selectedProductIds.length ? styles.active : ""} onClick={() => onSelectedProductIdsChange([])}>Todos los SKU</button>
+          <button type="button" onClick={selectBalancedSample} disabled={!products.length}>Muestra balanceada</button>
         </div>
       </div>
 
       <div className={styles.searchRow}>
         <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar producto, marca o SKU…" />
-        <b>{selectedProductIds.length ? `${integer.format(selectedProductIds.length)} seleccionados` : "Todos incluidos"}</b>
+        <b>{selectedProductIds.length ? `${integer.format(selectedProductIds.length)} seleccionados` : "Todas las cadenas incluidas"}</b>
       </div>
 
       {error ? <div className={styles.error}>{error}</div> : loading ? <div className={styles.loading}><i /> Clasificando productos…</div> : !products.length ? <div className={styles.empty}>No se encontraron productos para este filtro.</div> : <div className={styles.productList}>
@@ -169,9 +188,9 @@ export default function DataExportSmartFilters({
 
       <div className={styles.help}>
         {!selectedProductIds.length
-          ? "Se exportarán automáticamente todos los productos de la categoría."
-          : `Se exportarán solo los ${integer.format(selectedProductIds.length)} SKU seleccionados.`}
-        {truncated && " La categoría es extensa; usa el buscador para localizar SKU adicionales."}
+          ? "Se exportarán todos los productos de la categoría en todas las cadenas autorizadas."
+          : `Selección manual activa: se exportarán solo ${integer.format(selectedProductIds.length)} SKU${selectedRetailers.length ? ` de ${selectedRetailers.join(", ")}` : ""}. Para recuperar todas las cadenas, presiona “Todos los SKU”.`}
+        {truncated && " La lista en pantalla es una muestra balanceada por cadena; el modo “Todos los SKU” igualmente exporta la categoría completa."}
         {selectedProductIds.length >= MAX_SELECTED_PRODUCTS && ` El máximo de selección individual es ${integer.format(MAX_SELECTED_PRODUCTS)} SKU.`}
       </div>
     </div>}
