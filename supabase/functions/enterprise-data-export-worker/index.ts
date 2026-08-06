@@ -32,6 +32,7 @@ type HistoricalPrice = {
   name: string;
   brand: string | null;
   category: string | null;
+  smart_category: string | null;
   url: string;
   regular_price: number | string | null;
   offer_price: number | string | null;
@@ -81,7 +82,7 @@ function workbook(metadata: Record<string, unknown>[], rows: Record<string, unkn
     const sheet = book.Sheets[name];
     if (!sheet["!ref"]) continue;
     const range = XLSX.utils.decode_range(sheet["!ref"]);
-    sheet["!cols"] = Array.from({ length: range.e.c + 1 }, (_, index) => ({ wch: index < 5 ? 22 : 18 }));
+    sheet["!cols"] = Array.from({ length: range.e.c + 1 }, (_, index) => ({ wch: index < 6 ? 22 : 18 }));
   }
   return new Uint8Array(XLSX.write(book, { type: "array", bookType: "xlsx", compression: true }) as ArrayBuffer);
 }
@@ -147,9 +148,6 @@ Deno.serve(async (request: Request) => {
     if (selectedRetailer && allowed.retailers?.length && !allowed.retailers.some((item) => item.toLowerCase() === selectedRetailer.toLowerCase())) {
       throw new Error("retailer_not_allowed");
     }
-    if (selectedCategory && allowed.categories?.length && !allowed.categories.some((item) => item.toLowerCase() === selectedCategory.toLowerCase())) {
-      throw new Error("category_not_allowed");
-    }
 
     const maxRows = job.format === "xlsx" ? 50_000 : 150_000;
     const sourceRows: HistoricalPrice[] = [];
@@ -160,7 +158,7 @@ Deno.serve(async (request: Request) => {
       for (let offset = 0; offset < remaining; offset += pageSize) {
         const batchLimit = Math.min(pageSize, remaining - offset);
         let query = service.from("enterprise_price_export_rows")
-          .select("product_id,price_date,observed_at,supermarket,retailer_type,industry_slug,external_id,name,brand,category,url,regular_price,offer_price,effective_price,unit,unit_price,in_stock")
+          .select("product_id,price_date,observed_at,supermarket,retailer_type,industry_slug,external_id,name,brand,category,smart_category,url,regular_price,offer_price,effective_price,unit,unit_price,in_stock")
           .gte("price_date", startDate).lte("price_date", endDate)
           .order("price_date", { ascending: false }).order("supermarket", { ascending: true }).order("external_id", { ascending: true })
           .range(offset, offset + batchLimit - 1);
@@ -168,7 +166,7 @@ Deno.serve(async (request: Request) => {
         else if (allowed.retailers?.length) query = query.in("supermarket", allowed.retailers);
         if (allowed.brands?.length) query = query.in("brand", allowed.brands);
         if (allowed.categories?.length) query = query.in("category", allowed.categories);
-        if (selectedCategory) query = query.eq("category", selectedCategory);
+        if (selectedCategory) query = query.eq("smart_category", selectedCategory);
         if (productIds?.length) query = query.in("product_id", productIds);
         if (industry === "grocery") query = query.eq("retailer_type", "supermarket");
         else if (industry && industry !== "all") query = query.eq("industry_slug", industry);
@@ -206,7 +204,8 @@ Deno.serve(async (request: Request) => {
       SKU: item.external_id,
       Producto: item.name,
       Marca: item.brand ?? "",
-      Categoria: item.category ?? "",
+      CategoriaInteligente: item.smart_category ?? "",
+      CategoriaOrigen: item.category ?? "",
       PrecioRegular: item.regular_price === null ? "" : numberValue(item.regular_price),
       PrecioOferta: item.offer_price === null ? "" : numberValue(item.offer_price),
       PrecioEfectivo: numberValue(item.effective_price),
