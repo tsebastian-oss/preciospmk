@@ -3,6 +3,7 @@ export type QueryOptions = {
   query?: Record<string, string>;
   body?: unknown;
   prefer?: string;
+  countMode?: "exact" | "planned" | "estimated";
 };
 
 export type SupabaseResult<T> = {
@@ -18,6 +19,15 @@ function configuration() {
     url: process.env.NEXT_PUBLIC_SUPABASE_URL ?? DEFAULT_SUPABASE_URL,
     publishableKey: process.env.SUPABASE_PUBLISHABLE_KEY ?? DEFAULT_PUBLISHABLE_KEY,
   };
+}
+
+function readableSupabaseError(status: number, raw: string) {
+  const normalized = raw.toLowerCase();
+  if (normalized.includes("57014") || normalized.includes("statement timeout")) {
+    return new Error("La consulta tardó más de lo esperado. Intenta nuevamente en unos segundos.");
+  }
+  if (status >= 500) return new Error("El servicio de datos no respondió correctamente. Intenta nuevamente.");
+  return new Error(`Supabase ${status}: ${raw}`);
 }
 
 async function supabaseRequest<T>(
@@ -45,7 +55,7 @@ async function supabaseRequest<T>(
 
   if (!response.ok) {
     const message = await response.text();
-    throw new Error(`Supabase ${response.status}: ${message}`);
+    throw readableSupabaseError(response.status, message);
   }
 
   const contentRange = response.headers.get("content-range");
@@ -74,6 +84,7 @@ export async function supabaseRestWithCount<T>(
   path: string,
   options: QueryOptions = {},
 ): Promise<SupabaseResult<T>> {
-  const prefer = [options.prefer, "count=exact"].filter(Boolean).join(",");
-  return supabaseRequest<T>(path, { ...options, prefer });
+  const { countMode = "planned", ...requestOptions } = options;
+  const prefer = [requestOptions.prefer, `count=${countMode}`].filter(Boolean).join(",");
+  return supabaseRequest<T>(path, { ...requestOptions, prefer });
 }
