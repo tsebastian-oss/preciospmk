@@ -1,4 +1,12 @@
+import type { Viewport } from "next";
 import "./globals.css";
+import "./mobile-tablet-overrides.css";
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
 
 export const metadata = {
   title: "MGP Intelligence | Inteligencia de Precios",
