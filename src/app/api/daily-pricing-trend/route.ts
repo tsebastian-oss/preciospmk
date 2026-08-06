@@ -32,6 +32,8 @@ type DailyPricingPayload = {
   minimumPresencePct: number;
   currency: string;
   maxSeries: number;
+  cacheHit?: boolean;
+  temporarilyUnavailable?: boolean;
 };
 
 function clampDays(value: string | null) {
@@ -46,6 +48,34 @@ function selectedSeries(request: NextRequest) {
     .map((value) => value.trim())
     .filter((value) => value.length > 0 && value.length <= 180 && /^(group|smart|brand):/.test(value)))]
     .slice(0, 8);
+}
+
+function fallbackPayload(days: number, series: string[]): DailyPricingPayload {
+  return {
+    series: [],
+    selectedSeries: series,
+    daysRequested: days,
+    availableDays: 0,
+    firstDate: null,
+    lastDate: null,
+    refreshedAt: null,
+    latestObservationAt: null,
+    partialDay: false,
+    live: true,
+    pollingSeconds: 300,
+    historicalDaysFrozen: true,
+    currentDayObservations: 0,
+    previousDayObservations: 0,
+    currentDayCoveragePct: null,
+    method: "cached_trend_temporarily_unavailable",
+    trimLowerPct: 5,
+    trimUpperPct: 95,
+    minimumPresencePct: 0,
+    currency: "CLP",
+    maxSeries: 8,
+    cacheHit: false,
+    temporarilyUnavailable: true,
+  };
 }
 
 function liveResponse(payload: DailyPricingPayload) {
@@ -64,34 +94,15 @@ export async function GET(request: NextRequest) {
 
   const days = clampDays(request.nextUrl.searchParams.get("days"));
   const series = selectedSeries(request);
-  const result = await enterpriseRpc<DailyPricingPayload>(request, "enterprise_daily_pricing_trend_v2", {
+  const result = await enterpriseRpc<DailyPricingPayload>(request, "enterprise_daily_pricing_trend_cached", {
     p_organization_id: authorization.access?.organizationId,
     p_days: days,
     p_series: series.length ? series : null,
   });
 
-  if (result.response) return result.response;
-  return liveResponse(result.data ?? {
-    series: [],
-    selectedSeries: series,
-    daysRequested: days,
-    availableDays: 0,
-    firstDate: null,
-    lastDate: null,
-    refreshedAt: null,
-    latestObservationAt: null,
-    partialDay: false,
-    live: true,
-    pollingSeconds: 20,
-    historicalDaysFrozen: true,
-    currentDayObservations: 0,
-    previousDayObservations: 0,
-    currentDayCoveragePct: null,
-    method: "trimmed_mean_live_dynamic_series",
-    trimLowerPct: 5,
-    trimUpperPct: 95,
-    minimumPresencePct: 0,
-    currency: "CLP",
-    maxSeries: 8,
-  });
+  if (result.response) {
+    if (result.response.status >= 500) return liveResponse(fallbackPayload(days, series));
+    return result.response;
+  }
+  return liveResponse(result.data ?? fallbackPayload(days, series));
 }
