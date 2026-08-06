@@ -1,3 +1,17 @@
+update public.scraper_worker_controls
+set max_pending_calls = 1,
+    min_interval_seconds = case worker_key
+      when 'jumbo_price_refresh' then 300
+      when 'falabella' then 240
+      when 'paris' then 180
+      when 'lider_discovery' then 180
+      when 'lider_product' then 120
+      when 'supermarket_catalog' then 120
+      else greatest(min_interval_seconds, 120)
+    end,
+    updated_at = now()
+where enabled;
+
 create or replace function public.dispatch_scraper_workers_service()
 returns jsonb
 language plpgsql
@@ -7,10 +21,6 @@ as $function$
 declare
   worker public.scraper_worker_controls%rowtype;
   v_pending integer;
-  v_needed integer;
-  v_dispatched integer;
-  v_status jsonb := '[]'::jsonb;
-  i integer;
 begin
   if not pg_try_advisory_xact_lock(824631990) then
     return jsonb_build_object('status', 'already_running');
@@ -20,47 +30,42 @@ begin
     select *
     from public.scraper_worker_controls
     where enabled
-    order by worker_key
+      and (
+        last_dispatched_at is null
+        or last_dispatched_at <= now() - make_interval(secs => min_interval_seconds)
+      )
+    order by last_dispatched_at nulls first, worker_key
   loop
     select count(*)::integer
       into v_pending
     from net.http_request_queue
     where url = worker.url;
 
-    v_dispatched := 0;
+    if v_pending = 0 then
+      perform net.http_post(
+        url := worker.url,
+        headers := jsonb_build_object('Content-Type', 'application/json'),
+        body := '{}'::jsonb,
+        timeout_milliseconds := worker.timeout_ms
+      );
 
-    if worker.last_dispatched_at is null
-       or worker.last_dispatched_at <= now() - make_interval(secs => worker.min_interval_seconds) then
-      v_needed := greatest(worker.max_pending_calls - v_pending, 0);
+      update public.scraper_worker_controls
+      set last_dispatched_at = now(),
+          updated_at = now()
+      where worker_key = worker.worker_key;
 
-      if v_needed > 0 then
-        for i in 1..v_needed loop
-          perform net.http_post(
-            url := worker.url,
-            headers := jsonb_build_object('Content-Type', 'application/json'),
-            body := '{}'::jsonb,
-            timeout_milliseconds := worker.timeout_ms
-          );
-          v_dispatched := v_dispatched + 1;
-        end loop;
-
-        update public.scraper_worker_controls
-        set last_dispatched_at = now(),
-            updated_at = now()
-        where worker_key = worker.worker_key;
-      end if;
+      return jsonb_build_object(
+        'status', 'ok',
+        'worker', worker.worker_key,
+        'dispatched', 1,
+        'dispatchedAt', now()
+      );
     end if;
-
-    v_status := v_status || jsonb_build_array(jsonb_build_object(
-      'worker', worker.worker_key,
-      'pendingCalls', v_pending,
-      'dispatched', v_dispatched
-    ));
   end loop;
 
   return jsonb_build_object(
-    'status', 'ok',
-    'workers', v_status,
+    'status', 'idle',
+    'dispatched', 0,
     'dispatchedAt', now()
   );
 end;
@@ -90,7 +95,7 @@ begin
   if v_job_id is not null then
     perform cron.alter_job(
       v_job_id,
-      schedule => '59 seconds',
+      schedule => '47 seconds',
       active => true
     );
   end if;
