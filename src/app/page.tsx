@@ -1,8 +1,6 @@
-import ExecutiveDashboardExact from "./ExecutiveDashboardExact";
 import IndustryGate from "./IndustryGate";
+import UnifiedPlatformApp from "./UnifiedPlatformApp";
 
 export default function Home() {
-  return <IndustryGate>
-    <ExecutiveDashboardExact />
-  </IndustryGate>;
+  return <IndustryGate><UnifiedPlatformApp /></IndustryGate>;
 }
