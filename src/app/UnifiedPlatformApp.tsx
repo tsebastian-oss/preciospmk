@@ -94,6 +94,14 @@ function dateInput(date: Date) { return `${date.getFullYear()}-${String(date.get
 function retailerType(name: string): Exclude<RetailerType, "all"> { return STORE_TYPES[name.toLocaleLowerCase("es-CL")] ?? "department_store"; }
 function productPrice(product: Product) { return numeric(product.offer_price) > 0 ? numeric(product.offer_price) : numeric(product.regular_price); }
 function saveFile(url: string) { const anchor = document.createElement("a"); anchor.href = url; anchor.rel = "noreferrer"; document.body.appendChild(anchor); anchor.click(); anchor.remove(); }
+function friendlyError(error: unknown, fallback: string) {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  if (message.includes("57014") || message.toLowerCase().includes("statement timeout")) {
+    return "Una consulta tardó más de lo esperado. La reintentaremos al abrir ese módulo.";
+  }
+  if (message.startsWith("Supabase 500:")) return fallback;
+  return message || fallback;
+}
 
 export default function UnifiedPlatformApp() {
   const [view, setView] = useState<View>("overview");
@@ -149,7 +157,7 @@ export default function UnifiedPlatformApp() {
       if (exportsResponse.ok) setExportJobs(exportsData.exports ?? []);
       setNotice("");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Error cargando la plataforma");
+      setNotice(friendlyError(error, "Error cargando la plataforma"));
     } finally {
       if (!quiet) setLoadingCore(false);
     }
@@ -170,7 +178,7 @@ export default function UnifiedPlatformApp() {
       if (!response.ok) throw new Error(data.error || "No fue posible cargar productos");
       setProducts(data);
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Error cargando productos");
+      setNotice(friendlyError(error, "Error cargando productos"));
     } finally {
       setLoadingProducts(false);
     }
@@ -189,7 +197,7 @@ export default function UnifiedPlatformApp() {
       setMatches(data);
       setCompetitiveKey((current) => current || data.matches[0]?.match_key || "");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Error cargando Price Matching");
+      setNotice(friendlyError(error, "Error cargando Price Matching"));
     } finally {
       setLoadingMatches(false);
     }
@@ -205,20 +213,32 @@ export default function UnifiedPlatformApp() {
     return () => { window.removeEventListener("hashchange", onHashChange); window.clearInterval(interval); };
   }, [loadCore]);
 
-  useEffect(() => { const timeout = window.setTimeout(() => void loadProducts(), 250); return () => window.clearTimeout(timeout); }, [loadProducts]);
-  useEffect(() => { const timeout = window.setTimeout(() => void loadMatches(), 250); return () => window.clearTimeout(timeout); }, [loadMatches]);
+  const needsProducts = view === "products" || view === "promotions";
+  const needsMatches = view === "overview" || view === "price-matching" || view === "competitive" || view === "optimizer" || view === "assortment" || view === "basket";
+  const needsTrend = view === "overview" || view === "movements";
+
+  useEffect(() => {
+    if (!needsProducts) return;
+    const timeout = window.setTimeout(() => void loadProducts(), 250);
+    return () => window.clearTimeout(timeout);
+  }, [loadProducts, needsProducts]);
+  useEffect(() => {
+    if (!needsMatches) return;
+    const timeout = window.setTimeout(() => void loadMatches(), 250);
+    return () => window.clearTimeout(timeout);
+  }, [loadMatches, needsMatches]);
 
   const seriesKey = activeSeries.join("|");
   useEffect(() => {
-    if (!activeSeries.length) return;
+    if (!needsTrend || !activeSeries.length) return;
     const controller = new AbortController();
     const params = new URLSearchParams({ days: String(filters.period), live: String(Date.now()) });
     activeSeries.forEach((series) => params.append("series", series));
     fetch(`/api/daily-pricing-trend?${params.toString()}`, { cache: "no-store", signal: controller.signal })
       .then(async (response) => { const data = await response.json() as TrendPayload; if (!response.ok) throw new Error(data.error || "No fue posible cargar la tendencia"); setTrend(data); })
-      .catch((error) => { if (error instanceof DOMException && error.name === "AbortError") return; setNotice(error instanceof Error ? error.message : "Error cargando la tendencia"); });
+      .catch((error) => { if (error instanceof DOMException && error.name === "AbortError") return; setNotice(friendlyError(error, "Error cargando la tendencia")); });
     return () => controller.abort();
-  }, [filters.period, seriesKey]);
+  }, [filters.period, seriesKey, needsTrend]);
 
   const summary = dashboard?.summary;
   const categoryOptions = filterOptions?.categories ?? [];
@@ -381,14 +401,16 @@ export default function UnifiedPlatformApp() {
   };
 
   return <div className={styles.app}>
+    {mobileOpen && <button className={styles.mobileBackdrop} aria-label="Cerrar menú" onClick={() => setMobileOpen(false)}/>}
     <aside className={`${styles.sidebar} ${mobileOpen ? styles.mobileOpen : ""}`}>
+      <button className={styles.sidebarClose} aria-label="Cerrar menú" onClick={() => setMobileOpen(false)}>×</button>
       <button className={styles.brand} onClick={() => navigate("overview")}><span className={styles.logo}><i/><i/><i/></span><span><strong>MGP Intelligence</strong><small>Commerce Decision Platform</small></span></button>
       <nav className={styles.navigation}>{MENU.map((group) => <section key={group.label} className={styles.navGroup}><h3>{group.label}</h3>{group.items.map((item) => <button key={item.view} className={view === item.view ? styles.activeNav : ""} onClick={() => navigate(item.view)}><i>{item.icon}</i><span>{item.label}</span>{item.view === "alerts" && alerts.length > 0 && <b>{alerts.length}</b>}</button>)}</section>)}</nav>
       <div className={styles.account}><div><span>MG</span><div><strong>MGP Team</strong><small>Administrador</small></div></div><hr/><small>Plan Enterprise</small><p>{number(summary?.total_products)} SKU monitoreados</p><div><i style={{ width: `${Math.min(100, stockCoverage)}%` }}/></div><strong><em/> Pipeline operativo</strong></div>
     </aside>
 
     <main className={styles.main}>
-      <header className={styles.topbar}><button className={styles.menuButton} onClick={() => setMobileOpen((current) => !current)}>☰</button><div className={styles.pageTitle}><span>{groupLabel}</span><h1>{activeCopy.title}</h1><p>{activeCopy.description}</p></div><label className={styles.search}><span>⌕</span><input value={filters.query} onChange={(event) => updateFilter("query", event.target.value)} placeholder="Buscar productos, marcas o categorías…"/></label><button className={styles.headerControl}><span>▣</span> Últimos {filters.period} días</button><button className={styles.headerControl}><span>▱</span> {filterOptions?.industrySlug || "Todas las industrias"}</button></header>
+      <header className={styles.topbar}><button className={styles.menuButton} aria-label="Abrir menú" aria-expanded={mobileOpen} onClick={() => setMobileOpen((current) => !current)}>☰</button><div className={styles.pageTitle}><span>{groupLabel}</span><h1>{activeCopy.title}</h1><p>{activeCopy.description}</p></div><label className={styles.search}><span>⌕</span><input value={filters.query} onChange={(event) => updateFilter("query", event.target.value)} placeholder="Buscar productos, marcas o categorías…"/></label><button className={styles.headerControl}><span>▣</span> Últimos {filters.period} días</button><button className={styles.headerControl}><span>▱</span> {filterOptions?.industrySlug || "Todas las industrias"}</button></header>
       {notice && <div className={styles.notice}>{notice}<button onClick={() => setNotice("")}>×</button></div>}
       <section className={styles.filters}><div className={styles.typeFilter}><span>Tipo de retailer</span><div>{(["all", "supermarket", "department_store", "pharmacy"] as RetailerType[]).map((type) => <button key={type} className={filters.retailerType === type ? styles.selected : ""} onClick={() => updateFilter("retailerType", type)}>{type === "all" ? "Todos" : type === "supermarket" ? "Supermercados" : type === "department_store" ? "Multitiendas" : "Farmacias"}</button>)}</div></div><label><span>Cadena</span><select value={filters.supermarket} onChange={(event) => updateFilter("supermarket", event.target.value)}><option value="">Todas</option>{(dashboard?.supermarkets ?? []).filter((item) => filters.retailerType === "all" || retailerType(item.supermarket) === filters.retailerType).map((item) => <option key={item.supermarket}>{item.supermarket}</option>)}</select></label><label><span>Categoría</span><select value={filters.category} onChange={(event) => updateFilter("category", event.target.value)}><option value="">Todas</option>{categoryOptions.slice(0, 150).map((item) => <option key={item.id} value={item.label}>{item.label}</option>)}</select></label><label><span>Marca</span><select value={filters.brand} onChange={(event) => updateFilter("brand", event.target.value)}><option value="">Todas</option>{brandOptions.slice(0, 150).map((item) => <option key={item.id} value={item.label}>{item.label}</option>)}</select></label><label><span>Stock</span><select value={filters.stock} onChange={(event) => updateFilter("stock", event.target.value as Filters["stock"])}><option value="all">Todo</option><option value="in">Disponible</option><option value="out">Sin stock</option></select></label><label><span>Período</span><select value={filters.period} onChange={(event) => updateFilter("period", Number(event.target.value))}><option value={7}>7 días</option><option value={30}>30 días</option><option value={90}>90 días</option></select></label><button className={styles.clear} onClick={clearFilters}>⌫ Limpiar</button></section>
       {renderView()}

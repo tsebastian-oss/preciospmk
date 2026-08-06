@@ -3,6 +3,7 @@ export type QueryOptions = {
   query?: Record<string, string>;
   body?: unknown;
   prefer?: string;
+  countMode?: "exact" | "planned" | "estimated";
 };
 
 export type SupabaseResult<T> = {
@@ -74,6 +75,7 @@ export async function supabaseRestWithCount<T>(
   path: string,
   options: QueryOptions = {},
 ): Promise<SupabaseResult<T>> {
-  const prefer = [options.prefer, "count=exact"].filter(Boolean).join(",");
-  return supabaseRequest<T>(path, { ...options, prefer });
+  const { countMode = "planned", ...requestOptions } = options;
+  const prefer = [requestOptions.prefer, `count=${countMode}`].filter(Boolean).join(",");
+  return supabaseRequest<T>(path, { ...requestOptions, prefer });
 }
