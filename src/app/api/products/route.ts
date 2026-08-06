@@ -2,12 +2,25 @@ import { NextRequest, NextResponse } from "next/server";
 import { enterpriseAccess, scopeAllows } from "@/lib/enterprise-auth";
 import { supabaseRestWithCount } from "@/lib/supabase";
 
-const RETAILERS = new Set(["Lider", "Jumbo", "Santa Isabel", "Unimarc", "Paris", "Falabella", "Ripley"]);
+const RETAILERS = new Set([
+  "Lider",
+  "Jumbo",
+  "Santa Isabel",
+  "Unimarc",
+  "Paris",
+  "Falabella",
+  "Ripley",
+  "Salcobrand",
+  "Cruz Verde",
+  "Farmacias Ahumada",
+]);
+
 const SORTS: Record<string, string> = {
   price_asc: "in_stock.desc,offer_price.asc,name.asc",
   price_desc: "in_stock.desc,offer_price.desc,name.asc",
   discount_desc: "discount_pct.desc,savings.desc,in_stock.desc,name.asc",
   newest: "observed_at.desc,in_stock.desc,name.asc",
+  updated_desc: "observed_at.desc,in_stock.desc,name.asc",
   name_asc: "name.asc,in_stock.desc",
 };
 
@@ -22,7 +35,7 @@ function safeSearch(value: string) {
 }
 
 function safeFilter(value: string) {
-  return value.replace(/[,()]/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
+  return value.replace(/[,()]/g, " ").replace(/\s+/g, " ").trim().slice(0, 180);
 }
 
 function inFilter(values: string[]) {
@@ -47,8 +60,9 @@ export async function GET(request: NextRequest) {
   const requestedRetailer = params.get("supermarket") ?? "";
   const retailer = RETAILERS.has(requestedRetailer) ? requestedRetailer : "";
   const category = safeFilter(params.get("category") ?? "");
+  const brand = safeFilter(params.get("brand") ?? "");
   const stock = params.get("stock") ?? "all";
-  const sort = SORTS[params.get("sort") ?? ""] ?? SORTS.price_asc;
+  const sort = SORTS[params.get("sort") ?? ""] ?? SORTS.updated_desc;
 
   if (retailer && !scopeAllows(access, "retailers", retailer)) {
     return NextResponse.json({ error: "Ese retailer no pertenece al alcance contratado." }, { status: 403 });
@@ -56,9 +70,12 @@ export async function GET(request: NextRequest) {
   if (category && !scopeAllows(access, "categories", category)) {
     return NextResponse.json({ error: "Esa categoría no pertenece al alcance contratado." }, { status: 403 });
   }
+  if (brand && !scopeAllows(access, "brands", brand)) {
+    return NextResponse.json({ error: "Esa marca no pertenece al alcance contratado." }, { status: 403 });
+  }
 
   const query: Record<string, string> = {
-    select: "id,supermarket,retailer_type,industry_slug,external_id,name,brand,category,seller,variant,url,image_url,regular_price,offer_price,unit,unit_price,in_stock,observed_at,savings,discount_pct",
+    select: "id,supermarket,retailer_type,industry_slug,external_id,name,brand,category,smart_category,seller,variant,url,image_url,regular_price,offer_price,unit,unit_price,in_stock,observed_at,savings,discount_pct",
     order: sort,
     limit: String(pageSize),
     offset: String((page - 1) * pageSize),
@@ -68,10 +85,12 @@ export async function GET(request: NextRequest) {
   if (retailer) query.supermarket = `eq.${retailer}`;
   else if (!access.isSaasAdmin && access.retailers.length > 0) query.supermarket = inFilter(access.retailers);
 
-  if (category) query.category = `eq.${category}`;
-  else if (!access.isSaasAdmin && access.categories.length > 0) query.category = inFilter(access.categories);
+  if (category) query.smart_category = `eq.${category}`;
+  else if (!access.isSaasAdmin && access.categories.length > 0) query.smart_category = inFilter(access.categories);
 
-  if (!access.isSaasAdmin && access.brands.length > 0) query.brand = inFilter(access.brands);
+  if (brand) query.brand = `eq.${brand}`;
+  else if (!access.isSaasAdmin && access.brands.length > 0) query.brand = inFilter(access.brands);
+
   if (access.industrySlug === "grocery") query.retailer_type = "eq.supermarket";
   else if (access.industrySlug && access.industrySlug !== "all") query.industry_slug = `eq.${access.industrySlug}`;
   if (stock === "in") query.in_stock = "eq.true";
@@ -90,6 +109,7 @@ export async function GET(request: NextRequest) {
       organizationId: access.organizationId,
       industrySlug: access.industrySlug,
       industryName: access.industryName,
+      appliedFilters: { q, retailer, category, brand, stock, offerOnly },
     });
   } catch (error) {
     return NextResponse.json(
