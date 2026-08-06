@@ -3,11 +3,11 @@ import { enterpriseAccess } from "@/lib/enterprise-auth";
 import { supabaseRestWithCount } from "@/lib/supabase";
 
 const SORTS: Record<string, string> = {
-  gap_desc: "supermarkets.desc,price_gap.desc,canonical_name.asc",
-  savings_desc: "supermarkets.desc,savings_pct.desc,price_gap.desc",
-  price_asc: "supermarkets.desc,best_price.asc,canonical_name.asc",
-  updated_desc: "supermarkets.desc,last_updated.desc,canonical_name.asc",
-  name_asc: "supermarkets.desc,canonical_name.asc",
+  gap_desc: "supermarkets.desc,match_confidence.desc,price_gap.desc,canonical_name.asc",
+  savings_desc: "supermarkets.desc,match_confidence.desc,savings_pct.desc,price_gap.desc",
+  price_asc: "supermarkets.desc,match_confidence.desc,best_price.asc,canonical_name.asc",
+  updated_desc: "supermarkets.desc,match_confidence.desc,last_updated.desc,canonical_name.asc",
+  name_asc: "supermarkets.desc,match_confidence.desc,canonical_name.asc",
 };
 
 function integer(value: string | null, fallback: number, min: number, max: number) {
@@ -36,17 +36,19 @@ export async function GET(request: NextRequest) {
   const q = safeSearch(params.get("q") ?? "");
   const minSavings = integer(params.get("minSavings"), 0, 0, 100);
   const coverage = params.get("coverage") === "partial" ? "partial" : "full";
+  const quality = params.get("quality") === "exact" ? "exact" : "expanded";
   const sort = SORTS[params.get("sort") ?? ""] ?? SORTS.gap_desc;
 
   const query: Record<string, string> = {
-    select: "match_key,canonical_name,canonical_brand,category,listings,supermarkets,best_price,highest_price,average_price,price_gap,savings_pct,last_updated,best_supermarket,best_url,image_url,best_product_id,store_listings",
+    select: "match_key,canonical_name,canonical_brand,category,smart_category,listings,supermarkets,best_price,highest_price,average_price,price_gap,savings_pct,last_updated,match_method,match_confidence,best_supermarket,best_url,image_url,best_product_id,store_listings",
     order: sort,
     limit: String(pageSize),
     offset: String((page - 1) * pageSize),
     supermarkets: coverage === "full" ? "eq.3" : "gte.2",
   };
 
-  if (q) query.or = `(canonical_name.ilike.*${q}*,canonical_brand.ilike.*${q}*,category.ilike.*${q}*)`;
+  if (quality === "exact") query.match_method = "eq.exact";
+  if (q) query.or = `(canonical_name.ilike.*${q}*,canonical_brand.ilike.*${q}*,category.ilike.*${q}*,smart_category.ilike.*${q}*)`;
   if (minSavings > 0) query.savings_pct = `gte.${minSavings}`;
   if (!access.isSaasAdmin && access.brands.length > 0) query.canonical_brand = inFilter(access.brands);
   if (!access.isSaasAdmin && access.categories.length > 0) query.category = inFilter(access.categories);
@@ -61,6 +63,8 @@ export async function GET(request: NextRequest) {
       total,
       totalPages: Math.max(1, Math.ceil(total / pageSize)),
       coverage,
+      quality,
+      matchingModel: quality === "exact" ? "exact" : "exact_plus_hybrid_ai",
       requiredChains: coverage === "full" ? ["Lider", "Jumbo", "Santa Isabel"] : [],
       organizationId: access.organizationId,
     });
