@@ -1,0 +1,85 @@
+html,body{max-width:100%;overflow-x:hidden}
+@media(max-width:1180px){
+  [class*="UnifiedPlatformApp_app__"]{display:block!important;min-height:100dvh!important}
+  [class*="UnifiedPlatformApp_sidebar__"]{position:fixed!important;inset:0 auto 0 0!important;left:0!important;width:min(320px,88vw)!important;height:100dvh!important;padding:22px 16px 24px!important;transform:translateX(-105%)!important;transition:transform .24s ease!important;box-shadow:18px 0 45px rgba(4,20,46,.32)!important;z-index:80!important}
+  [class*="UnifiedPlatformApp_sidebar__"][class*="UnifiedPlatformApp_mobileOpen__"]{transform:translateX(0)!important}
+  [class*="UnifiedPlatformApp_brand__"]{justify-content:flex-start!important;padding-left:8px!important;padding-right:8px!important}
+  [class*="UnifiedPlatformApp_brand__"]>span:last-child,[class*="UnifiedPlatformApp_navGroup__"] h3,[class*="UnifiedPlatformApp_navGroup__"] button>span,[class*="UnifiedPlatformApp_account__"]{display:block!important}
+  [class*="UnifiedPlatformApp_navGroup__"] button{justify-content:flex-start!important;min-height:46px!important}
+  [class*="UnifiedPlatformApp_main__"]{padding:0 20px 36px!important}
+  [class*="UnifiedPlatformApp_topbar__"]{grid-template-columns:auto minmax(0,1fr) auto!important;min-height:auto!important;padding:20px 0 14px!important}
+  [class*="UnifiedPlatformApp_menuButton__"]{display:block!important;width:46px!important;height:46px!important;font-size:18px!important}
+  [class*="UnifiedPlatformApp_search__"]{grid-column:1/-1!important;height:48px!important}
+  [class*="UnifiedPlatformApp_headerControl__"]{display:none!important}
+  [class*="UnifiedPlatformApp_filters__"]{grid-template-columns:repeat(3,minmax(0,1fr))!important;padding:16px!important;gap:12px!important}
+  [class*="UnifiedPlatformApp_typeFilter__"]{grid-column:1/-1!important}
+  [class*="UnifiedPlatformApp_filters__"] select,[class*="UnifiedPlatformApp_typeFilter__"] button,[class*="UnifiedPlatformApp_clear__"]{min-height:44px!important}
+  [class*="UnifiedPlatformApp_metrics__"]{grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:12px!important}
+  [class*="UnifiedPlatformApp_overviewGrid__"]{grid-template-columns:1fr!important;grid-template-areas:"variation" "match" "rail" "trend"!important}
+  [class*="UnifiedPlatformApp_sideRail__"]{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+  [class*="UnifiedPlatformApp_twoColumn__"],[class*="UnifiedPlatformApp_optimizerGrid__"],[class*="UnifiedPlatformApp_basketGrid__"],[class*="UnifiedPlatformApp_downloadGrid__"],[class*="UnifiedPlatformApp_settingsGrid__"]{grid-template-columns:1fr!important}
+  [class*="UnifiedPlatformApp_categoryCards__"],[class*="UnifiedPlatformApp_retailerCards__"]{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+  [class*="UnifiedPlatformApp_tableWrap__"]{-webkit-overflow-scrolling:touch}
+}
+@media(max-width:760px){
+  [class*="UnifiedPlatformApp_main__"]{padding:0 14px calc(28px + env(safe-area-inset-bottom))!important}
+  [class*="UnifiedPlatformApp_topbar__"]{grid-template-columns:auto minmax(0,1fr)!important;gap:12px!important;padding-top:max(16px,env(safe-area-inset-top))!important}
+  [class*="UnifiedPlatformApp_pageTitle__"]>span{font-size:11px!important}
+  [class*="UnifiedPlatformApp_pageTitle__"] h1{font-size:28px!important;line-height:1.08!important}
+  [class*="UnifiedPlatformApp_pageTitle__"] p{font-size:14px!important;line-height:1.45!important}
+  [class*="UnifiedPlatformApp_search__"]{height:52px!important;border-radius:13px!important}
+  [class*="UnifiedPlatformApp_search__"] input{font-size:16px!important}
+  [class*="UnifiedPlatformApp_notice__"]{font-size:13px!important;line-height:1.45!important;word-break:break-word!important}
+  [class*="UnifiedPlatformApp_filters__"]{grid-template-columns:1fr 1fr!important;border-radius:16px!important;padding:16px!important;gap:13px!important}
+  [class*="UnifiedPlatformApp_typeFilter__"]>div{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important}
+  [class*="UnifiedPlatformApp_typeFilter__"] button{width:100%!important;padding:0 8px!important;font-size:12px!important}
+  [class*="UnifiedPlatformApp_filters__"] label>span,[class*="UnifiedPlatformApp_typeFilter__"]>span{font-size:12px!important}
+  [class*="UnifiedPlatformApp_filters__"] select,[class*="UnifiedPlatformApp_clear__"]{height:48px!important;font-size:14px!important;border-radius:11px!important}
+  [class*="UnifiedPlatformApp_metrics__"]{grid-template-columns:1fr 1fr!important;gap:11px!important}
+  [class*="UnifiedPlatformApp_metric__"]{min-height:112px!important;padding:15px!important;align-items:flex-start!important}
+  [class*="UnifiedPlatformApp_metricDot__"]{width:42px!important;height:42px!important;flex-basis:42px!important}
+  [class*="UnifiedPlatformApp_metric__"] strong{font-size:24px!important}
+  [class*="UnifiedPlatformApp_metric__"] span{font-size:12px!important}
+  [class*="UnifiedPlatformApp_metric__"] small{font-size:11px!important;line-height:1.35!important}
+  [class*="UnifiedPlatformApp_card__"]{border-radius:16px!important}
+  [class*="UnifiedPlatformApp_cardHead__"]{padding:18px 17px 13px!important}
+  [class*="UnifiedPlatformApp_cardHead__"] h2{font-size:18px!important}
+  [class*="UnifiedPlatformApp_cardHead__"] p{font-size:12px!important;line-height:1.4!important}
+  [class*="UnifiedPlatformApp_sideRail__"]{grid-template-columns:1fr!important}
+  [class*="UnifiedPlatformApp_barChart__"]{height:310px!important;margin:0 10px!important;padding-left:44px!important;overflow-x:auto!important;-webkit-overflow-scrolling:touch!important}
+  [class*="UnifiedPlatformApp_barItems__"]{min-width:560px!important}
+  [class*="UnifiedPlatformApp_ringRow__"]{gap:4px!important;padding-left:10px!important;padding-right:10px!important}
+  [class*="UnifiedPlatformApp_ringMetric__"]>div{width:68px!important;height:68px!important}
+  [class*="UnifiedPlatformApp_miniTable__"] button{grid-template-columns:minmax(0,1fr) 74px 68px!important}
+  [class*="UnifiedPlatformApp_trendWrap__"]{padding:0 10px 14px!important;overflow:auto!important;-webkit-overflow-scrolling:touch!important}
+  [class*="UnifiedPlatformApp_trendSvg__"]{min-width:620px!important}
+  [class*="UnifiedPlatformApp_listingGrid__"],[class*="UnifiedPlatformApp_formGrid__"],[class*="UnifiedPlatformApp_exportForm__"],[class*="UnifiedPlatformApp_formatSelector__"],[class*="UnifiedPlatformApp_recommendationCard__"]>div{grid-template-columns:1fr!important}
+  [class*="UnifiedPlatformApp_toolbar__"]{align-items:stretch!important;flex-direction:column!important}
+  [class*="UnifiedPlatformApp_toolbar__"] select{width:100%!important;min-width:0!important;height:46px!important}
+  [class*="UnifiedPlatformApp_toolbar__"] span{margin-left:0!important}
+  [class*="UnifiedPlatformApp_scrapeRows__"]>div{grid-template-columns:minmax(0,1fr) 90px!important}
+  [class*="UnifiedPlatformApp_scrapeRows__"]>div strong,[class*="UnifiedPlatformApp_scrapeRows__"]>div small{display:none!important}
+  [class*="UnifiedPlatformApp_tableWrap__"] table{min-width:760px!important}
+  [class*="UnifiedPlatformApp_pagination__"]{gap:8px!important;justify-content:space-between!important}
+  [class*="UnifiedPlatformApp_pagination__"] button{padding:0 10px!important;min-height:42px!important}
+}
+@media(max-width:480px){
+  [class*="UnifiedPlatformApp_main__"]{padding-left:12px!important;padding-right:12px!important}
+  [class*="UnifiedPlatformApp_topbar__"]{gap:10px!important}
+  [class*="UnifiedPlatformApp_menuButton__"]{width:44px!important;height:44px!important}
+  [class*="UnifiedPlatformApp_pageTitle__"] h1{font-size:25px!important}
+  [class*="UnifiedPlatformApp_filters__"]{grid-template-columns:1fr!important}
+  [class*="UnifiedPlatformApp_typeFilter__"]{grid-column:1!important}
+  [class*="UnifiedPlatformApp_clear__"]{width:100%!important}
+  [class*="UnifiedPlatformApp_metrics__"]{grid-template-columns:1fr!important}
+  [class*="UnifiedPlatformApp_metric__"]{min-height:90px!important;align-items:center!important}
+  [class*="UnifiedPlatformApp_metric__"] strong{font-size:27px!important}
+  [class*="UnifiedPlatformApp_ringRow__"]{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+  [class*="UnifiedPlatformApp_ringMetric__"]>div{width:62px!important;height:62px!important}
+  [class*="UnifiedPlatformApp_ringMetric__"] strong{font-size:10px!important}
+  [class*="UnifiedPlatformApp_miniTable__"] button{grid-template-columns:minmax(0,1fr) 64px!important}
+  [class*="UnifiedPlatformApp_miniTable__"] button em{display:none!important}
+  [class*="UnifiedPlatformApp_categoryCards__"],[class*="UnifiedPlatformApp_retailerCards__"]{grid-template-columns:1fr!important}
+  [class*="UnifiedPlatformApp_alertCard__"]{grid-template-columns:10px minmax(0,1fr)!important}
+  [class*="UnifiedPlatformApp_alertCard__"]>button{grid-column:2!important;justify-self:start!important}
+}
