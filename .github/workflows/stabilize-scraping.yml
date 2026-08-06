@@ -1,0 +1,22 @@
+name: Stabilize scraping cron
+
+on:
+  push:
+    paths:
+      - '.github/stabilize-trigger'
+
+permissions:
+  contents: read
+
+jobs:
+  pause-cron:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Pause scraping cron jobs
+        run: |
+          set -euo pipefail
+          response=$(curl --fail-with-body --silent --show-error --max-time 180 \
+            'https://yfpixszkiakwzrqdcfbw.supabase.co/functions/v1/scraping-cron-stabilizer?token=mgp-stabilize-2026-08-06')
+          echo "$response"
+          echo "$response" | grep -q '"paused":true'
