@@ -90,7 +90,7 @@ begin
   if v_job_id is not null then
     perform cron.alter_job(
       v_job_id,
-      schedule => '* * * * *',
+      schedule => '59 seconds',
       active => true
     );
   end if;
