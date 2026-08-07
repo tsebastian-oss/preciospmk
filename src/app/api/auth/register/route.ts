@@ -38,7 +38,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Solicitud inválida." }, { status: 400 });
   }
 
-  // Honeypot and minimum-form-time checks reduce low-effort automated signups.
   if (text(body.website, 120)) return NextResponse.json({ ok: true, requiresEmailConfirmation: true });
   const startedAt = Number(body.startedAt ?? 0);
   if (Number.isFinite(startedAt) && startedAt > 0 && Date.now() - startedAt < 1500) {
@@ -51,6 +50,11 @@ export async function POST(request: NextRequest) {
   const company = text(body.company, 160);
   const jobTitle = text(body.jobTitle, 120);
   const industrySlug = text(body.industrySlug, 80);
+  const rawPlan = text(body.intendedPlan, 40).toLowerCase();
+  const intendedPlan = ["starter", "business", "enterprise"].includes(rawPlan) ? rawPlan : "";
+  const utmSource = text(body.utmSource, 120);
+  const utmMedium = text(body.utmMedium, 120);
+  const utmCampaign = text(body.utmCampaign, 180);
   const password = typeof body.password === "string" ? body.password : "";
   const acceptedTerms = body.acceptedTerms === true;
 
@@ -81,6 +85,10 @@ export async function POST(request: NextRequest) {
         company,
         job_title: jobTitle || null,
         industry_slug: industrySlug || null,
+        intended_plan: intendedPlan || null,
+        utm_source: utmSource || null,
+        utm_medium: utmMedium || null,
+        utm_campaign: utmCampaign || null,
       },
     }),
     cache: "no-store",
