@@ -35,13 +35,13 @@ export default function LoginPage() {
     <main className={styles.page}>
       <Link href="/landing" className={styles.brand}>
         <span>M</span>
-        <div><strong>MGP Retail</strong><small>Intelligence Platform</small></div>
+        <div><strong>MGP Super Precios</strong><small>Price Intelligence Platform</small></div>
       </Link>
 
       <section className={styles.card}>
-        <span className={styles.eyebrow}>ACCESO PRIVADO</span>
+        <span className={styles.eyebrow}>ACCESO CLIENTES</span>
         <h1>Ingresa a tu plataforma.</h1>
-        <p>Usa las credenciales autorizadas por el administrador.</p>
+        <p>Usa el correo y contraseña asociados a tu cuenta.</p>
 
         <form onSubmit={submit}>
           <label>
@@ -57,6 +57,9 @@ export default function LoginPage() {
         </form>
 
         <small className={styles.notice}>El acceso y las consultas quedan restringidos a usuarios autenticados.</small>
+        <div style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid rgba(255,255,255,.08)", textAlign: "center", fontSize: 12, color: "#a1a1aa" }}>
+          ¿Aún no tienes cuenta? <Link href="/registro" style={{ color: "#c084fc", fontWeight: 850 }}>Crear una cuenta trial</Link>
+        </div>
       </section>
     </main>
   );
