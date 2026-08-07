@@ -19,35 +19,46 @@ const plans = [
   {
     name: "Starter",
     price: "$590.000",
+    monthly: "$690.000",
+    href: "/registro?plan=starter&utm_source=pricing&utm_medium=website&utm_campaign=self_service",
+    cta: "Probar Starter 7 días",
     copy: "Para equipos que comienzan a profesionalizar su monitoreo competitivo.",
-    features: ["Hasta 2 usuarios", "Monitoreo de precios", "Promociones y surtido básico", "Dashboards estándar", "Alertas por correo", "Exportaciones básicas", "Soporte por correo"],
+    features: ["Hasta 2 usuarios", "Hasta 3 retailers", "Monitoreo de precios", "Promociones y movimientos", "Dashboards estándar", "Alertas", "20 exportaciones / mes", "Onboarding incluido"],
   },
   {
     name: "Business",
     price: "$1.490.000",
-    copy: "Para equipos que necesitan inteligencia completa y análisis avanzado.",
+    monthly: "$1.790.000",
+    href: "/registro?plan=business&utm_source=pricing&utm_medium=website&utm_campaign=self_service",
+    cta: "Probar Business 7 días",
+    copy: "Para equipos que necesitan inteligencia completa, IA y análisis avanzado.",
     popular: true,
-    features: ["Hasta 10 usuarios", "Monitoreo avanzado", "Promociones y surtido avanzado", "AI Price Map", "Brand Intelligence AI", "Dashboards personalizados", "Exportaciones avanzadas", "Soporte prioritario"],
+    features: ["Hasta 10 usuarios", "Hasta 9 retailers", "Monitoreo avanzado", "AI Price Map y Competitive AI", "Brand Intelligence AI", "Dashboards avanzados", "250 exportaciones / mes", "Soporte prioritario", "Onboarding incluido"],
   },
   {
     name: "Enterprise",
-    price: "A medida",
+    price: "Desde $2.900.000",
+    monthly: null,
+    href: "/landing/contacto#demo",
+    cta: "Hablar con ventas",
     copy: "Para organizaciones con necesidades de cobertura, gobierno o integración específicas.",
-    features: ["Usuarios y cobertura a medida", "Todo lo del plan Business", "Alcances personalizados", "Integraciones dedicadas", "Modelos y análisis especiales", "Onboarding y capacitación", "Soporte y SLA a definir"],
+    features: ["Usuarios y cobertura a medida", "Todo lo del plan Business", "Alcances personalizados", "Integraciones dedicadas", "Modelos y análisis especiales", "Onboarding desde $1.500.000", "Soporte y SLA a definir"],
   },
 ];
 
 const comparison = [
+  ["Trial", "7 días", "7 días", "Piloto acordado"],
   ["Usuarios incluidos", "2", "10", "A medida"],
+  ["Retailers incluidos", "Hasta 3", "Hasta 9", "A medida"],
   ["Monitoreo de precios", "✓", "✓", "✓"],
-  ["Promociones y surtido", "Básico", "Avanzado", "Avanzado"],
+  ["Promociones y surtido", "Estándar", "Avanzado", "Avanzado"],
   ["AI Price Map", "—", "✓", "✓"],
   ["Brand Intelligence AI", "—", "✓", "✓"],
-  ["Dashboards personalizados", "—", "✓", "✓"],
-  ["Exportaciones avanzadas", "—", "✓", "✓"],
+  ["Dashboards avanzados", "—", "✓", "✓"],
+  ["Exportaciones", "20 / mes", "250 / mes", "A medida"],
   ["Integraciones", "—", "Según alcance", "A medida"],
   ["Soporte", "Correo", "Prioritario", "A definir"],
-  ["Implementación", "Guiada", "Guiada", "Dedicada"],
+  ["Implementación", "Incluida", "Incluida", "Desde $1.500.000"],
 ];
 
 export default function PricingPage() {
@@ -57,36 +68,47 @@ export default function PricingPage() {
         <section className={styles.subHero}>
           <div className={styles.subHeroInner}>
             <div className={styles.heroCopy}>
-              <span className={styles.eyebrow}>PLANES PARA CADA ETAPA</span>
-              <h1>Elige el plan ideal para tu <em>equipo comercial</em></h1>
-              <p>Desde monitoreo competitivo para equipos pequeños hasta implementaciones enterprise con módulos de IA, alcances personalizados e integraciones.</p>
-              <div className={styles.heroTrust}><span>Implementación guiada</span><span>Sin costos ocultos de uso</span><span>Soporte local</span></div>
+              <span className={styles.eyebrow}>PRUEBA 7 DÍAS · SIN TARJETA</span>
+              <h1>Empieza pequeño y escala cuando <em>veas valor</em></h1>
+              <p>Prueba la plataforma con datos reales, valida el caso de uso y luego elige el nivel de cobertura, IA y soporte que necesita tu equipo.</p>
+              <div className={styles.heroActions}><Link href="/registro?utm_source=pricing&utm_medium=website&utm_campaign=trial">Comenzar trial gratis</Link><Link href="/landing/contacto#demo">Solicitar demo</Link></div>
+              <div className={styles.heroTrust}><span>Sin tarjeta de crédito</span><span>Onboarding inmediato</span><span>Soporte local</span></div>
             </div>
             <DashboardPreview compact />
           </div>
         </section>
 
         <section className={styles.section}>
-          <div className={styles.pricingToggle}><span>Pago mensual</span><i className={styles.switch} /><strong>Pago anual</strong><span className={styles.saving}>Ahorra hasta 17%</span></div>
+          <div className={styles.pricingToggle}><strong>Precio objetivo con compromiso anual</strong><span className={styles.saving}>Mejor valor</span><span>· Mensual flexible disponible en Starter y Business</span></div>
           <div className={styles.pricingGrid}>
-            {plans.map((plan) => <article className={`${styles.priceCard} ${plan.popular ? styles.pricePopular : ""}`} key={plan.name}>{plan.popular && <span className={styles.popularTag}>MÁS POPULAR</span>}<h3>{plan.name}</h3><p>{plan.copy}</p><div className={styles.price}>{plan.price}{plan.price !== "A medida" && <small> CLP + IVA / mes</small>}</div><small>{plan.price === "A medida" ? "Propuesta personalizada" : "Valor referencial con contratación anual"}</small><Link href="/landing/contacto#demo">{plan.name === "Enterprise" ? "Hablar con ventas" : "Solicitar este plan"}</Link><ul>{plan.features.map((feature) => <li key={feature}>{feature}</li>)}</ul></article>)}
+            {plans.map((plan) => <article className={`${styles.priceCard} ${plan.popular ? styles.pricePopular : ""}`} key={plan.name}>{plan.popular && <span className={styles.popularTag}>PLAN OBJETIVO</span>}<h3>{plan.name}</h3><p>{plan.copy}</p><div className={styles.price}>{plan.price}<small> CLP + IVA / mes</small></div><small>{plan.monthly ? <>Mensual sin permanencia: <strong>{plan.monthly} CLP + IVA</strong></> : "Valor base; alcance final según propuesta"}</small><Link href={plan.href}>{plan.cta}</Link><ul>{plan.features.map((feature) => <li key={feature}>{feature}</li>)}</ul></article>)}
           </div>
         </section>
 
         <section className={styles.section}>
-          <SectionHeading title="Comparación de planes" copy="El alcance final se define según número de retailers, categorías, marcas, frecuencia e integraciones requeridas." />
+          <SectionHeading title="Comparación de planes" copy="El precio anual es la referencia comercial recomendada. El alcance final depende de retailers, categorías, frecuencia, usuarios e integraciones." />
           <div className={styles.compareWrap}><table className={styles.compareTable}><thead><tr><th>Capacidad</th><th>Starter</th><th>Business</th><th>Enterprise</th></tr></thead><tbody>{comparison.map((row) => <tr key={row[0]}>{row.map((cell) => <td key={cell}>{cell}</td>)}</tr>)}</tbody></table></div>
+        </section>
+
+        <section className={styles.section}>
+          <SectionHeading eyebrow="EXPANSIÓN" title="Agrega capacidad cuando la necesites" copy="La base del modelo es SaaS recurrente. Cobertura, integraciones y servicio analítico se agregan sobre el plan." />
+          <div className={styles.featureGrid}>
+            <article><strong>Retailer adicional</strong><p>Desde $150.000 CLP + IVA / mes según cobertura y frecuencia.</p></article>
+            <article><strong>Integración o API dedicada</strong><p>Desde $750.000 de implementación + $250.000 CLP + IVA / mes.</p></article>
+            <article><strong>Dashboard o reporte dedicado</strong><p>Desde $250.000 CLP + IVA / mes según complejidad.</p></article>
+            <article><strong>Servicio analista MGP</strong><p>Desde $490.000 CLP + IVA / mes para interpretación y seguimiento ejecutivo.</p></article>
+          </div>
         </section>
 
         <section className={styles.section}>
           <SectionHeading title="Preguntas frecuentes" />
           <div className={styles.faqGrid}>
-            <details><summary>¿Puedo cambiar de plan más adelante?</summary><p>Sí. El alcance puede crecer o reducirse según cambien tus necesidades y la cobertura requerida.</p></details>
-            <details><summary>¿Los precios incluyen IVA?</summary><p>No. Los valores publicados son referenciales y se expresan en CLP + IVA.</p></details>
-            <details><summary>¿Qué define el valor final?</summary><p>Principalmente retailers, categorías, volumen de productos, frecuencia de actualización, usuarios, módulos e integraciones.</p></details>
-            <details><summary>¿Cómo funciona el onboarding?</summary><p>Definimos alcance, usuarios y configuración inicial; luego habilitamos el entorno y acompañamos al equipo en la adopción.</p></details>
-            <details><summary>¿Puedo pedir una demo antes de contratar?</summary><p>Sí. La demo permite revisar los módulos y validar el caso de uso antes de avanzar.</p></details>
-            <details><summary>¿Existe una solución enterprise?</summary><p>Sí. Diseñamos coberturas, integraciones, permisos y acompañamiento de acuerdo con la organización.</p></details>
+            <details><summary>¿Cómo funciona el trial?</summary><p>Tienes 7 días para probar el entorno inicial con 3 retailers. No pedimos tarjeta. Para prospectos calificados podemos extenderlo una sola vez hasta 7 días adicionales.</p></details>
+            <details><summary>¿Puedo contratar mes a mes?</summary><p>Sí, en Starter y Business. La modalidad mensual tiene un precio mayor por la flexibilidad y no requiere compromiso anual.</p></details>
+            <details><summary>¿Qué precio recomendamos?</summary><p>El precio publicado principal corresponde al compromiso anual y es la opción con mejor relación valor/precio.</p></details>
+            <details><summary>¿Los precios incluyen IVA?</summary><p>No. Todos los valores se expresan en CLP + IVA.</p></details>
+            <details><summary>¿Qué define el valor final?</summary><p>Principalmente retailers, categorías, volumen, frecuencia de actualización, usuarios, módulos e integraciones.</p></details>
+            <details><summary>¿Existe una solución Enterprise?</summary><p>Sí. Parte desde $2.900.000 CLP + IVA mensuales y se configura según cobertura, gobierno, integraciones y soporte requerido.</p></details>
           </div>
         </section>
 
@@ -96,7 +118,7 @@ export default function PricingPage() {
           <Link href="/landing/contacto#demo">Hablar con ventas</Link>
         </section>
 
-        <BottomCTA title="Prueba la plataforma con tu caso de uso" copy="Agenda una demo y revisemos qué plan se ajusta mejor a tu equipo." />
+        <BottomCTA title="Empieza con 7 días de trial" copy="Crea tu cuenta, configura tu industria y valida MGP Super Precios con tu caso de uso." />
       </main>
     </PageChrome>
   );
