@@ -2,6 +2,7 @@ import type { Viewport } from "next";
 import "./globals.css";
 import "./mobile-tablet-overrides.css";
 import "./desktop-layout-overrides.css";
+import "./desktop-layout-overrides-v2.css";
 
 export const viewport: Viewport = {
   width: "device-width",
