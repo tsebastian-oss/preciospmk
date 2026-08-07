@@ -18,8 +18,12 @@ export default function EnterpriseAdminQuickLinks() {
   }, []);
 
   if (!target || !visible) return null;
-  return createPortal(<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginTop: 6 }}>
-    <a href="/admin/ai" style={{ padding: "8px", border: "1px solid rgba(255,255,255,.08)", borderRadius: 9, color: "#aaa9ba", background: "rgba(255,255,255,.025)", textAlign: "center", textDecoration: "none", fontSize: 7, fontWeight: 800 }}>IA ADMIN</a>
-    <a href="/admin/notifications" style={{ padding: "8px", border: "1px solid rgba(255,255,255,.08)", borderRadius: 9, color: "#aaa9ba", background: "rgba(255,255,255,.025)", textAlign: "center", textDecoration: "none", fontSize: 7, fontWeight: 800 }}>EMAIL ADMIN</a>
+  const linkStyle = { padding: "8px", border: "1px solid rgba(255,255,255,.08)", borderRadius: 9, color: "#aaa9ba", background: "rgba(255,255,255,.025)", textAlign: "center" as const, textDecoration: "none", fontSize: 7, fontWeight: 800 };
+  return createPortal(<div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6, marginTop: 6 }}>
+    <a href="/admin/trials" style={{ ...linkStyle, color: "#c7c1ff", borderColor: "rgba(109,93,252,.32)", background: "rgba(109,93,252,.08)" }}>TRIALS / CRM</a>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+      <a href="/admin/ai" style={linkStyle}>IA ADMIN</a>
+      <a href="/admin/notifications" style={linkStyle}>EMAIL ADMIN</a>
+    </div>
   </div>, target);
 }
