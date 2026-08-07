@@ -33,6 +33,15 @@ replaceOnce(
 const optimizerState='  const [optimizer, setOptimizer] = useState({ price: 0, cost: 0, units: 100, elasticity: -1.2, margin: 20 });\n';
 if(text.includes(optimizerState)){text=text.replace(optimizerState,'');changed=true;}
 
+const optimizerEffect=`  useEffect(() => {
+    if (!selectedMatch || optimizer.price !== 0) return;
+    const reference = numeric(selectedMatch.average_price);
+    setOptimizer((current) => ({ ...current, price: reference, cost: reference * .65 }));
+  }, [selectedMatch?.match_key, optimizer.price]);
+
+`;
+if(text.includes(optimizerEffect)){text=text.replace(optimizerEffect,'');changed=true;}
+
 if(!text.includes('if (view === "price-map") return <AIPriceMap filters={filters}/>;')){
   const start=text.indexOf('    if (view === "optimizer") {');
   const end=text.indexOf('    if (view === "promotions") {',start);
@@ -41,7 +50,7 @@ if(!text.includes('if (view === "price-map") return <AIPriceMap filters={filters
   changed=true;
 }
 
-if(text.includes('AI Price Optimizer')||text.includes('view === "optimizer"')||text.includes('setOptimizer(')){
+if(text.includes('AI Price Optimizer')||text.includes('view === "optimizer"')||text.includes('setOptimizer(')||text.includes('optimizer.price')){
   throw new Error('Quedaron referencias activas al AI Price Optimizer legacy');
 }
 
