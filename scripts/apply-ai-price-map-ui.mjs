@@ -44,9 +44,12 @@ if(text.includes(optimizerEffect)){text=text.replace(optimizerEffect,'');changed
 
 if(!text.includes('if (view === "price-map") return <AIPriceMap filters={filters}/>;')){
   const start=text.indexOf('    if (view === "optimizer") {');
-  const end=text.indexOf('    if (view === "promotions") {',start);
-  if(start<0||end<0)throw new Error('No se encontró el renderer completo de AI Price Optimizer');
-  text=text.slice(0,start)+'    if (view === "price-map") return <AIPriceMap filters={filters}/>;\n\n'+text.slice(end);
+  if(start<0)throw new Error('No se encontró el renderer de AI Price Optimizer');
+  const next=text.indexOf('\n    if (view === "',start+10);
+  const fallback=text.indexOf('\n    return <section',start+10);
+  const end=next>start?next:fallback;
+  if(end<0)throw new Error('No se encontró el final del renderer de AI Price Optimizer');
+  text=text.slice(0,start)+'    if (view === "price-map") return <AIPriceMap filters={filters}/>;\n'+text.slice(end);
   changed=true;
 }
 
