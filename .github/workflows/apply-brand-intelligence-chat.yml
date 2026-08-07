@@ -1,0 +1,119 @@
+name: Apply Brand Intelligence AI
+
+on:
+  push:
+    paths:
+      - .github/workflows/apply-brand-intelligence-chat.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Replace Competitive AI and Basket Simulator
+        shell: bash
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('src/app/UnifiedPlatformApp.tsx')
+          text = path.read_text()
+          original = text
+
+          # Add the new chat component.
+          needle = 'import styles from "./UnifiedPlatformApp.module.css";'
+          replacement = 'import styles from "./UnifiedPlatformApp.module.css";\nimport BrandIntelligenceChat from "./BrandIntelligenceChat";'
+          assert text.count(needle) == 1, 'styles import not found uniquely'
+          text = text.replace(needle, replacement, 1)
+
+          # Replace Competitive AI with Brand Intelligence AI as a real view id.
+          text = text.replace(' | "competitive"', ' | "brand-ai"', 1)
+          text = text.replace(' | "basket"', '', 1)
+          assert '{ view: "competitive", label: "Competitive AI", icon: "✦" },' in text
+          text = text.replace('{ view: "competitive", label: "Competitive AI", icon: "✦" },', '{ view: "brand-ai", label: "Brand Intelligence AI", icon: "✦" },', 1)
+          assert '{ view: "basket", label: "Basket Simulator", icon: "▤" },' in text
+          text = text.replace('    { view: "basket", label: "Basket Simulator", icon: "▤" },\n', '', 1)
+
+          assert '  competitive: { title: "Competitive AI", description: "Analiza posición de precio, riesgo competitivo y acciones sugeridas por producto." },' in text
+          text = text.replace(
+            '  competitive: { title: "Competitive AI", description: "Analiza posición de precio, riesgo competitivo y acciones sugeridas por producto." },',
+            '  "brand-ai": { title: "Brand Intelligence AI", description: "Conversa con tus datos de marca y obtén análisis de precios, surtido, stock y promociones con OpenAI." },',
+            1,
+          )
+          text = text.replace('  basket: { title: "Basket Simulator", description: "Compara el costo de una canasta homologada entre supermercados." },\n', '', 1)
+
+          # Basket-only state/data is removed.
+          text = text.replace('  const [basketKeys, setBasketKeys] = useState<string[]>([]);\n', '', 1)
+          text = text.replace('  const basketMatches = matches.matches.filter((item) => basketKeys.includes(item.match_key));\n', '', 1)
+
+          # Price Matching goes back to normal pagination; the chat has its own DB context.
+          pattern = re.compile(
+            r'  const loadMatches = useCallback\(async \(\) => \{\n'
+            r'    setLoadingMatches\(true\);\n'
+            r'    const competitiveMode = view === "competitive";\n'
+            r'    const params = new URLSearchParams\(\{\n'
+            r'      page: competitiveMode \? "1" : String\(matchPage\),\n'
+            r'      pageSize: competitiveMode \? "1000" : "30",\n'
+            r'      sort: competitiveMode \? "name_asc" : matchSort,\n'
+            r'      minSavings: competitiveMode \? "0" : minSavings,\n'
+            r'    \}\);'
+          )
+          repl = '  const loadMatches = useCallback(async () => {\n    setLoadingMatches(true);\n    const params = new URLSearchParams({ page: String(matchPage), pageSize: "30", sort: matchSort, minSavings });'
+          text, count = pattern.subn(repl, text, count=1)
+          assert count == 1, 'loadMatches competitive mode block not found'
+          text = text.replace('  }, [filters.query, filters.category, filters.brand, matchPage, matchSort, minSavings, view]);', '  }, [filters.query, filters.category, filters.brand, matchPage, matchSort, minSavings]);', 1)
+
+          # Replace the old Competitive AI renderer with the grounded chat.
+          start = text.index('    if (view === "competitive") {')
+          end = text.index('    if (view === "optimizer") {', start)
+          text = text[:start] + '    if (view === "brand-ai") return <BrandIntelligenceChat filters={filters}/>;\n\n' + text[end:]
+
+          # Remove Basket Simulator renderer completely.
+          start = text.index('    if (view === "basket") {')
+          end = text.index('    if (view === "categories") {', start)
+          text = text[:start] + text[end:]
+
+          # Point the overview AI shortcut to the new chat.
+          old = '<QuickAction title="IA / Insights" copy="Prioriza brechas, alzas y oportunidades." button="Abrir Competitive AI" onClick={() => navigate("competitive")}/>'
+          new = '<QuickAction title="Brand Intelligence AI" copy="Pregunta por cualquier marca usando datos reales de la plataforma." button="Abrir chat" onClick={() => navigate("brand-ai")}/>'
+          assert old in text, 'overview Competitive AI shortcut not found'
+          text = text.replace(old, new, 1)
+
+          # No visible legacy module names or old view references may remain.
+          assert 'Competitive AI' not in text
+          assert 'Basket Simulator' not in text
+          assert 'view === "competitive"' not in text
+          assert 'navigate("competitive")' not in text
+          assert 'view === "basket"' not in text
+          assert 'navigate("basket")' not in text
+          assert text != original
+          path.write_text(text)
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Remove temporary workflow and commit
+        shell: bash
+        run: |
+          rm .github/workflows/apply-brand-intelligence-chat.yml
+          git config user.name "MGP Automation"
+          git config user.email "automation@mgp.local"
+          git add src/app/UnifiedPlatformApp.tsx src/app/BrandIntelligenceChat.tsx src/app/BrandIntelligenceChat.module.css src/app/api/brand-chat/route.ts .github/workflows/apply-brand-intelligence-chat.yml
+          git commit -m "Replace Competitive AI and Basket with Brand Intelligence AI"
+          git push origin HEAD:main
