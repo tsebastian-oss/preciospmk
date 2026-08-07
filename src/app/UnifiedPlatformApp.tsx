@@ -24,6 +24,8 @@ type TrendSeries = { id: string; label: string; dimension: "category" | "brand";
 type TrendPayload = { series: TrendSeries[]; currentDayObservations: number; latestObservationAt: string | null; error?: string };
 type FilterOption = { id: string; label: string; kind: "group" | "smart" | "brand"; products: number; retailers: number };
 type FilterPayload = { defaults: string[]; categories: FilterOption[]; brands: FilterOption[]; maxSeries: number; industrySlug?: string | null; error?: string };
+type CascadeOption = { value: string; products: number };
+type CascadePayload = { retailerType: RetailerType; supermarket: string | null; category: string | null; brand: string | null; chains: CascadeOption[]; categories: CascadeOption[]; brands: CascadeOption[]; stock: { in: number; out: number }; error?: string };
 type ExportFormat = "xlsx" | "csv";
 type ExportJob = { id: string; format: ExportFormat; status: "queued" | "processing" | "completed" | "failed" | "expired"; parameters: { startDate?: string; endDate?: string; supermarket?: string | null; category?: string | null }; result_url: string | null; result_metadata: { rows?: number; bytes?: number; expiresAt?: string } | null; requested_at: string };
 type ExportPayload = { exports: ExportJob[]; error?: string };
@@ -104,6 +106,7 @@ export default function UnifiedPlatformApp() {
   const [pulse, setPulse] = useState<PulsePayload | null>(null);
   const [trend, setTrend] = useState<TrendPayload | null>(null);
   const [filterOptions, setFilterOptions] = useState<FilterPayload | null>(null);
+  const [cascadeOptions, setCascadeOptions] = useState<CascadePayload | null>(null);
   const [activeSeries, setActiveSeries] = useState<string[]>([]);
   const [productPage, setProductPage] = useState(1);
   const [matchPage, setMatchPage] = useState(1);
@@ -159,6 +162,7 @@ export default function UnifiedPlatformApp() {
     setLoadingProducts(true);
     const params = new URLSearchParams({ page: String(productPage), pageSize: "30", sort: productSort });
     if (filters.query.trim()) params.set("q", filters.query.trim());
+    if (filters.retailerType !== "all") params.set("retailerType", filters.retailerType);
     if (filters.supermarket) params.set("supermarket", filters.supermarket);
     if (filters.category) params.set("category", filters.category);
     if (filters.brand) params.set("brand", filters.brand);
@@ -174,7 +178,7 @@ export default function UnifiedPlatformApp() {
     } finally {
       setLoadingProducts(false);
     }
-  }, [filters.query, filters.supermarket, filters.category, filters.brand, filters.stock, productPage, productSort, view]);
+  }, [filters.query, filters.retailerType, filters.supermarket, filters.category, filters.brand, filters.stock, productPage, productSort, view]);
 
   const loadMatches = useCallback(async () => {
     setLoadingMatches(true);
@@ -195,6 +199,21 @@ export default function UnifiedPlatformApp() {
     }
   }, [filters.query, filters.category, filters.brand, matchPage, matchSort, minSavings]);
 
+  const loadCascadeOptions = useCallback(async () => {
+    const params = new URLSearchParams({ retailerType: filters.retailerType });
+    if (filters.supermarket) params.set("supermarket", filters.supermarket);
+    if (filters.category) params.set("category", filters.category);
+    if (filters.brand) params.set("brand", filters.brand);
+    try {
+      const response = await fetch(`/api/cascading-filter-options?${params.toString()}`, { cache: "no-store" });
+      const data = await response.json() as CascadePayload;
+      if (!response.ok) throw new Error(data.error || "No fue posible actualizar los filtros");
+      setCascadeOptions(data);
+    } catch {
+      setCascadeOptions(null);
+    }
+  }, [filters.retailerType, filters.supermarket, filters.category, filters.brand]);
+
   useEffect(() => {
     const initial = window.location.hash.replace("#", "") as View;
     if (initial && COPY[initial]) setView(initial);
@@ -207,6 +226,7 @@ export default function UnifiedPlatformApp() {
 
   useEffect(() => { const timeout = window.setTimeout(() => void loadProducts(), 250); return () => window.clearTimeout(timeout); }, [loadProducts]);
   useEffect(() => { const timeout = window.setTimeout(() => void loadMatches(), 250); return () => window.clearTimeout(timeout); }, [loadMatches]);
+  useEffect(() => { const timeout = window.setTimeout(() => void loadCascadeOptions(), 80); return () => window.clearTimeout(timeout); }, [loadCascadeOptions]);
 
   const seriesKey = activeSeries.join("|");
   useEffect(() => {
@@ -223,12 +243,15 @@ export default function UnifiedPlatformApp() {
   const summary = dashboard?.summary;
   const categoryOptions = filterOptions?.categories ?? [];
   const brandOptions = filterOptions?.brands ?? [];
+  const chainFilterOptions = cascadeOptions?.chains ?? (dashboard?.supermarkets ?? []).filter((item) => filters.retailerType === "all" || retailerType(item.supermarket) === filters.retailerType).map((item) => ({ value: item.supermarket, products: numeric(item.products) }));
+  const categoryFilterOptions = cascadeOptions?.categories ?? categoryOptions.map((item) => ({ value: item.label, products: item.products }));
+  const brandFilterOptions = cascadeOptions?.brands ?? brandOptions.slice(0, 150).map((item) => ({ value: item.label, products: item.products }));
   const retailers = useMemo(() => (dashboard?.supermarkets ?? []).filter((item) => {
     if (filters.retailerType !== "all" && retailerType(item.supermarket) !== filters.retailerType) return false;
     if (filters.supermarket && item.supermarket !== filters.supermarket) return false;
     return true;
   }), [dashboard, filters.retailerType, filters.supermarket]);
-  const categoryRows = useMemo(() => (dashboard?.categories ?? []).filter((item) => (!filters.supermarket || item.supermarket === filters.supermarket) && (!filters.category || item.category === filters.category)), [dashboard, filters.supermarket, filters.category]);
+  const categoryRows = useMemo(() => (dashboard?.categories ?? []).filter((item) => (filters.retailerType === "all" || retailerType(item.supermarket) === filters.retailerType) && (!filters.supermarket || item.supermarket === filters.supermarket) && (!filters.category || item.category === filters.category)), [dashboard, filters.retailerType, filters.supermarket, filters.category]);
   const pulseMap = useMemo(() => new Map((pulse?.data ?? []).map((item) => [item.supermarket.toLocaleLowerCase("es-CL"), item])), [pulse]);
   const weightedVariation = useMemo(() => {
     const ready = (pulse?.data ?? []).filter((item) => item.variationPct !== null);
@@ -240,6 +263,18 @@ export default function UnifiedPlatformApp() {
   const marketAverage = retailers.length ? retailers.reduce((sum, item) => sum + numeric(item.average_price) * Math.max(1, numeric(item.products)), 0) / retailers.reduce((sum, item) => sum + Math.max(1, numeric(item.products)), 0) : 0;
   const selectedMatch = matches.matches.find((item) => item.match_key === competitiveKey) ?? matches.matches[0];
   const basketMatches = matches.matches.filter((item) => basketKeys.includes(item.match_key));
+
+  useEffect(() => {
+    if (!cascadeOptions) return;
+    setFilters((current) => {
+      if (current.supermarket && !cascadeOptions.chains.some((item) => item.value === current.supermarket)) return { ...current, supermarket: "", category: "", brand: "", stock: "all" };
+      if (current.category && !cascadeOptions.categories.some((item) => item.value === current.category)) return { ...current, category: "", brand: "", stock: "all" };
+      if (current.brand && !cascadeOptions.brands.some((item) => item.value === current.brand)) return { ...current, brand: "", stock: "all" };
+      if (current.stock === "in" && cascadeOptions.stock.in <= 0) return { ...current, stock: "all" };
+      if (current.stock === "out" && cascadeOptions.stock.out <= 0) return { ...current, stock: "all" };
+      return current;
+    });
+  }, [cascadeOptions]);
 
   useEffect(() => {
     if (!selectedMatch || optimizer.price !== 0) return;
@@ -280,7 +315,18 @@ export default function UnifiedPlatformApp() {
   }, [pulse, dashboard, matches.matches]);
 
   function navigate(next: View) { setView(next); setMobileOpen(false); setProductPage(1); setMatchPage(1); window.history.replaceState(null, "", `#${next}`); window.scrollTo({ top: 0, behavior: "smooth" }); }
-  function updateFilter<K extends keyof Filters>(key: K, value: Filters[K]) { setFilters((current) => ({ ...current, [key]: value })); setProductPage(1); setMatchPage(1); }
+  function updateFilter<K extends keyof Filters>(key: K, value: Filters[K]) {
+    setFilters((current) => {
+      const next: Filters = { ...current, [key]: value };
+      if (key === "retailerType") { next.supermarket = ""; next.category = ""; next.brand = ""; next.stock = "all"; }
+      else if (key === "supermarket") { next.category = ""; next.brand = ""; next.stock = "all"; }
+      else if (key === "category") { next.brand = ""; next.stock = "all"; }
+      else if (key === "brand") { next.stock = "all"; }
+      return next;
+    });
+    setProductPage(1);
+    setMatchPage(1);
+  }
   function clearFilters() { setFilters(DEFAULT_FILTERS); setProductPage(1); setMatchPage(1); }
   function addSeries(id: string) { if (!id) return; setActiveSeries((current) => current.includes(id) ? current : [...current, id].slice(0, filterOptions?.maxSeries ?? 8)); }
 
@@ -390,7 +436,7 @@ export default function UnifiedPlatformApp() {
     <main className={styles.main}>
       <header className={styles.topbar}><button className={styles.menuButton} onClick={() => setMobileOpen((current) => !current)}>☰</button><div className={styles.pageTitle}><span>{groupLabel}</span><h1>{activeCopy.title}</h1><p>{activeCopy.description}</p></div><label className={styles.search}><span>⌕</span><input value={filters.query} onChange={(event) => updateFilter("query", event.target.value)} placeholder="Buscar productos, marcas o categorías…"/></label><button className={styles.headerControl}><span>▣</span> Últimos {filters.period} días</button><button className={styles.headerControl}><span>▱</span> {filterOptions?.industrySlug || "Todas las industrias"}</button></header>
       {notice && <div className={styles.notice}>{notice}<button onClick={() => setNotice("")}>×</button></div>}
-      <section className={styles.filters}><div className={styles.typeFilter}><span>Tipo de retailer</span><div>{(["all", "supermarket", "department_store", "pharmacy"] as RetailerType[]).map((type) => <button key={type} className={filters.retailerType === type ? styles.selected : ""} onClick={() => updateFilter("retailerType", type)}>{type === "all" ? "Todos" : type === "supermarket" ? "Supermercados" : type === "department_store" ? "Multitiendas" : "Farmacias"}</button>)}</div></div><label><span>Cadena</span><select value={filters.supermarket} onChange={(event) => updateFilter("supermarket", event.target.value)}><option value="">Todas</option>{(dashboard?.supermarkets ?? []).filter((item) => filters.retailerType === "all" || retailerType(item.supermarket) === filters.retailerType).map((item) => <option key={item.supermarket}>{item.supermarket}</option>)}</select></label><label><span>Categoría</span><select value={filters.category} onChange={(event) => updateFilter("category", event.target.value)}><option value="">Todas</option>{categoryOptions.slice(0, 150).map((item) => <option key={item.id} value={item.label}>{item.label}</option>)}</select></label><label><span>Marca</span><select value={filters.brand} onChange={(event) => updateFilter("brand", event.target.value)}><option value="">Todas</option>{brandOptions.slice(0, 150).map((item) => <option key={item.id} value={item.label}>{item.label}</option>)}</select></label><label><span>Stock</span><select value={filters.stock} onChange={(event) => updateFilter("stock", event.target.value as Filters["stock"])}><option value="all">Todo</option><option value="in">Disponible</option><option value="out">Sin stock</option></select></label><label><span>Período</span><select value={filters.period} onChange={(event) => updateFilter("period", Number(event.target.value))}><option value={7}>7 días</option><option value={30}>30 días</option><option value={90}>90 días</option></select></label><button className={styles.clear} onClick={clearFilters}>⌫ Limpiar</button></section>
+      <section className={styles.filters}><div className={styles.typeFilter}><span>Tipo de retailer</span><div>{(["all", "supermarket", "department_store", "pharmacy"] as RetailerType[]).map((type) => <button key={type} className={filters.retailerType === type ? styles.selected : ""} onClick={() => updateFilter("retailerType", type)}>{type === "all" ? "Todos" : type === "supermarket" ? "Supermercados" : type === "department_store" ? "Multitiendas" : "Farmacias"}</button>)}</div></div><label><span>Cadena</span><select value={filters.supermarket} onChange={(event) => updateFilter("supermarket", event.target.value)}><option value="">Todas</option>{chainFilterOptions.map((item) => <option key={item.value} value={item.value}>{item.value} ({number(item.products)})</option>)}</select></label><label><span>Categoría</span><select value={filters.category} onChange={(event) => updateFilter("category", event.target.value)}><option value="">Todas</option>{categoryFilterOptions.map((item) => <option key={item.value} value={item.value}>{item.value} ({number(item.products)})</option>)}</select></label><label><span>Marca</span><select value={filters.brand} onChange={(event) => updateFilter("brand", event.target.value)}><option value="">Todas</option>{brandFilterOptions.map((item) => <option key={item.value} value={item.value}>{item.value} ({number(item.products)})</option>)}</select></label><label><span>Stock</span><select value={filters.stock} onChange={(event) => updateFilter("stock", event.target.value as Filters["stock"])}><option value="all">Todo</option><option value="in" disabled={cascadeOptions ? cascadeOptions.stock.in <= 0 : false}>Disponible{cascadeOptions ? ` (${number(cascadeOptions.stock.in)})` : ""}</option><option value="out" disabled={cascadeOptions ? cascadeOptions.stock.out <= 0 : false}>Sin stock{cascadeOptions ? ` (${number(cascadeOptions.stock.out)})` : ""}</option></select></label><label><span>Período</span><select value={filters.period} onChange={(event) => updateFilter("period", Number(event.target.value))}><option value={7}>7 días</option><option value={30}>30 días</option><option value={90}>90 días</option></select></label><button className={styles.clear} onClick={clearFilters}>⌫ Limpiar</button></section>
       {renderView()}
     </main>
   </div>;
