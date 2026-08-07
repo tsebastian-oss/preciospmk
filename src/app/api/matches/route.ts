@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
 
   const params = request.nextUrl.searchParams;
   const page = integer(params.get("page"), 1, 1, 10_000);
-  const pageSize = integer(params.get("pageSize"), 20, 10, 50);
+  const pageSize = integer(params.get("pageSize"), 20, 10, 1000);
   const q = safeSearch(params.get("q") ?? "");
   const category = safeFilter(params.get("category") ?? "");
   const brand = safeFilter(params.get("brand") ?? "");
