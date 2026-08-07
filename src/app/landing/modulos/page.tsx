@@ -49,7 +49,7 @@ export default function ModulesPage() {
 
         <section id="catalogo" className={styles.section}>
           <SectionHeading title="Conoce todos nuestros módulos" copy="Cada módulo resuelve una parte del problema; juntos construyen una vista completa del mercado." />
-          <div className={styles.featureGrid} style={{ gridTemplateColumns: "repeat(7,minmax(0,1fr))" }}>
+          <div className={styles.featureGrid}>
             {modules.map(([title, copy, icon, tone]) => <article className={styles.featureCard} key={title}><PillIcon tone={tone}>{icon}</PillIcon><h3>{title}</h3><p>{copy}</p><Link href="/landing/contacto#demo">Ver módulo →</Link></article>)}
           </div>
         </section>
@@ -76,8 +76,8 @@ export default function ModulesPage() {
 
         <section className={styles.section}>
           <SectionHeading title="Integraciones y exportaciones" copy="Conecta la información con el flujo de trabajo que ya utiliza tu equipo." />
-          <div className={styles.featureGrid} style={{ gridTemplateColumns: "repeat(7,minmax(0,1fr))" }}>
-            {[["CSV","▤","blue"],["Excel","X","green"],["BigQuery","◈","blue"],["API","</>","purple"],["Power BI","▥","orange"],["Looker Studio","◎","blue"],["Slack","#","purple"]].map(([title,icon,tone]) => <article className={styles.featureCard} style={{ minHeight: 150 }} key={title}><PillIcon tone={tone as "blue"|"green"|"purple"|"orange"}>{icon}</PillIcon><h3>{title}</h3><p>Disponible según configuración e implementación del cliente.</p></article>)}
+          <div className={styles.featureGrid}>
+            {[["CSV","▤","blue"],["Excel","X","green"],["BigQuery","◈","blue"],["API","</>","purple"],["Power BI","▥","orange"],["Looker Studio","◎","blue"],["Slack","#","purple"]].map(([title,icon,tone]) => <article className={styles.featureCard} key={title}><PillIcon tone={tone as "blue"|"green"|"purple"|"orange"}>{icon}</PillIcon><h3>{title}</h3><p>Disponible según configuración e implementación del cliente.</p></article>)}
           </div>
           <div className={styles.securityNote}><b>◎</b><div><strong>¿Necesitas una integración personalizada?</strong><p>Podemos diseñar una salida o conector para tu flujo de trabajo. Cuéntanos qué sistema utilizas y qué datos necesitas.</p><Link href="/landing/contacto" className={styles.outlineCta}>Hablemos</Link></div></div>
         </section>
