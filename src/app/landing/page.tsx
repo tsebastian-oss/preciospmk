@@ -1,81 +1,105 @@
 import Link from "next/link";
-import styles from "./landing.module.css";
+import {
+  AIPriceMapPreview,
+  BottomCTA,
+  DashboardPreview,
+  PageChrome,
+  PillIcon,
+  SectionHeading,
+} from "./MarketingShell";
+import styles from "./marketing.module.css";
 
-const features = [
-  ["Pricing Intelligence", "Compara precios efectivos, promociones y brechas entre cadenas."],
-  ["Assortment Tracking", "Detecta productos nuevos, modificados, eliminados y reactivados."],
-  ["Daily Market Crawls", "Mantén un histórico diario del mercado con trazabilidad por corrida."],
-  ["Executive Visibility", "Convierte miles de SKU en señales claras para decisiones comerciales."],
-];
+export const metadata = {
+  title: "MGP Super Precios | Price Intelligence para Chile y LatAm",
+  description: "Monitorea precios, promociones, surtido y competencia con dashboards, alertas e inteligencia artificial.",
+};
+
+const modules = [
+  ["Scraping automatizado", "Capturamos precios, promociones y surtido de miles de productos de forma continua.", "⌁", "blue"],
+  ["Dashboards dinámicos", "Visualiza KPIs, tendencias y comparativas en tiempo real con filtros avanzados.", "▦", "blue"],
+  ["Brand Intelligence", "Monitorea tu marca, la competencia, promociones, disponibilidad y posicionamiento.", "◇", "purple"],
+  ["AI Price Map", "Convierte preguntas comerciales en mapas competitivos de precio construidos con IA.", "⌖", "green"],
+  ["Alertas y reportes", "Recibe señales automáticas ante cambios de precio, surtido, stock y promociones.", "!", "orange"],
+  ["Exportables para negocio", "Lleva la información a Excel, CSV y otros flujos de trabajo de tu equipo.", "↓", "green"],
+] as const;
+
+const benefits = [
+  ["Equipos Comerciales", "Negocia mejor con datos competitivos actualizados.", "◎", "blue"],
+  ["Marketing", "Evalúa promociones y entiende el movimiento de las marcas.", "◁", "purple"],
+  ["Category Managers", "Optimiza surtido, gaps y posicionamiento de categorías.", "▤", "orange"],
+  ["Equipos de Pricing", "Define precios más competitivos con evidencia de mercado.", "$", "green"],
+  ["Supply / Operaciones", "Anticipa quiebres y mejora la lectura de disponibilidad.", "↻", "blue"],
+] as const;
 
 export default function LandingPage() {
   return (
-    <main className={styles.page}>
-      <header className={styles.header}>
-        <Link href="/landing" className={styles.brand}>
-          <span>M</span>
-          <div><strong>MGP Retail</strong><small>Intelligence Platform</small></div>
-        </Link>
-        <Link href="/login" className={styles.login}>Ingresar</Link>
-      </header>
-
-      <section className={styles.hero}>
-        <div className={styles.heroCopy}>
-          <span className={styles.eyebrow}>RETAIL INTELLIGENCE · CHILE</span>
-          <h1>Transforma precios públicos en decisiones comerciales.</h1>
-          <p>
-            Monitorea precios, promociones, disponibilidad y cambios de surtido de los principales supermercados desde una sola plataforma privada.
-          </p>
-          <div className={styles.actions}>
-            <Link href="/login" className={styles.primary}>Ingresar a la plataforma</Link>
-            <a href="#capacidades" className={styles.secondary}>Conocer capacidades</a>
+    <PageChrome active="inicio">
+      <main>
+        <section className={styles.hero}>
+          <div className={styles.heroInner}>
+            <div className={styles.heroCopy}>
+              <span className={styles.eyebrow}>PRICE INTELLIGENCE · CHILE Y LATAM</span>
+              <h1>Inteligencia de precios, promociones y surtido <em>en tiempo real</em></h1>
+              <p>Monitorea supermercados, farmacias y multitiendas desde una sola plataforma. Consolida información pública de mercado, automatiza el análisis y transforma miles de observaciones en decisiones comerciales más rápidas.</p>
+              <div className={styles.heroActions}>
+                <Link href="/landing/contacto#demo" className={styles.primaryBtn}>Agenda una demo</Link>
+                <Link href="/login" className={styles.secondaryBtn}>▷ Ver plataforma</Link>
+              </div>
+              <div className={styles.heroTrust}><span>Datos automatizados</span><span>Cobertura multisector</span><span>Insights con IA</span></div>
+            </div>
+            <DashboardPreview />
           </div>
+        </section>
+
+        <div className={styles.trustStripWrap}>
+          <div className={styles.trustStrip}><span>▣ Supermercados + Farmacias</span><span>▦ Dashboards en tiempo real</span><span>! Alertas automáticas</span><span>⌖ AI Price Map</span><span>◇ Brand Intelligence</span></div>
         </div>
 
-        <div className={styles.visual} aria-hidden>
-          <div className={styles.visualTop}><span>Market intelligence</span><b>LIVE</b></div>
-          <div className={styles.pulse}>
-            <i /><i /><i /><i /><i /><i /><i /><i />
+        <section className={`${styles.section} ${styles.sectionTight}`}>
+          <div className={styles.statsGrid}>
+            <article className={styles.statCard}><span>↗</span><div><strong>380K+</strong><small>productos catalogados en la base</small></div></article>
+            <article className={styles.statCard}><span>◎</span><div><strong>600K+</strong><small>observaciones de precio procesadas</small></div></article>
+            <article className={styles.statCard}><span>⌖</span><div><strong>Multi-retail</strong><small>supermercados, farmacias y multitiendas</small></div></article>
+            <article className={styles.statCard}><span>◴</span><div><strong>Continuo</strong><small>pipeline de captura y análisis automatizado</small></div></article>
           </div>
-          <div className={styles.visualRows}>
-            <div><span>Pricing signals</span><strong>Always on</strong></div>
-            <div><span>Assortment changes</span><strong>Tracked daily</strong></div>
-            <div><span>Competitive gaps</span><strong>Actionable</strong></div>
+        </section>
+
+        <section className={styles.section}>
+          <SectionHeading eyebrow="MÓDULOS" title="Todo lo que tu equipo comercial necesita" copy="Una sola plataforma para capturar, comparar, interpretar y activar información competitiva." />
+          <div className={styles.featureGrid}>
+            {modules.map(([title, copy, icon, tone]) => <article className={styles.featureCard} key={title}><PillIcon tone={tone}>{icon}</PillIcon><h3>{title}</h3><p>{copy}</p><Link href="/landing/modulos">Ver módulo →</Link></article>)}
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className={styles.logos}>
-        <span>Monitoreo competitivo para</span>
-        <div><b>Lider</b><b>Jumbo</b><b>Santa Isabel</b></div>
-      </section>
+        <section className={`${styles.highlight} ${styles.highlightPurple}`}>
+          <div className={styles.highlightCopy}>
+            <span>MÓDULO DESTACADO</span>
+            <h2>AI Price Map</h2>
+            <p>Pregunta en lenguaje natural y deja que la plataforma construya automáticamente el universo comparable y el mapa competitivo.</p>
+            <ul className={styles.checkList}><li>La IA interpreta marca, categoría y formato.</li><li>Normaliza packs y precios equivalentes.</li><li>Selecciona competidores desde la base real.</li><li>Construye mapas y explica los principales hallazgos.</li></ul>
+            <Link href="/landing/modulos" className={styles.outlineCta}>Conocer AI Price Map</Link>
+          </div>
+          <AIPriceMapPreview />
+        </section>
 
-      <section className={styles.features} id="capacidades">
-        <div className={styles.sectionHeading}>
-          <span>CAPACIDADES</span>
-          <h2>Una vista continua del mercado.</h2>
-          <p>La información sensible permanece dentro de un entorno autenticado.</p>
-        </div>
-        <div className={styles.grid}>
-          {features.map(([title, copy], index) => (
-            <article key={title}>
-              <span>0{index + 1}</span>
-              <h3>{title}</h3>
-              <p>{copy}</p>
-            </article>
-          ))}
-        </div>
-      </section>
+        <section className={styles.section}>
+          <SectionHeading eyebrow="CÓMO FUNCIONA" title="Del dato a la decisión en 3 pasos" />
+          <div className={styles.steps}>
+            <article className={styles.step}><b>1</b><h3>Capturamos datos</h3><p>Nuestros procesos automatizados recopilan precios, promociones, disponibilidad y surtido desde fuentes públicas.</p></article>
+            <article className={styles.step}><b>2</b><h3>Unificamos y analizamos</h3><p>Normalizamos la información, identificamos equivalencias y construimos indicadores comparables.</p></article>
+            <article className={styles.step}><b>3</b><h3>Actúas con IA</h3><p>Consulta el mercado, recibe alertas y utiliza dashboards o mapas competitivos para decidir con mayor velocidad.</p></article>
+          </div>
+        </section>
 
-      <section className={styles.cta}>
-        <div><span>PRIVATE ACCESS</span><h2>Tu inteligencia comercial, protegida.</h2></div>
-        <Link href="/login" className={styles.primary}>Ingresar con credenciales</Link>
-      </section>
+        <section className={styles.section}>
+          <SectionHeading eyebrow="PARA QUIÉN ES" title="Beneficios para cada equipo" />
+          <div className={styles.benefits}>
+            {benefits.map(([title, copy, icon, tone]) => <article className={styles.benefit} key={title}><PillIcon tone={tone}>{icon}</PillIcon><h3>{title}</h3><p>{copy}</p></article>)}
+          </div>
+        </section>
 
-      <footer className={styles.footer}>
-        <span>MGP Retail Intelligence</span>
-        <small>Información competitiva para uso autorizado.</small>
-      </footer>
-    </main>
+        <BottomCTA />
+      </main>
+    </PageChrome>
   );
 }
