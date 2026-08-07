@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { FormEvent, useMemo, useState } from "react";
 import { PageChrome } from "../landing/MarketingShell";
-import styles from "../landing/marketing.module.css";
+import styles from "./register.module.css";
 
 const INDUSTRIES = [
   ["grocery", "Supermercados / consumo masivo"],
@@ -101,7 +101,7 @@ export default function RegisterPage() {
                 <div className={styles.registerCardHead}>
                   <span>PASO 1 DE 2 · DATOS DE ACCESO</span>
                   <h2>Crea tu cuenta</h2>
-                  <p>Ya tienes una cuenta? <Link href="/login">Ingresa aquí</Link></p>
+                  <p>¿Ya tienes una cuenta? <Link href="/login">Ingresa aquí</Link></p>
                 </div>
                 <form onSubmit={submit} className={styles.registerForm}>
                   <input name="website" tabIndex={-1} autoComplete="off" className={styles.honeypot} aria-hidden="true" />
