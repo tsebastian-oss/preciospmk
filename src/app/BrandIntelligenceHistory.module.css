@@ -1,0 +1,227 @@
+.workspace {
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  gap: 14px;
+  align-items: stretch;
+}
+
+.historyPanel {
+  min-height: 570px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #dce4f0;
+  border-radius: 18px;
+  background: #f8faff;
+  box-shadow: 0 8px 24px rgba(36, 59, 94, .05);
+}
+
+.historyHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 18px 16px 12px;
+}
+
+.historyHeader span,
+.historyHeader strong {
+  display: block;
+}
+
+.historyHeader span {
+  margin-bottom: 4px;
+  color: #8290a5;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: .1em;
+}
+
+.historyHeader strong {
+  color: #17263d;
+  font-size: 14px;
+}
+
+.historyHeader button {
+  width: 31px;
+  height: 31px;
+  border: 1px solid #d7e1f0;
+  border-radius: 9px;
+  background: #fff;
+  color: #245fe1;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.newChat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 12px 12px;
+  padding: 10px 11px;
+  border: 1px solid #cbd9ef;
+  border-radius: 11px;
+  background: #fff;
+  color: #2459c7;
+  font-size: 11px;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+
+.newChat:hover {
+  border-color: #2f6ce8;
+  background: #f4f8ff;
+}
+
+.newChat span {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: #eaf2ff;
+}
+
+.historyList {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 8px 12px;
+}
+
+.historyItem {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) 20px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 8px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.historyItem:hover {
+  background: #f0f5fd;
+}
+
+.activeHistoryItem {
+  border-color: #d6e3f7;
+  background: #eaf2ff;
+}
+
+.historyIcon {
+  width: 25px;
+  height: 25px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: #edf3fc;
+  color: #376fe7;
+  font-size: 10px;
+}
+
+.activeHistoryItem .historyIcon {
+  background: #fff;
+}
+
+.historyCopy {
+  min-width: 0;
+}
+
+.historyCopy strong,
+.historyCopy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.historyCopy strong {
+  color: #263750;
+  font-size: 10.5px;
+  font-weight: 750;
+}
+
+.historyCopy small {
+  margin-top: 3px;
+  color: #8a97a9;
+  font-size: 8.5px;
+}
+
+.deleteHistory {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: transparent;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.historyItem:hover .deleteHistory,
+.activeHistoryItem .deleteHistory {
+  color: #8b98aa;
+}
+
+.deleteHistory:hover {
+  background: #fff;
+  color: #bd4d49 !important;
+}
+
+.historyEmpty {
+  padding: 18px 10px;
+  color: #8b98aa;
+  font-size: 10px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.loadingConversation {
+  margin: auto;
+  color: #77869b;
+  font-size: 12px;
+}
+
+@media (max-width: 1050px) {
+  .workspace {
+    grid-template-columns: 210px minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 820px) {
+  .workspace {
+    display: block;
+  }
+
+  .historyPanel {
+    min-height: auto;
+    margin-bottom: 12px;
+  }
+
+  .historyHeader {
+    padding-bottom: 10px;
+  }
+
+  .historyList {
+    display: flex;
+    gap: 7px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0 12px 12px;
+  }
+
+  .historyItem {
+    flex: 0 0 210px;
+  }
+
+  .newChat {
+    width: calc(100% - 24px);
+  }
+}
