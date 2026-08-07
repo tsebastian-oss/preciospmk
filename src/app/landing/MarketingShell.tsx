@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import styles from "./marketing.module.css";
 
-export type MarketingPage = "inicio" | "soluciones" | "modulos" | "precios" | "contacto";
+export type MarketingPage = "inicio" | "soluciones" | "modulos" | "precios" | "contacto" | "registro";
 
 export const CONTACT_PHONE_DISPLAY = "+56 9 8231 5934";
 export const CONTACT_PHONE_LINK = "tel:+56982315934";
@@ -70,7 +70,11 @@ export function SiteHeader({ active }: { active: MarketingPage }) {
           <Link href="/landing/precios" className={active === "precios" ? styles.navActive : undefined}>Precios</Link>
           <Link href="/landing/contacto" className={active === "contacto" ? styles.navActive : undefined}>Contacto</Link>
         </nav>
-        <Link className={styles.headerCta} href="/landing/contacto#demo">Solicitar demo</Link>
+        <div style={{ display: "flex", alignItems: "center", gap: 9, marginLeft: 4, whiteSpace: "nowrap" }}>
+          <Link href="/login" style={{ color: "#d8e4f3", fontSize: 12, fontWeight: 800, padding: "10px 8px" }}>Ingresar</Link>
+          <Link href="/registro" style={{ color: "#fff", background: "#1478ee", borderRadius: 10, fontSize: 12, fontWeight: 900, padding: "12px 15px", boxShadow: "0 10px 26px rgba(20,120,238,.22)" }}>Crear cuenta</Link>
+          <Link className={styles.headerCta} href="/landing/contacto#demo">Solicitar demo</Link>
+        </div>
       </div>
     </header>
   );
@@ -195,7 +199,7 @@ export function SiteFooter() {
           <a href={CONTACT_PHONE_LINK}>☎ {CONTACT_PHONE_DISPLAY}</a>
           <a href={`mailto:${CONTACT_EMAIL}`}>✉ {CONTACT_EMAIL}</a>
         </div>
-        <div><strong>Plataforma</strong><Link href="/landing/soluciones">Soluciones</Link><Link href="/landing/modulos">Módulos</Link><Link href="/landing/precios">Precios</Link><Link href="/login">Ingresar</Link></div>
+        <div><strong>Plataforma</strong><Link href="/landing/soluciones">Soluciones</Link><Link href="/landing/modulos">Módulos</Link><Link href="/landing/precios">Precios</Link><Link href="/registro">Crear cuenta</Link><Link href="/login">Ingresar</Link></div>
         <div><strong>Recursos</strong><Link href="/landing/modulos">AI Price Map</Link><Link href="/landing/modulos">Brand Intelligence AI</Link><Link href="/landing/modulos">Dashboards</Link><Link href="/landing/contacto">Preguntas frecuentes</Link></div>
         <div><strong>Empresa</strong><Link href="/landing/contacto">Contacto</Link><a href={CONTACT_WHATSAPP} target="_blank" rel="noreferrer">WhatsApp</a><a href={`mailto:${CONTACT_EMAIL}`}>Correo</a><Link href="/login">Acceso clientes</Link></div>
         <div><strong>Legal</strong><span>Privacidad y seguridad</span><span>Uso responsable de datos</span><span>Información pública de mercado</span><span>Acceso autenticado al producto</span></div>
