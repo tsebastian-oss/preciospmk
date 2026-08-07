@@ -1,0 +1,369 @@
+.shell {
+  display: grid;
+  gap: 18px;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 22px 24px;
+  background: linear-gradient(135deg, #0b1630 0%, #142a5e 58%, #1f58d7 100%);
+  border-radius: 18px;
+  color: white;
+  box-shadow: 0 12px 28px rgba(25, 63, 140, .14);
+}
+
+.heroIcon {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .13);
+  border: 1px solid rgba(255, 255, 255, .18);
+  font-size: 24px;
+}
+
+.hero > div:nth-child(2) > span {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: .14em;
+  color: #a9c5ff;
+}
+
+.hero h2 {
+  margin: 0;
+  font-size: 23px;
+  letter-spacing: -.02em;
+}
+
+.hero p {
+  margin: 6px 0 0;
+  max-width: 720px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #d7e3ff;
+}
+
+.scopeBox {
+  min-width: 230px;
+  max-width: 360px;
+  padding: 13px 15px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .09);
+  border: 1px solid rgba(255, 255, 255, .14);
+}
+
+.scopeBox small,
+.scopeBox strong,
+.scopeBox span {
+  display: block;
+}
+
+.scopeBox small {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  color: #a9c5ff;
+}
+
+.scopeBox strong {
+  margin-top: 5px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.scopeBox span {
+  margin-top: 4px;
+  font-size: 10px;
+  color: #c8d7f7;
+}
+
+.chatCard {
+  min-height: 570px;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  background: white;
+  border: 1px solid #dce4f0;
+  border-radius: 18px;
+  box-shadow: 0 8px 24px rgba(36, 59, 94, .06);
+}
+
+.messages {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 26px;
+  min-height: 360px;
+  max-height: 590px;
+  overflow-y: auto;
+}
+
+.message {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 82%;
+}
+
+.user {
+  align-self: flex-end;
+  justify-content: flex-end;
+}
+
+.assistant {
+  align-self: flex-start;
+}
+
+.avatar {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: #edf4ff;
+  color: #1d5fe9;
+  font-size: 10px;
+  font-weight: 900;
+}
+
+.bubble {
+  padding: 14px 16px;
+  border-radius: 15px;
+  border: 1px solid #dfe7f2;
+  background: #f8faff;
+  color: #17243a;
+}
+
+.user .bubble {
+  border-color: #2465ef;
+  background: #2465ef;
+  color: white;
+}
+
+.answer {
+  white-space: pre-wrap;
+  font-size: 13px;
+  line-height: 1.62;
+}
+
+.brandTag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 9px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #eaf2ff;
+  color: #1d5fe9;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.brandTag span {
+  font-size: 7px;
+}
+
+.bubble footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #e2e9f3;
+}
+
+.bubble footer span {
+  padding: 3px 7px;
+  border-radius: 7px;
+  background: white;
+  color: #66758d;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.thinking {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: #697991;
+}
+
+.thinking i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #2d6cf0;
+  animation: pulse 1s infinite ease-in-out;
+}
+
+.thinking i:nth-child(2) { animation-delay: .16s; }
+.thinking i:nth-child(3) { animation-delay: .32s; }
+.thinking span { margin-left: 5px; font-size: 12px; }
+
+@keyframes pulse {
+  0%, 100% { opacity: .25; transform: translateY(0); }
+  50% { opacity: 1; transform: translateY(-2px); }
+}
+
+.examples {
+  padding: 0 26px 22px 68px;
+}
+
+.examples > span {
+  display: block;
+  margin-bottom: 9px;
+  color: #7b899e;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.examples > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.examples button {
+  padding: 8px 11px;
+  border: 1px solid #d9e3f2;
+  border-radius: 999px;
+  background: white;
+  color: #31547f;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.examples button:hover {
+  border-color: #2a67ee;
+  color: #1f5de0;
+  background: #f5f8ff;
+}
+
+.error {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 0 22px 10px;
+  padding: 9px 12px;
+  border-radius: 9px;
+  background: #fff5f2;
+  color: #a84730;
+  font-size: 11px;
+}
+
+.error button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 10px;
+  margin: 0 22px;
+  padding: 10px 10px 10px 15px;
+  border: 1px solid #cad7ea;
+  border-radius: 15px;
+  background: #fbfcff;
+  box-shadow: 0 5px 16px rgba(34, 74, 139, .06);
+}
+
+.composer:focus-within {
+  border-color: #3974ed;
+  box-shadow: 0 0 0 3px rgba(55, 111, 231, .09);
+}
+
+.composer textarea {
+  width: 100%;
+  min-height: 42px;
+  max-height: 130px;
+  resize: vertical;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #18263a;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.composer textarea::placeholder {
+  color: #91a0b5;
+}
+
+.composer button {
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 11px;
+  background: #2563eb;
+  color: white;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.composer button:disabled {
+  background: #a9b9d6;
+  cursor: default;
+}
+
+.composerFooter {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 24px 18px;
+  color: #8996a9;
+  font-size: 9px;
+}
+
+.composerFooter button {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: #3569d8;
+  font-size: 9px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .hero {
+    grid-template-columns: auto 1fr;
+  }
+  .scopeBox {
+    grid-column: 1 / -1;
+    max-width: none;
+  }
+  .message { max-width: 94%; }
+  .examples { padding-left: 26px; }
+}
+
+@media (max-width: 620px) {
+  .hero { padding: 18px; }
+  .heroIcon { display: none; }
+  .hero { grid-template-columns: 1fr; }
+  .scopeBox { grid-column: auto; }
+  .messages { padding: 18px; }
+  .message { max-width: 100%; }
+  .examples { padding: 0 18px 18px; }
+  .composer { margin: 0 14px; }
+  .composerFooter { padding: 8px 16px 16px; flex-direction: column; }
+}
