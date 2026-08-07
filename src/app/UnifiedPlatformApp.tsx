@@ -182,7 +182,13 @@ export default function UnifiedPlatformApp() {
 
   const loadMatches = useCallback(async () => {
     setLoadingMatches(true);
-    const params = new URLSearchParams({ page: String(matchPage), pageSize: "30", sort: matchSort, minSavings });
+    const competitiveMode = view === "competitive";
+    const params = new URLSearchParams({
+      page: competitiveMode ? "1" : String(matchPage),
+      pageSize: competitiveMode ? "1000" : "30",
+      sort: competitiveMode ? "name_asc" : matchSort,
+      minSavings: competitiveMode ? "0" : minSavings,
+    });
     if (filters.query.trim()) params.set("q", filters.query.trim());
     if (filters.category) params.set("category", filters.category);
     if (filters.brand) params.set("brand", filters.brand);
@@ -191,13 +197,13 @@ export default function UnifiedPlatformApp() {
       const data = await response.json() as MatchesPayload;
       if (!response.ok) throw new Error(data.error || "No fue posible cargar Price Matching");
       setMatches(data);
-      setCompetitiveKey((current) => current || data.matches[0]?.match_key || "");
+      setCompetitiveKey((current) => data.matches.some((item) => item.match_key === current) ? current : data.matches[0]?.match_key || "");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Error cargando Price Matching");
     } finally {
       setLoadingMatches(false);
     }
-  }, [filters.query, filters.category, filters.brand, matchPage, matchSort, minSavings]);
+  }, [filters.query, filters.category, filters.brand, matchPage, matchSort, minSavings, view]);
 
   const loadCascadeOptions = useCallback(async () => {
     const params = new URLSearchParams({ retailerType: filters.retailerType });
@@ -370,7 +376,7 @@ export default function UnifiedPlatformApp() {
       if (loadingMatches) return <Loading/>;
       if (!selectedMatch) return <Empty label="No existen productos comparables con los filtros actuales."/>;
       const midpoint = (numeric(selectedMatch.best_price) + numeric(selectedMatch.highest_price)) / 2;
-      return <section className={styles.workspace}><Toolbar><select value={selectedMatch.match_key} onChange={(event) => setCompetitiveKey(event.target.value)}>{matches.matches.map((item) => <option key={item.match_key} value={item.match_key}>{item.canonical_name}</option>)}</select><span>Analizando {selectedMatch.supermarkets} cadenas</span></Toolbar><section className={styles.metrics}><Metric label="Mejor precio" value={money(selectedMatch.best_price)} detail={selectedMatch.best_supermarket} tone="green"/><Metric label="Precio mercado" value={money(selectedMatch.average_price)} detail="Promedio homologado"/><Metric label="Mayor precio" value={money(selectedMatch.highest_price)} detail={`Brecha ${money(selectedMatch.price_gap)}`} tone="orange"/></section><div className={styles.twoColumn}><article className={styles.card}><CardHead title="Posición competitiva" subtitle={selectedMatch.canonical_name}/><div className={styles.positionScale}><span>{money(selectedMatch.best_price)}</span><span>{money(midpoint)}</span><span>{money(selectedMatch.highest_price)}</span><i/><b style={{ left: `${Math.min(95, Math.max(5, (numeric(selectedMatch.average_price) - numeric(selectedMatch.best_price)) / Math.max(1, numeric(selectedMatch.price_gap)) * 100))}%` }}/></div><div className={styles.listingRows}>{selectedMatch.store_listings.map((item) => <div key={item.id}><strong>{item.supermarket}</strong><span>{money(item.price)}</span><b>{item.supermarket === selectedMatch.best_supermarket ? "Líder" : numeric(item.price) > midpoint ? "Premium" : "Competitivo"}</b></div>)}</div></article><article className={styles.card}><CardHead title="Recomendación de IA" subtitle="Basada en el set competitivo actual"/><div className={styles.aiRecommendation}><i>✦</i><h3>{numeric(selectedMatch.savings_pct) >= 10 ? "Existe una brecha relevante de precio" : "El mercado presenta una dispersión controlada"}</h3><p>{numeric(selectedMatch.savings_pct) >= 10 ? `La diferencia alcanza ${numeric(selectedMatch.savings_pct).toFixed(1)}%. Evalúa un precio entre ${money(numeric(selectedMatch.best_price) * 1.02)} y ${money(selectedMatch.average_price)} para mejorar competitividad.` : `La brecha es de ${numeric(selectedMatch.savings_pct).toFixed(1)}%. Prioriza margen, disponibilidad y ejecución promocional antes de realizar un ajuste profundo.`}</p><ul><li>Verificar stock y vigencia de precios.</li><li>Comparar promociones y condiciones comerciales.</li><li>Monitorear nuevamente durante las próximas 24 horas.</li></ul></div></article></div></section>;
+      return <section className={styles.workspace}><Toolbar><select value={selectedMatch.match_key} onChange={(event) => setCompetitiveKey(event.target.value)}>{matches.matches.map((item) => <option key={item.match_key} value={item.match_key}>{item.canonical_name}</option>)}</select><span>{number(matches.total)} productos homologados · Analizando {selectedMatch.supermarkets} cadenas</span></Toolbar><section className={styles.metrics}><Metric label="Mejor precio" value={money(selectedMatch.best_price)} detail={selectedMatch.best_supermarket} tone="green"/><Metric label="Precio mercado" value={money(selectedMatch.average_price)} detail="Promedio homologado"/><Metric label="Mayor precio" value={money(selectedMatch.highest_price)} detail={`Brecha ${money(selectedMatch.price_gap)}`} tone="orange"/></section><div className={styles.twoColumn}><article className={styles.card}><CardHead title="Posición competitiva" subtitle={selectedMatch.canonical_name}/><div className={styles.positionScale}><span>{money(selectedMatch.best_price)}</span><span>{money(midpoint)}</span><span>{money(selectedMatch.highest_price)}</span><i/><b style={{ left: `${Math.min(95, Math.max(5, (numeric(selectedMatch.average_price) - numeric(selectedMatch.best_price)) / Math.max(1, numeric(selectedMatch.price_gap)) * 100))}%` }}/></div><div className={styles.listingRows}>{selectedMatch.store_listings.map((item) => <div key={item.id}><strong>{item.supermarket}</strong><span>{money(item.price)}</span><b>{item.supermarket === selectedMatch.best_supermarket ? "Líder" : numeric(item.price) > midpoint ? "Premium" : "Competitivo"}</b></div>)}</div></article><article className={styles.card}><CardHead title="Recomendación de IA" subtitle="Basada en el set competitivo actual"/><div className={styles.aiRecommendation}><i>✦</i><h3>{numeric(selectedMatch.savings_pct) >= 10 ? "Existe una brecha relevante de precio" : "El mercado presenta una dispersión controlada"}</h3><p>{numeric(selectedMatch.savings_pct) >= 10 ? `La diferencia alcanza ${numeric(selectedMatch.savings_pct).toFixed(1)}%. Evalúa un precio entre ${money(numeric(selectedMatch.best_price) * 1.02)} y ${money(selectedMatch.average_price)} para mejorar competitividad.` : `La brecha es de ${numeric(selectedMatch.savings_pct).toFixed(1)}%. Prioriza margen, disponibilidad y ejecución promocional antes de realizar un ajuste profundo.`}</p><ul><li>Verificar stock y vigencia de precios.</li><li>Comparar promociones y condiciones comerciales.</li><li>Monitorear nuevamente durante las próximas 24 horas.</li></ul></div></article></div></section>;
     }
 
     if (view === "optimizer") {
