@@ -18,6 +18,7 @@ const INDUSTRIES = [
   ["other", "Otra industria"],
 ] as const;
 
+const PLANS = [["starter", "Starter"], ["business", "Business"], ["enterprise", "Enterprise"]] as const;
 type RegisterResponse = { ok?: boolean; error?: string; requiresEmailConfirmation?: boolean; next?: string };
 
 export default function RegisterPage() {
@@ -40,6 +41,11 @@ export default function RegisterPage() {
       return;
     }
 
+    const params = new URLSearchParams(window.location.search);
+    const queryPlan = params.get("plan") ?? "";
+    const formPlan = String(form.get("intendedPlan") ?? "");
+    const intendedPlan = ["starter", "business", "enterprise"].includes(queryPlan) ? queryPlan : formPlan;
+
     try {
       const response = await fetch("/api/auth/register", {
         method: "POST",
@@ -51,6 +57,10 @@ export default function RegisterPage() {
           company: form.get("company"),
           jobTitle: form.get("jobTitle"),
           industrySlug: form.get("industrySlug"),
+          intendedPlan,
+          utmSource: params.get("utm_source"),
+          utmMedium: params.get("utm_medium"),
+          utmCampaign: params.get("utm_campaign"),
           password,
           acceptedTerms: form.get("acceptedTerms") === "on",
           website: form.get("website"),
@@ -78,11 +88,11 @@ export default function RegisterPage() {
           <div className={styles.registerValue}>
             <span className={styles.eyebrow}>CREA TU CUENTA · MGP SUPER PRECIOS</span>
             <h1>Empieza a explorar el mercado con una cuenta <em>trial</em>.</h1>
-            <p>Crea el acceso de tu empresa y deja configurado tu espacio de trabajo. Registraremos la cuenta para acompañarte durante la activación y entender qué información necesita tu equipo.</p>
+            <p>Prueba durante 7 días un entorno propio de inteligencia de precios. Sin tarjeta de crédito y con onboarding inmediato.</p>
             <div className={styles.registerBenefits}>
-              <article><b>01</b><div><strong>Tu empresa queda registrada</strong><span>Perfil, industria y responsable de la cuenta.</span></div></article>
-              <article><b>02</b><div><strong>Espacio trial propio</strong><span>Organización separada y acceso inicial controlado.</span></div></article>
-              <article><b>03</b><div><strong>Onboarding inmediato</strong><span>El sistema adapta el universo según tu industria.</span></div></article>
+              <article><b>01</b><div><strong>7 días de trial</strong><span>Acceso inicial a 3 retailers y funcionalidades clave.</span></div></article>
+              <article><b>02</b><div><strong>Espacio propio</strong><span>Tu empresa queda separada y configurada como organización.</span></div></article>
+              <article><b>03</b><div><strong>Escala cuando veas valor</strong><span>Pasa a Starter, Business o Enterprise sin perder tu configuración.</span></div></article>
             </div>
             <div className={styles.registerTrust}><span>✓ Acceso protegido</span><span>✓ Sin tarjeta de crédito</span><span>✓ Soporte de MGP</span></div>
           </div>
@@ -111,11 +121,12 @@ export default function RegisterPage() {
                   <label>Empresa<input name="company" required minLength={2} maxLength={160} placeholder="Nombre de tu empresa" autoComplete="organization" /></label>
                   <label>Cargo<input name="jobTitle" maxLength={120} placeholder="Ej. Pricing Manager" autoComplete="organization-title" /></label>
                   <label>Industria<select name="industrySlug" defaultValue=""><option value="">Selecciona una industria</option>{INDUSTRIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                  <label>Plan que te interesa<select name="intendedPlan" defaultValue=""><option value="">Aún no lo sé</option>{PLANS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
                   <label>Contraseña<input name="password" required type="password" minLength={8} maxLength={128} placeholder="Mínimo 8 caracteres" autoComplete="new-password" /></label>
                   <label>Confirma contraseña<input name="confirmPassword" required type="password" minLength={8} maxLength={128} placeholder="Repite tu contraseña" autoComplete="new-password" /></label>
                   <label className={styles.registerTerms}><input name="acceptedTerms" type="checkbox" required /><span>Acepto los términos de uso y la política de privacidad de MGP Super Precios.</span></label>
                   {error && <div className={styles.registerError}>{error}</div>}
-                  <button type="submit" disabled={loading}>{loading ? "Creando tu cuenta…" : "Crear cuenta trial →"}</button>
+                  <button type="submit" disabled={loading}>{loading ? "Creando tu cuenta…" : "Comenzar trial de 7 días →"}</button>
                   <small className={styles.registerFineprint}>Al crear tu cuenta, tu empresa quedará registrada en MGP para gestionar el acceso, onboarding y contacto comercial asociado al servicio.</small>
                 </form>
               </>
