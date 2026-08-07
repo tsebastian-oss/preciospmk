@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "prebuild": "node scripts/apply-contextual-trend-ui.mjs && node scripts/apply-ai-price-map-ui.mjs",
+    "prebuild": "node scripts/apply-contextual-trend-ui.mjs && node scripts/apply-ai-price-map-ui.mjs && node scripts/fix-ai-price-map-component.mjs",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit"
