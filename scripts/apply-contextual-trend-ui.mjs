@@ -152,18 +152,11 @@ if (text.includes('    if (view === "basket") {')) {
   changed = true;
 }
 
-replaceOnce(
-  "overview AI shortcut",
-  '<QuickAction title="IA / Insights" copy="Prioriza brechas, alzas y oportunidades." button="Abrir Competitive AI" onClick={() => navigate("competitive")}/> ',
-  '<QuickAction title="Brand Intelligence AI" copy="Pregunta por cualquier marca usando datos reales de la plataforma." button="Abrir chat" onClick={() => navigate("brand-ai")}/> ',
-);
-
-// The source version currently has no trailing space after the QuickAction. Handle it explicitly.
-if (text.includes('<QuickAction title="IA / Insights" copy="Prioriza brechas, alzas y oportunidades." button="Abrir Competitive AI" onClick={() => navigate("competitive")}/>')) {
-  text = text.replace(
-    '<QuickAction title="IA / Insights" copy="Prioriza brechas, alzas y oportunidades." button="Abrir Competitive AI" onClick={() => navigate("competitive")}/>',
-    '<QuickAction title="Brand Intelligence AI" copy="Pregunta por cualquier marca usando datos reales de la plataforma." button="Abrir chat" onClick={() => navigate("brand-ai")}/>',
-  );
+const oldShortcut = '<QuickAction title="IA / Insights" copy="Prioriza brechas, alzas y oportunidades." button="Abrir Competitive AI" onClick={() => navigate("competitive")}/>';
+const newShortcut = '<QuickAction title="Brand Intelligence AI" copy="Pregunta por cualquier marca usando datos reales de la plataforma." button="Abrir chat" onClick={() => navigate("brand-ai")}/>';
+if (!text.includes(newShortcut)) {
+  if (!text.includes(oldShortcut)) throw new Error('No se encontró el acceso rápido de Competitive AI');
+  text = text.replace(oldShortcut, newShortcut);
   changed = true;
 }
 
