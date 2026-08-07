@@ -1,0 +1,95 @@
+name: Apply contextual trend UI
+
+on:
+  push:
+    paths:
+      - .github/workflows/apply-contextual-trend-ui.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch contextual trend behavior
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/app/UnifiedPlatformApp.tsx')
+          text = path.read_text()
+
+          replacements = []
+
+          old = 'type TrendPayload = { series: TrendSeries[]; currentDayObservations: number; latestObservationAt: string | null; error?: string };'
+          new = 'type TrendPayload = { series: TrendSeries[]; currentDayObservations: number; latestObservationAt: string | null; scopeLabel?: string; mode?: string; autoSelected?: boolean; error?: string };'
+          replacements.append((old, new, 'TrendPayload'))
+
+          old = '''  const seriesKey = activeSeries.join("|");
+          useEffect(() => {
+            if (!activeSeries.length) return;
+            const controller = new AbortController();
+            const params = new URLSearchParams({ days: String(filters.period), live: String(Date.now()) });
+            activeSeries.forEach((series) => params.append("series", series));
+            fetch(`/api/daily-pricing-trend?${params.toString()}`, { cache: "no-store", signal: controller.signal })
+              .then(async (response) => { const data = await response.json() as TrendPayload; if (!response.ok) throw new Error(data.error || "No fue posible cargar la tendencia"); setTrend(data); })
+              .catch((error) => { if (error instanceof DOMException && error.name === "AbortError") return; setNotice(error instanceof Error ? error.message : "Error cargando la tendencia"); });
+            return () => controller.abort();
+          }, [filters.period, seriesKey]);'''
+          new = '''  const seriesKey = activeSeries.join("|");
+          useEffect(() => {
+            if (view !== "overview" && view !== "movements") return;
+            const controller = new AbortController();
+            const params = new URLSearchParams({ days: String(filters.period), live: String(Date.now()) });
+            let endpoint = "/api/contextual-pricing-trend";
+
+            if (view === "movements") {
+              if (!activeSeries.length) return;
+              endpoint = "/api/daily-pricing-trend";
+              activeSeries.forEach((series) => params.append("series", series));
+            } else {
+              if (filters.retailerType !== "all") params.set("retailerType", filters.retailerType);
+              if (filters.supermarket) params.set("supermarket", filters.supermarket);
+              if (filters.category) params.set("category", filters.category);
+              if (filters.brand) params.set("brand", filters.brand);
+              if (filters.stock !== "all") params.set("stock", filters.stock);
+            }
+
+            fetch(`${endpoint}?${params.toString()}`, { cache: "no-store", signal: controller.signal })
+              .then(async (response) => { const data = await response.json() as TrendPayload; if (!response.ok) throw new Error(data.error || "No fue posible cargar la tendencia"); setTrend(data); })
+              .catch((error) => { if (error instanceof DOMException && error.name === "AbortError") return; setNotice(error instanceof Error ? error.message : "Error cargando la tendencia"); });
+            return () => controller.abort();
+          }, [view, filters.period, filters.retailerType, filters.supermarket, filters.category, filters.brand, filters.stock, seriesKey]);'''
+          replacements.append((old, new, 'trend effect'))
+
+          old = '<article className={`${styles.card} ${styles.overviewTrend}`}><CardHead title="Evolución de precios promedio" subtitle="Índice base 100 por categoría y marca" action="Configurar series" onAction={() => navigate("movements")}/>{renderTrend()}</article>'
+          new = '<article className={`${styles.card} ${styles.overviewTrend}`}><CardHead title="Evolución de precios promedio" subtitle={trend?.scopeLabel || "Selección automática según los filtros · índice base 100"} action="Ver detalle" onAction={() => navigate("movements")}/>{renderTrend()}</article>'
+          replacements.append((old, new, 'overview trend card'))
+
+          for old, new, label in replacements:
+            if old not in text:
+              if new in text:
+                print(f'{label}: already patched')
+                continue
+              raise SystemExit(f'Expected snippet not found: {label}')
+            text = text.replace(old, new, 1)
+            print(f'{label}: patched')
+
+          path.write_text(text)
+          PY
+
+          git diff --check
+          git config user.name "MGP Automation"
+          git config user.email "actions@users.noreply.github.com"
+          git add src/app/UnifiedPlatformApp.tsx
+          if git diff --cached --quiet; then
+            echo "No changes needed"
+            exit 0
+          fi
+          git commit -m "Make overview pricing trend follow global filters"
+          git push
