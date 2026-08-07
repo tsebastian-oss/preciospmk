@@ -15,6 +15,8 @@ const RETAILERS = new Set([
   "Farmacias Ahumada",
 ]);
 
+const RETAILER_TYPES = new Set(["supermarket", "department_store", "pharmacy"]);
+
 const SORTS: Record<string, string> = {
   price_asc: "in_stock.desc,offer_price.asc,name.asc",
   price_desc: "in_stock.desc,offer_price.desc,name.asc",
@@ -59,6 +61,8 @@ export async function GET(request: NextRequest) {
   const q = safeSearch(params.get("q") ?? "");
   const requestedRetailer = params.get("supermarket") ?? "";
   const retailer = RETAILERS.has(requestedRetailer) ? requestedRetailer : "";
+  const requestedRetailerType = params.get("retailerType") ?? "";
+  const retailerType = RETAILER_TYPES.has(requestedRetailerType) ? requestedRetailerType : "";
   const category = safeFilter(params.get("category") ?? "");
   const brand = safeFilter(params.get("brand") ?? "");
   const stock = params.get("stock") ?? "all";
@@ -91,6 +95,7 @@ export async function GET(request: NextRequest) {
   if (brand) query.brand = `eq.${brand}`;
   else if (!access.isSaasAdmin && access.brands.length > 0) query.brand = inFilter(access.brands);
 
+  if (retailerType) query.retailer_type = `eq.${retailerType}`;
   if (access.industrySlug === "grocery") query.retailer_type = "eq.supermarket";
   else if (access.industrySlug && access.industrySlug !== "all") query.industry_slug = `eq.${access.industrySlug}`;
   if (stock === "in") query.in_stock = "eq.true";
@@ -109,7 +114,7 @@ export async function GET(request: NextRequest) {
       organizationId: access.organizationId,
       industrySlug: access.industrySlug,
       industryName: access.industryName,
-      appliedFilters: { q, retailer, category, brand, stock, offerOnly },
+      appliedFilters: { q, retailerType, retailer, category, brand, stock, offerOnly },
     });
   } catch (error) {
     return NextResponse.json(
