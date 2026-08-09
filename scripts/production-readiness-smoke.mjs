@@ -61,7 +61,7 @@ async function main() {
   const protectedReset = await expectStatus("/reset-password", [307, 308], { redirect: "manual" });
   assert((protectedReset.headers.get("location") || "").includes("/forgot-password"), "/reset-password no protege correctamente una sesión ausente");
 
-  const privateApis = ["/api/products", "/api/brand-chat/history", "/api/price-map-ai/history", "/api/data-exports", "/api/enterprise/account"];
+  const privateApis = ["/api/products", "/api/brand-chat/history", "/api/price-map-ai/history", "/api/data-exports", "/api/alerts", "/api/enterprise/account"];
   for (const path of privateApis) await expectStatus(path, [401]);
 
   const health = await expectStatus("/api/health", [200]);
@@ -90,7 +90,7 @@ async function main() {
   });
   assert(invalidRecovery.status === 400, `recovery inválido debía responder 400 y respondió ${invalidRecovery.status}`);
 
-  console.log("Production readiness smoke OK: marketing, coverage, auth protection, customer account and health validated");
+  console.log("Production readiness smoke OK: marketing, coverage, auth protection, alerts, customer account and health validated");
 }
 
 main().catch((error) => {
