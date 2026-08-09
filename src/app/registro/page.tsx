@@ -41,6 +41,13 @@ export default function RegisterPage() {
       return;
     }
 
+    const classes = [/[a-z]/.test(password), /[A-Z]/.test(password), /\d/.test(password), /[^A-Za-z0-9]/.test(password)].filter(Boolean).length;
+    if (password.length < 10 || classes < 3) {
+      setError("Usa al menos 10 caracteres y combina mayúsculas, minúsculas, números o símbolos.");
+      setLoading(false);
+      return;
+    }
+
     const params = new URLSearchParams(window.location.search);
     const queryPlan = params.get("plan") ?? "";
     const formPlan = String(form.get("intendedPlan") ?? "");
@@ -122,8 +129,8 @@ export default function RegisterPage() {
                   <label>Cargo<input name="jobTitle" maxLength={120} placeholder="Ej. Pricing Manager" autoComplete="organization-title" /></label>
                   <label>Industria<select name="industrySlug" defaultValue=""><option value="">Selecciona una industria</option>{INDUSTRIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
                   <label>Plan que te interesa<select name="intendedPlan" defaultValue=""><option value="">Aún no lo sé</option>{PLANS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-                  <label>Contraseña<input name="password" required type="password" minLength={8} maxLength={128} placeholder="Mínimo 8 caracteres" autoComplete="new-password" /></label>
-                  <label>Confirma contraseña<input name="confirmPassword" required type="password" minLength={8} maxLength={128} placeholder="Repite tu contraseña" autoComplete="new-password" /></label>
+                  <label>Contraseña<input name="password" required type="password" minLength={10} maxLength={128} placeholder="10+ caracteres y 3 tipos de carácter" autoComplete="new-password" /></label>
+                  <label>Confirma contraseña<input name="confirmPassword" required type="password" minLength={10} maxLength={128} placeholder="Repite tu contraseña" autoComplete="new-password" /></label>
                   <label className={styles.registerTerms}><input name="acceptedTerms" type="checkbox" required /><span>Acepto los <Link href="/landing/legal/terminos" target="_blank">términos de uso</Link> y la <Link href="/landing/legal/privacidad" target="_blank">política de privacidad</Link> de MGP Super Precios.</span></label>
                   {error && <div className={styles.registerError}>{error}</div>}
                   <button type="submit" disabled={loading}>{loading ? "Creando tu cuenta…" : "Comenzar trial de 7 días →"}</button>
