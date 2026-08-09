@@ -48,6 +48,12 @@ export function requiredModuleForView(view: string) {
   return VIEW_MODULE[view] ?? null;
 }
 
+export function minimumPlanForView(view: string) {
+  if (view === "scraping") return "Enterprise";
+  if (["brand-ai", "price-map", "assortment"].includes(view)) return "Business";
+  return "Starter";
+}
+
 export function commercialPlanLabel(value?: string | null) {
   const labels: Record<string, string> = {
     trial: "Trial",
