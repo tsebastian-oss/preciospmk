@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import styles from "./marketing.module.css";
+import styles from "./MarketingMobileMenu.module.css";
 
 const LINKS = [
   ["Inicio", "/landing"],
