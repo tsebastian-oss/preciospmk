@@ -1,0 +1,15 @@
+import LegalPage from "../LegalPage";
+import styles from "../legal.module.css";
+
+export const metadata = { title: "Acceso autenticado al producto | MGP Super Precios", description: "Política de acceso, roles y seguridad de cuentas de MGP Super Precios." };
+
+export default function AccessPage(){return <LegalPage title="Acceso autenticado al producto" intro="Reglas de acceso, sesiones, roles y administración de cuentas para proteger a cada organización que utiliza MGP Super Precios.">
+  <section><h2>1. Cuenta personal</h2><p>El acceso a la plataforma requiere autenticación. Cada persona debe utilizar una cuenta propia y mantener sus credenciales bajo control. No compartas contraseñas ni sesiones con terceros no autorizados.</p></section>
+  <section><h2>2. Organizaciones y aislamiento</h2><p>Cada cliente opera dentro de una organización. Los permisos y el alcance de datos y módulos se aplican según la organización activa, el rol del usuario y la configuración contratada. La aplicación utiliza controles en servidor y base de datos para evitar que la autorización dependa únicamente de elementos visuales de la interfaz.</p></section>
+  <section><h2>3. Roles y permisos</h2><p>Una organización puede contar con diferentes perfiles de acceso, por ejemplo owner, administrador, analista, ejecutivo o viewer. Determinadas acciones, como cambiar configuración, usuarios o alcances, pueden estar restringidas a roles con permisos suficientes.</p></section>
+  <section><h2>4. Trials</h2><p>Las cuentas de evaluación tienen duración, módulos y límites específicos. Al vencer el trial, MGP puede suspender el acceso hasta que la organización contrate un plan, reciba una extensión autorizada o se acuerde un piloto distinto.</p></section>
+  <section><h2>5. Seguridad de sesión</h2><p>Las sesiones pueden almacenarse mediante mecanismos protegidos del navegador y cookies HttpOnly cuando corresponda. Podemos invalidar sesiones, solicitar reautenticación o suspender temporalmente accesos si detectamos señales de riesgo, abuso o cambios de seguridad relevantes.</p></section>
+  <section><h2>6. Invitaciones y altas de usuarios</h2><p>Los administradores autorizados pueden invitar usuarios a su organización. La persona que gestiona los accesos es responsable de verificar que cada invitación corresponda a alguien que deba tener acceso y de remover usuarios que ya no pertenezcan al equipo.</p></section>
+  <section><h2>7. Recuperación y soporte</h2><p>Si pierdes acceso, utiliza el mecanismo de recuperación disponible o contacta a soporte. Por seguridad, podemos pedir verificaciones razonables antes de modificar una cuenta o entregar asistencia sobre una organización.</p></section>
+  <section><h2>8. Reporte de acceso sospechoso</h2><p>Si detectas un inicio de sesión, usuario o actividad que no reconoces, cambia tus credenciales y comunícate con nosotros lo antes posible.</p><div className={styles.contact}><strong>Soporte de acceso</strong><a href="mailto:sebastian@mgpconsultoria.cl">sebastian@mgpconsultoria.cl</a><a href="tel:+56982315934">+56 9 8231 5934</a></div></section>
+</LegalPage>}
