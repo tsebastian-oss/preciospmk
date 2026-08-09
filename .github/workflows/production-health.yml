@@ -18,7 +18,7 @@ concurrency:
 jobs:
   build-check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 12
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,13 +28,21 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Build Next.js
+      - name: TypeScript check
+        run: npm run typecheck
+      - name: Build Next.js and verify generated UI
         run: npm run build
 
   verify-production:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 14
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Mark production health pending
         uses: actions/github-script@v7
         with:
@@ -45,7 +53,7 @@ jobs:
               sha: context.sha,
               state: "pending",
               context: "Production health",
-              description: "Waiting for Vercel and Supabase verification",
+              description: "Waiting for Vercel, Supabase and readiness smoke tests",
               target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             });
 
@@ -67,6 +75,9 @@ jobs:
             login_code=$(curl --silent --show-error --location --max-time 20 \
               --output /dev/null --write-out "%{http_code}" \
               "$BASE_URL/login" || true)
+            recovery_code=$(curl --silent --show-error --location --max-time 20 \
+              --output /dev/null --write-out "%{http_code}" \
+              "$BASE_URL/forgot-password" || true)
             onboarding_code=$(curl --silent --show-error --max-time 20 \
               --output /dev/null --write-out "%{http_code}" \
               "$BASE_URL/onboarding" || true)
@@ -75,11 +86,12 @@ jobs:
               "$BASE_URL/api/products" || true)
             deployed_sha=$(jq -r '.vercel.commitSha // empty' /tmp/health.json 2>/dev/null || true)
 
-            echo "Attempt $attempt: health=$health_code root=$root_code login=$login_code onboarding=$onboarding_code products=$products_code deployed_sha=${deployed_sha:-missing}"
+            echo "Attempt $attempt: health=$health_code root=$root_code login=$login_code recovery=$recovery_code onboarding=$onboarding_code products=$products_code deployed_sha=${deployed_sha:-missing}"
 
             if [[ "$health_code" == "200" \
               && "$root_code" == "200" \
               && "$login_code" == "200" \
+              && "$recovery_code" == "200" \
               && "$onboarding_code" =~ ^(307|308)$ \
               && "$products_code" == "401" \
               && "$deployed_sha" == "$EXPECTED_SHA" ]]; then
@@ -95,6 +107,11 @@ jobs:
           cat /tmp/health.json 2>/dev/null || true
           exit 1
 
+      - name: Run production readiness smoke suite
+        env:
+          BASE_URL: https://preciospmk.vercel.app
+        run: npm run test:readiness
+
       - name: Mark production health successful
         if: success()
         uses: actions/github-script@v7
@@ -106,7 +123,7 @@ jobs:
               sha: context.sha,
               state: "success",
               context: "Production health",
-              description: "Vercel and Supabase are healthy",
+              description: "Vercel, Supabase and readiness smoke tests passed",
               target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             });
 
@@ -121,6 +138,6 @@ jobs:
               sha: context.sha,
               state: "failure",
               context: "Production health",
-              description: "Production verification failed",
+              description: "Production readiness verification failed",
               target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             });
