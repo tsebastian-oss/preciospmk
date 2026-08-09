@@ -4,14 +4,32 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import styles from "./cuenta.module.css";
 
+type Commercial = {
+  commercialPlan?: string;
+  trialStartedAt?: string | null;
+  trialExpiresAt?: string | null;
+  intendedPlan?: string | null;
+  billingCycle?: string | null;
+  limits?: Record<string, number | boolean | null>;
+  usage?: { exportsThisMonth?: number; activeUsers?: number; pendingInvitations?: number };
+};
 type AccountPayload = {
   user?: { email?: string | null; displayName?: string | null; phone?: string | null; jobTitle?: string | null; company?: string | null };
-  organization?: { name?: string; status?: string; plan?: string; role?: string; industryName?: string | null; industrySlug?: string | null; retailers?: string[]; limits?: Record<string, number>; isSaasAdmin?: boolean };
+  organization?: { name?: string; status?: string; plan?: string; commercialPlan?: string | null; role?: string; industryName?: string | null; industrySlug?: string | null; retailers?: string[]; modules?: string[]; limits?: Record<string, number | boolean | null>; commercial?: Commercial | null; isSaasAdmin?: boolean };
   error?: string;
 };
 
-const PLAN_LABELS: Record<string, string> = { pilot: "Trial", starter: "Starter", business: "Business", enterprise: "Enterprise" };
-const ROLE_LABELS: Record<string, string> = { owner: "Owner", admin: "Administrador", analyst: "Analista", viewer: "Viewer" };
+const PLAN_LABELS: Record<string, string> = { pilot: "Trial", trial: "Trial", starter: "Starter", retail_pilot: "Starter", business: "Business", retail_intelligence: "Business", enterprise: "Enterprise" };
+const ROLE_LABELS: Record<string, string> = { owner: "Owner", admin: "Administrador", analyst: "Analista", executive: "Ejecutivo", viewer: "Viewer" };
+
+function daysRemaining(value?: string | null) {
+  if (!value) return null;
+  return Math.max(0, Math.ceil((new Date(value).getTime() - Date.now()) / 86_400_000));
+}
+function date(value?: string | null) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("es-CL", { dateStyle: "long" }).format(new Date(value));
+}
 
 export default function AccountPage() {
   const [account, setAccount] = useState<AccountPayload | null>(null);
@@ -39,9 +57,18 @@ export default function AccountPage() {
 
   const user = account.user ?? {};
   const org = account.organization ?? {};
-  const plan = PLAN_LABELS[org.plan || ""] || org.plan || "Sin plan";
+  const commercial = org.commercial ?? {};
+  const planKey = commercial.commercialPlan || org.commercialPlan || org.plan || "";
+  const plan = PLAN_LABELS[planKey] || planKey || "Sin plan";
   const role = ROLE_LABELS[org.role || ""] || org.role || "Usuario";
   const trial = org.status === "trial";
+  const days = daysRemaining(commercial.trialExpiresAt);
+  const limits = commercial.limits ?? org.limits ?? {};
+  const usage = commercial.usage ?? {};
+  const exportLimit = Number(limits.exports_per_month ?? 0);
+  const userLimit = Number(limits.users ?? 0);
+  const exportsUsed = Number(usage.exportsThisMonth ?? 0);
+  const usersUsed = Number(usage.activeUsers ?? 0);
 
   return <main className={styles.page}>
     <div className={styles.shell}>
@@ -54,6 +81,7 @@ export default function AccountPage() {
         <span>MI CUENTA</span>
         <h1>{user.displayName || "Usuario"}</h1>
         <p>Administra tus datos, el alcance de tu organización y la información de tu plan.</p>
+        {trial && <div style={{ marginTop: 14, padding: "12px 14px", borderRadius: 12, background: days !== null && days <= 2 ? "#fff4e8" : "#f2f7ff", border: "1px solid #dbe8f8", fontSize: 13 }}><strong>{days === 0 ? "Tu trial vence hoy" : days === null ? "Trial activo" : `${days} día${days === 1 ? "" : "s"} restantes`}</strong>{commercial.trialExpiresAt && <span> · vence el {date(commercial.trialExpiresAt)}</span>} · <Link href="/landing/precios">ver planes</Link></div>}
       </section>
 
       <div className={styles.grid}>
@@ -79,13 +107,15 @@ export default function AccountPage() {
         </article>
 
         <article className={styles.card}>
-          <header><div><span>03</span><div><h2>Plan</h2><p>Condiciones actuales de tu cuenta.</p></div></div></header>
+          <header><div><span>03</span><div><h2>Plan y uso</h2><p>Límites y consumo real de tu cuenta.</p></div></div></header>
           <div className={styles.plan}><small>PLAN ACTUAL</small><strong>{plan}</strong><p>{trial ? "Tu organización está utilizando el acceso de prueba." : "Tu organización tiene acceso activo a la plataforma."}</p></div>
           <dl>
-            <div><dt>Usuarios</dt><dd>{org.limits?.users ?? "Según contrato"}</dd></div>
-            <div><dt>Exportaciones</dt><dd>{org.limits?.exports_per_month ?? "Según contrato"}</dd></div>
+            <div><dt>Usuarios</dt><dd>{usersUsed}{userLimit > 0 ? ` / ${userLimit}` : ""}</dd></div>
+            <div><dt>Exportaciones este mes</dt><dd>{exportsUsed}{exportLimit > 0 ? ` / ${exportLimit}` : ""}</dd></div>
+            {trial && <div><dt>Vencimiento trial</dt><dd>{date(commercial.trialExpiresAt)}</dd></div>}
+            {commercial.intendedPlan && <div><dt>Plan de interés</dt><dd>{PLAN_LABELS[commercial.intendedPlan] || commercial.intendedPlan}</dd></div>}
           </dl>
-          <a href="mailto:sebastian@mgpconsultoria.cl?subject=Plan%20MGP%20Super%20Precios" className={styles.action}>{trial ? "Hablar sobre un plan →" : "Consultar facturación →"}</a>
+          <Link href="/landing/precios" className={styles.action}>{trial ? "Comparar planes y continuar →" : "Revisar planes →"}</Link>
         </article>
 
         <article className={styles.card}>
@@ -96,7 +126,7 @@ export default function AccountPage() {
       </div>
 
       <section className={styles.support}>
-        <div><span>SOPORTE</span><h2>¿Necesitas ayuda con tu cuenta?</h2><p>Escríbenos y revisamos acceso, plan, retailers o cualquier problema de la plataforma.</p></div>
+        <div><span>SOPORTE</span><h2>¿Necesitas ayuda o quieres continuar después del trial?</h2><p>Escríbenos y revisamos acceso, plan, retailers o cualquier problema de la plataforma.</p></div>
         <div><a href="mailto:sebastian@mgpconsultoria.cl">sebastian@mgpconsultoria.cl</a><a href="https://wa.me/56982315934" target="_blank" rel="noreferrer">WhatsApp +56 9 8231 5934</a></div>
       </section>
 
