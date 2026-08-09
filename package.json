@@ -1,13 +1,15 @@
 {
   "name": "mgp-super-precios",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "prebuild": "node scripts/apply-contextual-trend-ui.mjs && node scripts/apply-ai-price-map-ui.mjs && node scripts/fix-ai-price-map-component.mjs && node scripts/fix-dashboard-controls.mjs && node scripts/fix-account-menu.mjs",
+    "prebuild": "node scripts/apply-contextual-trend-ui.mjs && node scripts/apply-ai-price-map-ui.mjs && node scripts/fix-ai-price-map-component.mjs && node scripts/fix-dashboard-controls.mjs && node scripts/fix-account-menu.mjs && node scripts/verify-prebuild-integrity.mjs",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm run build",
+    "test:readiness": "node scripts/production-readiness-smoke.mjs"
   },
   "dependencies": {
     "next": "15.5.22",
