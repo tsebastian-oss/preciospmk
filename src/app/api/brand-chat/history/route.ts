@@ -15,7 +15,7 @@ function headers(token: string, extra: Record<string, string> = {}) {
 async function readJson(response: Response) { const text = await response.text(); if (!text) return null; try { return JSON.parse(text); } catch { return null; } }
 
 export async function GET(request: NextRequest) {
-  const authorization = await enterpriseAccess(request, "pricing");
+  const authorization = await enterpriseAccess(request, "brand-intelligence");
   if (authorization.response) return authorization.response;
   const token = request.cookies.get("mgp_access_token")?.value;
   if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const authorization = await enterpriseAccess(request, "pricing");
+  const authorization = await enterpriseAccess(request, "brand-intelligence");
   if (authorization.response) return authorization.response;
   const token = request.cookies.get("mgp_access_token")?.value;
   if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
