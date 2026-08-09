@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
+import { passwordPolicyError } from "@/lib/password-policy";
 import styles from "../login/login.module.css";
 
 export default function ResetPasswordPage() {
@@ -16,6 +17,11 @@ export default function ResetPasswordPage() {
     setError("");
     if (password !== confirmPassword) {
       setError("Las contraseñas no coinciden.");
+      return;
+    }
+    const policyError = passwordPolicyError(password);
+    if (policyError) {
+      setError(policyError);
       return;
     }
     setLoading(true);
@@ -53,15 +59,15 @@ export default function ResetPasswordPage() {
           </>
         ) : (
           <>
-            <p>Usa al menos 10 caracteres y combina mayúsculas, minúsculas, números o símbolos.</p>
+            <p>Usa al menos 10 caracteres, combina tres tipos de carácter y evita palabras, secuencias o datos personales fáciles de adivinar.</p>
             <form onSubmit={submit}>
               <label>
                 Nueva contraseña
-                <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" minLength={10} required />
+                <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="new-password" minLength={10} maxLength={128} required />
               </label>
               <label>
                 Repetir contraseña
-                <input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={10} required />
+                <input type="password" value={confirmPassword} onChange={(event) => setConfirmPassword(event.target.value)} autoComplete="new-password" minLength={10} maxLength={128} required />
               </label>
               {error && <div className={styles.error}>{error}</div>}
               <button type="submit" disabled={loading}>{loading ? "Actualizando…" : "Guardar nueva contraseña"}</button>
