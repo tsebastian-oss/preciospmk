@@ -25,9 +25,9 @@ export default function ContactPage() {
           <div className={styles.subHeroInner}>
             <div className={styles.heroCopy}>
               <span className={styles.eyebrow}>CONECTEMOS PARA GENERAR MÁS VALOR</span>
-              <h1>Hablemos sobre cómo transformar tus decisiones de precios <em>con datos en tiempo real</em></h1>
+              <h1>Hablemos sobre cómo transformar tus decisiones de precios <em>con datos actualizados automáticamente</em></h1>
               <p>Cuéntanos tu caso de uso y revisaremos cómo MGP Super Precios puede ayudarte a monitorear mercado, competencia, precios, promociones, surtido y marcas.</p>
-              <div className={styles.heroTrust}><span>Respuesta rápida</span><span>Información protegida</span><span>Asesoría especializada</span></div>
+              <div className={styles.heroTrust}><span>Solicitud registrada</span><span>Información protegida</span><span>Asesoría especializada</span></div>
             </div>
             <DashboardPreview compact />
           </div>
@@ -36,7 +36,7 @@ export default function ContactPage() {
         <section className={styles.section} id="demo">
           <div className={styles.contactGrid}>
             <article className={styles.contactCard}>
-              <h2>Envíanos un mensaje</h2><p>Completa el formulario. Si quieres una demo, puedes indicar una fecha y horario preferidos.</p>
+              <h2>Envíanos un mensaje</h2><p>Completa el formulario. Si quieres una demo, indica una fecha y horario preferidos para coordinarla.</p>
               <ContactForm />
               <div className={styles.securityNote}><b>✓</b><div><strong>Uso de la información</strong><p>Los datos enviados se utilizan únicamente para responder esta solicitud comercial y coordinar el contacto.</p></div></div>
             </article>
@@ -45,7 +45,7 @@ export default function ContactPage() {
               <div className={styles.contactMethods}>
                 <a className={styles.contactMethod} href={CONTACT_WHATSAPP} target="_blank" rel="noreferrer"><span>☎</span><div><strong>Teléfono / WhatsApp</strong><small>{CONTACT_PHONE_DISPLAY}</small></div></a>
                 <a className={styles.contactMethod} href={`mailto:${CONTACT_EMAIL}`}><span>✉</span><div><strong>Correo electrónico</strong><small>{CONTACT_EMAIL}</small></div></a>
-                <a className={styles.contactMethod} href="#coordinar"><span>◴</span><div><strong>Agenda una demo</strong><small>Selecciona un canal y coordinamos el horario.</small></div></a>
+                <a className={styles.contactMethod} href="#coordinar"><span>◴</span><div><strong>Coordina una demo</strong><small>Indica tu disponibilidad y coordinamos el horario.</small></div></a>
                 <Link className={styles.contactMethod} href="/login"><span>↗</span><div><strong>Acceso a clientes</strong><small>Ingresa a la plataforma privada.</small></div></Link>
               </div>
             </aside>
@@ -53,7 +53,7 @@ export default function ContactPage() {
         </section>
 
         <section className={`${styles.section} ${styles.sectionTight}`} id="coordinar">
-          <SectionHeading title="Agenda una demostración personalizada" copy="La demo se adapta a tu industria, retailers y preguntas de negocio." />
+          <SectionHeading title="Coordina una demostración personalizada" copy="La demo se adapta a tu industria, retailers y preguntas de negocio." />
           <div className={styles.schedulerGrid}>
             <article className={styles.schedulerCard}>
               <h2>Demo MGP Super Precios</h2><p>Reserva aproximadamente 45 minutos para revisar el producto, tus necesidades de cobertura y los módulos más relevantes.</p>
