@@ -9,6 +9,9 @@ const PRIVATE_API_PREFIXES = [
   "/api/scrape",
   "/api/competitive-analysis",
   "/api/brand-intelligence",
+  "/api/brand-chat",
+  "/api/price-map-ai",
+  "/api/data-exports",
   "/api/price-movements",
   "/api/admin",
   "/api/enterprise",
@@ -19,6 +22,8 @@ const PRIVATE_PAGE_PREFIXES = [
   "/admin",
   "/enterprise",
   "/onboarding",
+  "/cuenta",
+  "/trial-expired",
   "/reset-password",
 ];
 
