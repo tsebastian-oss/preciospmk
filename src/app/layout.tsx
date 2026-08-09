@@ -11,8 +11,8 @@ export const viewport: Viewport = {
 };
 
 export const metadata = {
-  title: "MGP Intelligence | Inteligencia de Precios",
-  description: "Plataforma enterprise de inteligencia de precios, promociones, disponibilidad, surtido y ejecución digital para retailers y marcas.",
+  title: "MGP Super Precios | Retail & Price Intelligence",
+  description: "Plataforma de inteligencia de precios, promociones, disponibilidad, surtido y análisis competitivo para retailers y marcas.",
 };
 
 export default function RootLayout({
