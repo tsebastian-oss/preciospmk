@@ -60,17 +60,25 @@ if (!app.includes('const enabledModules = useMemo(() => new Set(commercialAccoun
   changed = true;
 }
 
-replaceOnce(
-  "plan-aware navigation",
-  '  function navigate(next: View) { setView(next); setMobileOpen(false); setProductPage(1); setMatchPage(1); window.history.replaceState(null, "", `#${next}`); window.scrollTo({ top: 0, behavior: "smooth" }); }',
-  '  function navigate(next: View) { if (!viewAllowed(next)) { setNotice(`Este módulo requiere ${minimumPlanForView(next)} o superior.`); return; } setView(next); setMobileOpen(false); setProductPage(1); setMatchPage(1); window.history.replaceState(null, "", `#${next}`); window.scrollTo({ top: 0, behavior: "smooth" }); }',
-);
+const planAwareNavigation = '  function navigate(next: View) { if (!viewAllowed(next)) { setNotice(`Este módulo requiere ${minimumPlanForView(next)} o superior.`); return; } setView(next); setMobileOpen(false); setProductPage(1); setMatchPage(1); window.history.replaceState(null, "", `#${next}`); window.scrollTo({ top: 0, behavior: "smooth" }); }';
+if (!app.includes(planAwareNavigation)) {
+  const navigationPattern = /  function navigate\(next: View\) \{[^\n]*setView\(next\);[^\n]*\}/;
+  if (!navigationPattern.test(app)) throw new Error("Commercial readiness navigation function not found");
+  app = app.replace(navigationPattern, planAwareNavigation);
+  changed = true;
+}
 
 const navOld = '{group.items.map((item) => <button key={item.view} className={view === item.view ? styles.activeNav : ""} onClick={() => navigate(item.view)}><i>{item.icon}</i><span>{item.label}</span>{item.view === "alerts" && alerts.length > 0 && <b>{alerts.length}</b>}</button>)}';
 const navLegacyPlan = '{group.items.map((item) => { const allowed = viewAllowed(item.view); return <button key={item.view} className={view === item.view ? styles.activeNav : ""} onClick={() => navigate(item.view)} disabled={!allowed} title={allowed ? item.label : "Disponible en un plan superior"}><i>{item.icon}</i><span>{item.label}</span>{!allowed && <small className={styles.planLock}>Business</small>}{item.view === "alerts" && alerts.length > 0 && allowed && <b>{alerts.length}</b>}</button>; })}';
 const navNew = '{group.items.map((item) => { const allowed = viewAllowed(item.view); const minimumPlan = minimumPlanForView(item.view); return <button key={item.view} className={view === item.view ? styles.activeNav : ""} onClick={() => navigate(item.view)} disabled={!allowed} title={allowed ? item.label : `Disponible desde ${minimumPlan}`}><i>{item.icon}</i><span>{item.label}</span>{!allowed && <small className={styles.planLock}>{minimumPlan}</small>}{item.view === "alerts" && alerts.length > 0 && allowed && <b>{alerts.length}</b>}</button>; })}';
-if (app.includes(navLegacyPlan)) { app = app.replace(navLegacyPlan, navNew); changed = true; }
-else replaceOnce("plan-aware sidebar", navOld, navNew);
+if (app.includes(navLegacyPlan)) {
+  app = app.replace(navLegacyPlan, navNew);
+  changed = true;
+} else if (!app.includes(navNew)) {
+  if (!app.includes(navOld)) throw new Error("Commercial readiness sidebar navigation pattern not found");
+  app = app.replace(navOld, navNew);
+  changed = true;
+}
 
 replaceOnce(
   "commercial banner",
@@ -95,15 +103,12 @@ replaceOnce(
   '<button className={styles.primaryButton} disabled={generatingExport || exportLimitReached}>{generatingExport ? "Generando…" : exportLimitReached ? "Límite mensual alcanzado" : "Generar y descargar"}</button>',
 );
 
-replaceOnce(
-  "actionable alerts",
-  '<button>Revisar →</button></article>)',
-  '<button onClick={() => navigate(item.tone === "info" ? "price-matching" : "movements")}>Revisar →</button></article>)',
-);
-
 const fakePreferences = '<article className={styles.card}><CardHead title="Preferencias del dashboard" subtitle="Configuración visual y de actualización"/><div className={styles.toggleRows}><label><span><strong>Actualización automática</strong><small>Recargar indicadores cada 30 segundos</small></span><input type="checkbox" defaultChecked/></label><label><span><strong>Mostrar datos en vivo</strong><small>Incluir el día en curso en las tendencias</small></span><input type="checkbox" defaultChecked/></label><label><span><strong>Alertas de scraping</strong><small>Destacar fuentes con errores o retrasos</small></span><input type="checkbox" defaultChecked/></label></div></article>';
 const realPreferences = '<article className={styles.card}><CardHead title="Cuenta y plan" subtitle="Configuración que sí queda guardada"/><div className={styles.settingRow}><div><strong>Alcance y permisos</strong><p>Administra industria y retailers desde onboarding; revisa usuarios, uso y plan desde Mi cuenta.</p></div><a href="/cuenta">Abrir Mi cuenta</a></div><div className={styles.settingRow}><div><strong>Industria y retailers</strong><p>Los cambios recalculan automáticamente el dashboard dentro del alcance autorizado.</p></div><a href="/onboarding?change=1">Configurar alcance</a></div></article>';
-replaceOnce("remove fake dashboard preferences", fakePreferences, realPreferences);
+if (app.includes(fakePreferences)) {
+  app = app.replace(fakePreferences, realPreferences);
+  changed = true;
+}
 
 const replacements = [
   ['detail="Tres supermercados"', 'detail="Productos equivalentes"'],
