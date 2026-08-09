@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { passwordPolicyError } from "@/lib/password-policy";
 
 const DEFAULT_SUPABASE_URL = "https://yfpixszkiakwzrqdcfbw.supabase.co";
 const DEFAULT_PUBLISHABLE_KEY = "sb_publishable_4FrGlw8owGm5EtwMs9V5zQ_oBrH0c0-";
@@ -11,12 +12,6 @@ function text(value: unknown, max: number) {
 
 function validEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
-
-function validPassword(value: string) {
-  if (value.length < 10 || value.length > 128) return false;
-  const classes = [/[a-z]/.test(value), /[A-Z]/.test(value), /\d/.test(value), /[^A-Za-z0-9]/.test(value)].filter(Boolean).length;
-  return classes >= 3;
 }
 
 function authError(raw: string) {
@@ -67,7 +62,8 @@ export async function POST(request: NextRequest) {
   if (displayName.length < 2) return NextResponse.json({ error: "Ingresa tu nombre y apellido." }, { status: 400 });
   if (!validEmail(email)) return NextResponse.json({ error: "Ingresa un correo electrónico válido." }, { status: 400 });
   if (company.length < 2) return NextResponse.json({ error: "Ingresa el nombre de tu empresa." }, { status: 400 });
-  if (!validPassword(password)) return NextResponse.json({ error: "Usa al menos 10 caracteres y combina mayúsculas, minúsculas, números o símbolos." }, { status: 400 });
+  const passwordError = passwordPolicyError(password, { email, company, displayName });
+  if (passwordError) return NextResponse.json({ error: passwordError }, { status: 400 });
   if (!acceptedTerms) return NextResponse.json({ error: "Debes aceptar los términos de uso y la política de privacidad." }, { status: 400 });
 
   const origin = request.nextUrl.hostname === "localhost" ? request.nextUrl.origin : PRODUCTION_ORIGIN;
