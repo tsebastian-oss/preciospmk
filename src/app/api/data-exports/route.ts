@@ -76,7 +76,7 @@ function daysBetween(start: string, end: string) {
 }
 
 export async function GET(request: NextRequest) {
-  const authorization = await enterpriseAccess(request, "overview");
+  const authorization = await enterpriseAccess(request, "downloads");
   if (authorization.response) return authorization.response;
   const organizationId = authorization.access?.organizationId;
   if (!organizationId) return noStore({ error: "No fue posible resolver la organización." }, { status: 403 });
@@ -107,7 +107,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const authorization = await enterpriseAccess(request, "overview");
+  const authorization = await enterpriseAccess(request, "downloads");
   if (authorization.response) return authorization.response;
   const organizationId = authorization.access?.organizationId;
   if (!organizationId) return noStore({ error: "No fue posible resolver la organización." }, { status: 403 });
