@@ -13,8 +13,12 @@ function replaceOnce(label, oldValue, newValue) {
 }
 
 const accountImport = 'import AccountMenu from "./AccountMenu";';
-const commercialImport = 'import { ActivationGuide, CommercialBanner, requiredModuleForView, type CommercialAccountPayload } from "./CommercialExperience";';
-if (!app.includes(commercialImport)) {
+const commercialImport = 'import { ActivationGuide, CommercialBanner, minimumPlanForView, requiredModuleForView, type CommercialAccountPayload } from "./CommercialExperience";';
+const oldCommercialImport = 'import { ActivationGuide, CommercialBanner, requiredModuleForView, type CommercialAccountPayload } from "./CommercialExperience";';
+if (app.includes(oldCommercialImport)) {
+  app = app.replace(oldCommercialImport, commercialImport);
+  changed = true;
+} else if (!app.includes(commercialImport)) {
   if (!app.includes(accountImport)) throw new Error("AccountMenu import must be applied before commercial readiness");
   app = app.replace(accountImport, `${accountImport}\n${commercialImport}`);
   changed = true;
@@ -59,12 +63,14 @@ if (!app.includes('const enabledModules = useMemo(() => new Set(commercialAccoun
 replaceOnce(
   "plan-aware navigation",
   '  function navigate(next: View) { setView(next); setMobileOpen(false); setProductPage(1); setMatchPage(1); window.history.replaceState(null, "", `#${next}`); window.scrollTo({ top: 0, behavior: "smooth" }); }',
-  '  function navigate(next: View) { if (!viewAllowed(next)) { setNotice("Este módulo no está incluido en tu plan actual. Revisa Business o Enterprise para habilitarlo."); return; } setView(next); setMobileOpen(false); setProductPage(1); setMatchPage(1); window.history.replaceState(null, "", `#${next}`); window.scrollTo({ top: 0, behavior: "smooth" }); }',
+  '  function navigate(next: View) { if (!viewAllowed(next)) { setNotice(`Este módulo requiere ${minimumPlanForView(next)} o superior.`); return; } setView(next); setMobileOpen(false); setProductPage(1); setMatchPage(1); window.history.replaceState(null, "", `#${next}`); window.scrollTo({ top: 0, behavior: "smooth" }); }',
 );
 
 const navOld = '{group.items.map((item) => <button key={item.view} className={view === item.view ? styles.activeNav : ""} onClick={() => navigate(item.view)}><i>{item.icon}</i><span>{item.label}</span>{item.view === "alerts" && alerts.length > 0 && <b>{alerts.length}</b>}</button>)}';
-const navNew = '{group.items.map((item) => { const allowed = viewAllowed(item.view); return <button key={item.view} className={view === item.view ? styles.activeNav : ""} onClick={() => navigate(item.view)} disabled={!allowed} title={allowed ? item.label : "Disponible en un plan superior"}><i>{item.icon}</i><span>{item.label}</span>{!allowed && <small className={styles.planLock}>Business</small>}{item.view === "alerts" && alerts.length > 0 && allowed && <b>{alerts.length}</b>}</button>; })}';
-replaceOnce("plan-aware sidebar", navOld, navNew);
+const navLegacyPlan = '{group.items.map((item) => { const allowed = viewAllowed(item.view); return <button key={item.view} className={view === item.view ? styles.activeNav : ""} onClick={() => navigate(item.view)} disabled={!allowed} title={allowed ? item.label : "Disponible en un plan superior"}><i>{item.icon}</i><span>{item.label}</span>{!allowed && <small className={styles.planLock}>Business</small>}{item.view === "alerts" && alerts.length > 0 && allowed && <b>{alerts.length}</b>}</button>; })}';
+const navNew = '{group.items.map((item) => { const allowed = viewAllowed(item.view); const minimumPlan = minimumPlanForView(item.view); return <button key={item.view} className={view === item.view ? styles.activeNav : ""} onClick={() => navigate(item.view)} disabled={!allowed} title={allowed ? item.label : `Disponible desde ${minimumPlan}`}><i>{item.icon}</i><span>{item.label}</span>{!allowed && <small className={styles.planLock}>{minimumPlan}</small>}{item.view === "alerts" && alerts.length > 0 && allowed && <b>{alerts.length}</b>}</button>; })}';
+if (app.includes(navLegacyPlan)) { app = app.replace(navLegacyPlan, navNew); changed = true; }
+else replaceOnce("plan-aware sidebar", navOld, navNew);
 
 replaceOnce(
   "commercial banner",
@@ -120,7 +126,7 @@ if (!app.includes('useEffect(() => {\n    if (!commercialAccount) return;\n    c
     if (required && !enabledModules.has(required)) {
       setView("overview");
       window.history.replaceState(null, "", "#overview");
-      setNotice("Tu plan no incluye el módulo solicitado. Volvimos al Resumen Ejecutivo.");
+      setNotice(`Este módulo requiere ${minimumPlanForView(view)} o superior. Volvimos al Resumen Ejecutivo.`);
     }
   }, [commercialAccount, enabledModules, view]);
 
