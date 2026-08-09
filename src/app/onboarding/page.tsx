@@ -74,7 +74,14 @@ export default function OnboardingPage() {
       try {
         const response = await fetch("/api/enterprise/industry", { cache: "no-store" });
         const payload = await response.json() as Payload;
-        if (!response.ok) throw new Error(payload.error || "No fue posible cargar las industrias");
+        if (!response.ok) {
+          const reason = payload.error || "No fue posible cargar las industrias";
+          if (response.status === 403 && reason.toLocaleLowerCase("es-CL").includes("suspend")) {
+            window.location.replace("/trial-expired");
+            return;
+          }
+          throw new Error(reason);
+        }
         if (!cancelled) {
           const availableChannels = payload.channels ?? [];
           const currentRetailers = payload.trialScopeConfigured ? payload.retailers ?? [] : [];
@@ -153,7 +160,14 @@ export default function OnboardingPage() {
         body: JSON.stringify({ industrySlug: selected, retailers: isTrial ? selectedRetailers : undefined }),
       });
       const payload = await response.json() as Payload;
-      if (!response.ok) throw new Error(payload.error || "No fue posible guardar la configuración");
+      if (!response.ok) {
+        const reason = payload.error || "No fue posible guardar la configuración";
+        if (response.status === 403 && reason.toLocaleLowerCase("es-CL").includes("suspend")) {
+          window.location.replace("/trial-expired");
+          return;
+        }
+        throw new Error(reason);
+      }
       window.location.replace("/");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "No fue posible guardar la configuración");
