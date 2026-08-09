@@ -124,7 +124,7 @@ export default function RegisterPage() {
                   <label>Plan que te interesa<select name="intendedPlan" defaultValue=""><option value="">Aún no lo sé</option>{PLANS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
                   <label>Contraseña<input name="password" required type="password" minLength={8} maxLength={128} placeholder="Mínimo 8 caracteres" autoComplete="new-password" /></label>
                   <label>Confirma contraseña<input name="confirmPassword" required type="password" minLength={8} maxLength={128} placeholder="Repite tu contraseña" autoComplete="new-password" /></label>
-                  <label className={styles.registerTerms}><input name="acceptedTerms" type="checkbox" required /><span>Acepto los términos de uso y la política de privacidad de MGP Super Precios.</span></label>
+                  <label className={styles.registerTerms}><input name="acceptedTerms" type="checkbox" required /><span>Acepto los <Link href="/landing/legal/terminos" target="_blank">términos de uso</Link> y la <Link href="/landing/legal/privacidad" target="_blank">política de privacidad</Link> de MGP Super Precios.</span></label>
                   {error && <div className={styles.registerError}>{error}</div>}
                   <button type="submit" disabled={loading}>{loading ? "Creando tu cuenta…" : "Comenzar trial de 7 días →"}</button>
                   <small className={styles.registerFineprint}>Al crear tu cuenta, tu empresa quedará registrada en MGP para gestionar el acceso, onboarding y contacto comercial asociado al servicio.</small>
