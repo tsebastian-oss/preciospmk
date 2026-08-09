@@ -20,7 +20,10 @@ export default function EnterpriseAdminQuickLinks() {
   if (!target || !visible) return null;
   const linkStyle = { padding: "8px", border: "1px solid rgba(255,255,255,.08)", borderRadius: 9, color: "#aaa9ba", background: "rgba(255,255,255,.025)", textAlign: "center" as const, textDecoration: "none", fontSize: 7, fontWeight: 800 };
   return createPortal(<div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6, marginTop: 6 }}>
-    <a href="/admin/trials" style={{ ...linkStyle, color: "#c7c1ff", borderColor: "rgba(109,93,252,.32)", background: "rgba(109,93,252,.08)" }}>TRIALS / CRM</a>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+      <a href="/admin/trials" style={{ ...linkStyle, color: "#c7c1ff", borderColor: "rgba(109,93,252,.32)", background: "rgba(109,93,252,.08)" }}>TRIALS / CRM</a>
+      <a href="/admin/leads" style={{ ...linkStyle, color: "#b9f4d2", borderColor: "rgba(24,184,101,.3)", background: "rgba(24,184,101,.08)" }}>LEADS</a>
+    </div>
     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
       <a href="/admin/ai" style={linkStyle}>IA ADMIN</a>
       <a href="/admin/notifications" style={linkStyle}>EMAIL ADMIN</a>
