@@ -15,14 +15,24 @@ async function expectStatus(path, expected, options = {}) {
   return response;
 }
 
+async function expectBody(path, markers) {
+  const response = await expectStatus(path, [200]);
+  const body = await response.text();
+  for (const marker of markers) assert(body.includes(marker), `${path}: falta contenido esperado ${marker}`);
+  return body;
+}
+
 async function main() {
   const publicPages = [
     "/",
     "/landing",
+    "/landing/demo",
     "/landing/soluciones",
     "/landing/modulos",
+    "/landing/cobertura",
     "/landing/precios",
     "/landing/contacto",
+    "/registro",
     "/login",
     "/forgot-password",
     "/auth/recovery",
@@ -30,13 +40,29 @@ async function main() {
 
   for (const path of publicPages) await expectStatus(path, [200]);
 
-  const protectedPage = await expectStatus("/onboarding", [307, 308], { redirect: "manual" });
-  assert((protectedPage.headers.get("location") || "").includes("/login"), "/onboarding no redirige a login sin sesión");
+  const landingBody = await expectBody("/landing", ["Ver demo interactiva", "Revisar cobertura actual", "MGP Super Precios"]);
+  assert(!landingBody.includes("Competitive AI"), "landing todavía contiene Competitive AI");
+  assert(!landingBody.includes("AI Price Optimizer"), "landing todavía contiene AI Price Optimizer");
+
+  const pricingBody = await expectBody("/landing/precios", ["AI Price Map", "Brand Intelligence AI", "20 exportaciones / mes", "250 exportaciones / mes"]);
+  assert(!pricingBody.includes("Competitive AI"), "pricing todavía contiene Competitive AI");
+
+  const coverage = await expectStatus("/api/public/coverage", [200]);
+  const coverageJson = await coverage.json();
+  assert(Array.isArray(coverageJson?.retailers), "coverage.retailers no es un array");
+  assert(coverageJson.retailers.length >= 3, "la cobertura pública no tiene suficientes retailers");
+  assert(coverageJson.retailers.every((item) => item?.name && item?.freshnessStatus), "la cobertura pública tiene filas incompletas");
+
+  for (const path of ["/onboarding", "/cuenta", "/cuenta/equipo", "/trial-expired"]) {
+    const response = await expectStatus(path, [307, 308], { redirect: "manual" });
+    assert((response.headers.get("location") || "").includes("/login"), `${path} no redirige a login sin sesión`);
+  }
 
   const protectedReset = await expectStatus("/reset-password", [307, 308], { redirect: "manual" });
   assert((protectedReset.headers.get("location") || "").includes("/forgot-password"), "/reset-password no protege correctamente una sesión ausente");
 
-  await expectStatus("/api/products", [401]);
+  const privateApis = ["/api/products", "/api/brand-chat/history", "/api/price-map-ai/history", "/api/data-exports", "/api/enterprise/account"];
+  for (const path of privateApis) await expectStatus(path, [401]);
 
   const health = await expectStatus("/api/health", [200]);
   const healthJson = await health.json();
@@ -64,7 +90,7 @@ async function main() {
   });
   assert(invalidRecovery.status === 400, `recovery inválido debía responder 400 y respondió ${invalidRecovery.status}`);
 
-  console.log("Production readiness smoke OK");
+  console.log("Production readiness smoke OK: marketing, coverage, auth protection, customer account and health validated");
 }
 
 main().catch((error) => {
