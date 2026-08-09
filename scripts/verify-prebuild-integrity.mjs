@@ -15,10 +15,11 @@ const requiredApp = [
   ['Account menu renderer', '<AccountMenu skuCount={number(summary?.total_products)} stockCoverage={stockCoverage}/>'],
   ['Persistent alert center import', 'import CustomerAlerts from "./CustomerAlerts";'],
   ['Persistent alert center renderer', 'if (view === "alerts") return <CustomerAlerts/>;'],
-  ['Commercial experience import', 'import { ActivationGuide, CommercialBanner, requiredModuleForView, type CommercialAccountPayload } from "./CommercialExperience";'],
+  ['Commercial experience import', 'import { ActivationGuide, CommercialBanner, minimumPlanForView, requiredModuleForView, type CommercialAccountPayload } from "./CommercialExperience";'],
   ['Trial/plan banner', '<CommercialBanner account={commercialAccount}/>'],
   ['Activation guide', '<ActivationGuide currentView={view} onNavigate={navigate} account={commercialAccount}/>'],
   ['Plan entitlement resolver', 'const required = requiredModuleForView(next);'],
+  ['Minimum plan label', 'const minimumPlan = minimumPlanForView(item.view);'],
   ['Export limit gate', 'exportLimitReached'],
   ['Contextual trend endpoint', 'endpoint = "/api/contextual-pricing-trend";'],
 ];
@@ -32,6 +33,7 @@ const forbiddenApp = [
   'view === "basket"',
   'defaultChecked/></label><label><span><strong>Mostrar datos en vivo',
   'if (view === "alerts") return <section className={styles.workspace}><div className={styles.alertGrid}>',
+  '<small className={styles.planLock}>Business</small>',
 ];
 
 const failures = [];
@@ -58,4 +60,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("Prebuild integrity OK: IA, trazabilidad, permisos por plan, trial, alertas persistentes, cuenta, navegación y tendencias validados.");
+console.log("Prebuild integrity OK: IA, trazabilidad, permisos por plan, labels de upsell, trial, alertas persistentes, cuenta, navegación y tendencias validados.");
