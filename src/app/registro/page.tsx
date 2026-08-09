@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 import { PageChrome } from "../landing/MarketingShell";
 import styles from "./register.module.css";
 
@@ -26,6 +26,12 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState<"" | "confirm">("");
+  const [selectedPlan, setSelectedPlan] = useState("");
+
+  useEffect(() => {
+    const plan = new URLSearchParams(window.location.search).get("plan") ?? "";
+    setSelectedPlan(["starter", "business", "enterprise"].includes(plan) ? plan : "");
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -49,9 +55,7 @@ export default function RegisterPage() {
     }
 
     const params = new URLSearchParams(window.location.search);
-    const queryPlan = params.get("plan") ?? "";
-    const formPlan = String(form.get("intendedPlan") ?? "");
-    const intendedPlan = ["starter", "business", "enterprise"].includes(queryPlan) ? queryPlan : formPlan;
+    const intendedPlan = selectedPlan || String(form.get("intendedPlan") ?? "");
 
     try {
       const response = await fetch("/api/auth/register", {
@@ -88,6 +92,8 @@ export default function RegisterPage() {
     }
   }
 
+  const selectedPlanLabel = PLANS.find(([value]) => value === selectedPlan)?.[1];
+
   return (
     <PageChrome active="registro">
       <main className={styles.registerPage}>
@@ -97,11 +103,12 @@ export default function RegisterPage() {
             <h1>Empieza a explorar el mercado con una cuenta <em>trial</em>.</h1>
             <p>Prueba durante 7 días un entorno propio de inteligencia de precios. Sin tarjeta de crédito y con onboarding inmediato.</p>
             <div className={styles.registerBenefits}>
-              <article><b>01</b><div><strong>7 días de trial</strong><span>Acceso inicial a 3 retailers y funcionalidades clave.</span></div></article>
+              <article><b>01</b><div><strong>7 días de trial</strong><span>Elige hasta 3 retailers con cobertura operativa y funcionalidades clave.</span></div></article>
               <article><b>02</b><div><strong>Espacio propio</strong><span>Tu empresa queda separada y configurada como organización.</span></div></article>
               <article><b>03</b><div><strong>Escala cuando veas valor</strong><span>Pasa a Starter, Business o Enterprise sin perder tu configuración.</span></div></article>
             </div>
             <div className={styles.registerTrust}><span>✓ Acceso protegido</span><span>✓ Sin tarjeta de crédito</span><span>✓ Soporte de MGP</span></div>
+            <p style={{ marginTop: 18, fontSize: 12 }}><Link href="/landing/cobertura">Revisar cobertura actual de retailers →</Link></p>
           </div>
 
           <section className={styles.registerCard}>
@@ -117,7 +124,7 @@ export default function RegisterPage() {
               <>
                 <div className={styles.registerCardHead}>
                   <span>PASO 1 DE 2 · DATOS DE ACCESO</span>
-                  <h2>Crea tu cuenta</h2>
+                  <h2>{selectedPlanLabel ? `Trial orientado a ${selectedPlanLabel}` : "Crea tu cuenta"}</h2>
                   <p>¿Ya tienes una cuenta? <Link href="/login">Ingresa aquí</Link></p>
                 </div>
                 <form onSubmit={submit} className={styles.registerForm}>
@@ -128,7 +135,7 @@ export default function RegisterPage() {
                   <label>Empresa<input name="company" required minLength={2} maxLength={160} placeholder="Nombre de tu empresa" autoComplete="organization" /></label>
                   <label>Cargo<input name="jobTitle" maxLength={120} placeholder="Ej. Pricing Manager" autoComplete="organization-title" /></label>
                   <label>Industria<select name="industrySlug" defaultValue=""><option value="">Selecciona una industria</option>{INDUSTRIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-                  <label>Plan que te interesa<select name="intendedPlan" defaultValue=""><option value="">Aún no lo sé</option>{PLANS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
+                  <label>Plan que te interesa<select name="intendedPlan" value={selectedPlan} onChange={(event) => setSelectedPlan(event.target.value)}><option value="">Aún no lo sé</option>{PLANS.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
                   <label>Contraseña<input name="password" required type="password" minLength={10} maxLength={128} placeholder="10+ caracteres y 3 tipos de carácter" autoComplete="new-password" /></label>
                   <label>Confirma contraseña<input name="confirmPassword" required type="password" minLength={10} maxLength={128} placeholder="Repite tu contraseña" autoComplete="new-password" /></label>
                   <label className={styles.registerTerms}><input name="acceptedTerms" type="checkbox" required /><span>Acepto los <Link href="/landing/legal/terminos" target="_blank">términos de uso</Link> y la <Link href="/landing/legal/privacidad" target="_blank">política de privacidad</Link> de MGP Super Precios.</span></label>
