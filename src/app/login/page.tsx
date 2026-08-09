@@ -52,6 +52,9 @@ export default function LoginPage() {
             Contraseña
             <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required minLength={6} />
           </label>
+          <div style={{ marginTop: -8, textAlign: "right", fontSize: 12 }}>
+            <Link href="/forgot-password" style={{ color: "#bdf34b", fontWeight: 800 }}>¿Olvidaste tu contraseña?</Link>
+          </div>
           {error && <div className={styles.error}>{error}</div>}
           <button type="submit" disabled={loading}>{loading ? "Validando…" : "Ingresar"}</button>
         </form>
