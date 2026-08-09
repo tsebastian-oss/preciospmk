@@ -28,17 +28,7 @@ const moduleItems = [
   ["Scraping Automatizado", "Captura continua de precios y surtido.", "⌁"],
 ] as const;
 
-function NavDropdown({
-  label,
-  href,
-  active,
-  items,
-}: {
-  label: string;
-  href: string;
-  active: boolean;
-  items: readonly (readonly [string, string, string])[];
-}) {
+function NavDropdown({ label, href, active, items }: { label: string; href: string; active: boolean; items: readonly (readonly [string, string, string])[] }) {
   return (
     <div className={styles.navDropdown}>
       <Link href={href} className={active ? styles.navActive : undefined}>{label}</Link>
@@ -202,7 +192,7 @@ export function SiteFooter() {
         <div><strong>Plataforma</strong><Link href="/landing/soluciones">Soluciones</Link><Link href="/landing/modulos">Módulos</Link><Link href="/landing/precios">Precios</Link><Link href="/registro">Crear cuenta</Link><Link href="/login">Ingresar</Link></div>
         <div><strong>Recursos</strong><Link href="/landing/modulos">AI Price Map</Link><Link href="/landing/modulos">Brand Intelligence AI</Link><Link href="/landing/modulos">Dashboards</Link><Link href="/landing/contacto">Preguntas frecuentes</Link></div>
         <div><strong>Empresa</strong><Link href="/landing/contacto">Contacto</Link><a href={CONTACT_WHATSAPP} target="_blank" rel="noreferrer">WhatsApp</a><a href={`mailto:${CONTACT_EMAIL}`}>Correo</a><Link href="/login">Acceso clientes</Link></div>
-        <div><strong>Legal</strong><span>Privacidad y seguridad</span><span>Uso responsable de datos</span><span>Información pública de mercado</span><span>Acceso autenticado al producto</span></div>
+        <div><strong>Legal</strong><Link href="/landing/legal/privacidad">Privacidad y seguridad</Link><Link href="/landing/legal/terminos">Términos de uso</Link><Link href="/landing/legal/uso-datos">Uso responsable de datos</Link><Link href="/landing/legal/informacion-publica">Información pública de mercado</Link><Link href="/landing/legal/acceso-producto">Acceso autenticado al producto</Link></div>
       </div>
       <div className={styles.footerBottom}><span>© 2026 MGP Super Precios. Todos los derechos reservados.</span><span>Hecho con ♥ en Chile</span></div>
     </footer>
