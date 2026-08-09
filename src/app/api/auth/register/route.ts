@@ -13,6 +13,12 @@ function validEmail(value: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
+function validPassword(value: string) {
+  if (value.length < 10 || value.length > 128) return false;
+  const classes = [/[a-z]/.test(value), /[A-Z]/.test(value), /\d/.test(value), /[^A-Za-z0-9]/.test(value)].filter(Boolean).length;
+  return classes >= 3;
+}
+
 function authError(raw: string) {
   try {
     const parsed = JSON.parse(raw) as { msg?: string; message?: string; error_description?: string; error_code?: string };
@@ -61,8 +67,7 @@ export async function POST(request: NextRequest) {
   if (displayName.length < 2) return NextResponse.json({ error: "Ingresa tu nombre y apellido." }, { status: 400 });
   if (!validEmail(email)) return NextResponse.json({ error: "Ingresa un correo electrónico válido." }, { status: 400 });
   if (company.length < 2) return NextResponse.json({ error: "Ingresa el nombre de tu empresa." }, { status: 400 });
-  if (password.length < 8 || password.length > 128) return NextResponse.json({ error: "La contraseña debe tener al menos 8 caracteres." }, { status: 400 });
-  if (!/[A-Za-z]/.test(password) || !/\d/.test(password)) return NextResponse.json({ error: "Usa una contraseña con letras y números." }, { status: 400 });
+  if (!validPassword(password)) return NextResponse.json({ error: "Usa al menos 10 caracteres y combina mayúsculas, minúsculas, números o símbolos." }, { status: 400 });
   if (!acceptedTerms) return NextResponse.json({ error: "Debes aceptar los términos de uso y la política de privacidad." }, { status: 400 });
 
   const origin = request.nextUrl.hostname === "localhost" ? request.nextUrl.origin : PRODUCTION_ORIGIN;
