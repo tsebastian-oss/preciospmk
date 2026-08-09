@@ -10,7 +10,7 @@ type Industry = {
   retailer_types: string[];
   display_order: number;
 };
-type RetailerOption = { name: string; products: number };
+type RetailerOption = { name: string; products: number; freshnessStatus?: string; latestObservedAt?: string | null };
 type RetailerChannel = { code: string; name: string; retailers: RetailerOption[] };
 type Payload = {
   industries?: Industry[];
@@ -45,6 +45,11 @@ function channelCodesForRetailers(channels: RetailerChannel[], retailers: string
   return channels
     .filter((channel) => channel.retailers.some((retailer) => selected.has(retailer.name.toLocaleLowerCase("es-CL"))))
     .map((channel) => channel.code);
+}
+
+function freshness(retailer: RetailerOption) {
+  if (retailer.freshnessStatus === "warning") return "Actualización en revisión";
+  return "Actualización activa";
 }
 
 export default function OnboardingPage() {
@@ -161,11 +166,11 @@ export default function OnboardingPage() {
 
   return <main className={styles.page}>
     <div className={styles.shell}>
-      <div className={styles.brand}><div className={styles.mark}>M</div><div><strong>MGP Intelligence</strong><small>Configuración inicial</small></div></div>
+      <div className={styles.brand}><div className={styles.mark}>M</div><div><strong>MGP Super Precios</strong><small>Configuración inicial</small></div></div>
       <section className={styles.hero}>
         <span className={styles.eyebrow}>{changing ? "CONFIGURACIÓN" : "PERSONALIZA TU PLATAFORMA"}</span>
         <h1>Configura el mercado que quieres monitorear.</h1>
-        <p>{isTrial ? "Primero cuéntanos en qué industria compites. Luego podrás elegir los canales y hasta 3 retailers para tu trial." : "Usaremos esta selección para priorizar categorías, productos, variaciones de precio y comparaciones relevantes para tu negocio."}</p>
+        <p>{isTrial ? "Primero cuéntanos en qué industria compites. Luego elige los canales y hasta 3 retailers con cobertura operativa para tu trial." : "Usaremos esta selección para priorizar categorías, productos, variaciones de precio y comparaciones relevantes para tu negocio."}</p>
         {organizationName && <div className={styles.context}>Organización: <strong>{organizationName}</strong>{isTrial && <span>Trial</span>}</div>}
       </section>
 
@@ -194,14 +199,14 @@ export default function OnboardingPage() {
           })}
         </div>
 
-        <div className={styles.retailerHead}><div><b>Elige hasta 3 retailers</b><p>Tu trial usará datos reales únicamente de las cadenas que selecciones.</p></div><strong>{selectedRetailers.length}/3 seleccionados</strong></div>
+        <div className={styles.retailerHead}><div><b>Elige hasta 3 retailers</b><p>Solo mostramos fuentes con datos utilizables; si una está en revisión lo verás antes de seleccionarla.</p></div><strong>{selectedRetailers.length}/3 seleccionados</strong></div>
         <div className={styles.retailerGroups}>
           {channels.filter((channel) => activeChannels.includes(channel.code)).map((channel) => <div key={channel.code} className={styles.retailerGroup}>
             <span>{channel.name}</span>
             <div className={styles.retailerGrid}>{channel.retailers.map((retailer) => {
               const active = selectedRetailers.includes(retailer.name);
               return <button type="button" key={retailer.name} onClick={() => toggleRetailer(retailer.name)} className={`${styles.retailerButton} ${active ? styles.retailerSelected : ""}`}>
-                <b>{retailer.name}</b><small>{new Intl.NumberFormat("es-CL").format(retailer.products)} SKUs en catálogo</small><i>{active ? "✓" : "+"}</i>
+                <b>{retailer.name}</b><small>{new Intl.NumberFormat("es-CL").format(retailer.products)} SKUs · {freshness(retailer)}</small><i>{active ? "✓" : "+"}</i>
               </button>;
             })}</div>
           </div>)}
@@ -210,7 +215,7 @@ export default function OnboardingPage() {
       </section>}
 
       <footer className={styles.footer}>
-        <p>{isTrial ? "Podrás probar hasta 3 retailers durante 7 días. Al cambiar esta selección recalcularemos automáticamente el dashboard con el nuevo alcance." : "La industria se combina con los retailers, marcas y categorías contratadas por tu organización."}</p>
+        <p>{isTrial ? "Podrás probar hasta 3 retailers durante 7 días. Si ajustas la selección, recalcularemos automáticamente el dashboard con el nuevo alcance." : "La industria se combina con los retailers, marcas y categorías contratadas por tu organización."}</p>
         <button className={styles.continue} disabled={!selected || saving || (isTrial && selectedRetailers.length === 0)} onClick={save}>{saving ? "Preparando tu dashboard…" : changing ? "Guardar cambios" : "Entrar a la plataforma"}</button>
       </footer>
     </div>
