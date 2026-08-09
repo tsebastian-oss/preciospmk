@@ -12,6 +12,7 @@ const PRIVATE_API_PREFIXES = [
   "/api/brand-chat",
   "/api/price-map-ai",
   "/api/data-exports",
+  "/api/alerts",
   "/api/price-movements",
   "/api/admin",
   "/api/enterprise",
@@ -153,7 +154,7 @@ export async function middleware(request: NextRequest) {
   if (isPrivatePage(pathname) && !session.authenticated) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = pathname === "/reset-password" ? "/forgot-password" : "/login";
-    return applyHeaders(NextResponse.redirect(loginUrl));
+    return applyHeaders(NextResponse.redirect(loginUrl), session);
   }
 
   return applySessionCookies(NextResponse.next(), session);
