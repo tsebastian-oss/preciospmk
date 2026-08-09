@@ -59,6 +59,7 @@ export default function AccountMenu({ skuCount, stockCoverage }: { skuCount: str
   const plan = PLAN_LABELS[planKey] || planKey || "Plan";
   const trialDays = daysRemaining(account?.organization?.commercial?.trialExpiresAt);
   const avatar = useMemo(() => initials(displayName, email), [displayName, email]);
+  const canManageTeam = ["owner", "admin"].includes(account?.organization?.role || "");
 
   async function logout() {
     if (loggingOut) return;
@@ -79,6 +80,7 @@ export default function AccountMenu({ skuCount, stockCoverage }: { skuCount: str
       <div className={styles.org}><b>{organizationName}</b><small>{role} · {plan}{account?.organization?.status === "trial" && trialDays !== null ? ` · ${trialDays} días` : ""}</small></div>
       <nav>
         <Link href="/cuenta" role="menuitem"><i>◎</i><span>Mi cuenta</span></Link>
+        {canManageTeam && <Link href="/cuenta/equipo" role="menuitem"><i>♙</i><span>Equipo y usuarios</span></Link>}
         <Link href="/onboarding?change=1" role="menuitem"><i>⚙</i><span>Configurar alcance</span></Link>
         {account?.organization?.status === "trial" && <Link href="/landing/precios" role="menuitem"><i>↗</i><span>Ver planes</span></Link>}
         <a href="mailto:sebastian@mgpconsultoria.cl?subject=Soporte%20MGP%20Super%20Precios" role="menuitem"><i>?</i><span>Soporte</span></a>
