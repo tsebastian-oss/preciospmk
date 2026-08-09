@@ -6,6 +6,7 @@ import styles from "./MarketingMobileMenu.module.css";
 
 const LINKS = [
   ["Inicio", "/landing"],
+  ["Demo interactiva", "/landing/demo"],
   ["Soluciones", "/landing/soluciones"],
   ["Módulos", "/landing/modulos"],
   ["Cobertura", "/landing/cobertura"],
