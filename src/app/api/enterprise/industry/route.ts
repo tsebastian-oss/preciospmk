@@ -12,7 +12,7 @@ type Industry = {
 };
 
 type Selection = { industrySlug: string; industryName: string; retailers?: string[]; trialScopeConfigured?: boolean };
-type RetailerOption = { name: string; products: number };
+type RetailerOption = { name: string; products: number; freshnessStatus?: string; latestObservedAt?: string | null };
 type RetailerChannel = { code: string; name: string; retailers: RetailerOption[] };
 type RetailerOptionsPayload = { channels?: RetailerChannel[] };
 
