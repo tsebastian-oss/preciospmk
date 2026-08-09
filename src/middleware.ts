@@ -154,7 +154,7 @@ export async function middleware(request: NextRequest) {
   if (isPrivatePage(pathname) && !session.authenticated) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = pathname === "/reset-password" ? "/forgot-password" : "/login";
-    return applyHeaders(NextResponse.redirect(loginUrl), session);
+    return applyHeaders(NextResponse.redirect(loginUrl));
   }
 
   return applySessionCookies(NextResponse.next(), session);
