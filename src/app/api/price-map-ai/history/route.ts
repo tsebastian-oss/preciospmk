@@ -7,7 +7,7 @@ function headers(token:string){return{apikey:SUPABASE_KEY,authorization:`Bearer 
 async function readJson(r:Response){const t=await r.text();try{return t?JSON.parse(t):null}catch{return null}}
 
 export async function GET(request:NextRequest){
-  const access=await enterpriseAccess(request,"pricing");if(access.response)return access.response;
+  const access=await enterpriseAccess(request,"optimizer");if(access.response)return access.response;
   const token=request.cookies.get("mgp_access_token")?.value;if(!token)return NextResponse.json({error:"No autorizado"},{status:401});
   const org=access.access!.organizationId;const id=request.nextUrl.searchParams.get("id");
   try{
@@ -17,7 +17,7 @@ export async function GET(request:NextRequest){
 }
 
 export async function DELETE(request:NextRequest){
-  const access=await enterpriseAccess(request,"pricing");if(access.response)return access.response;
+  const access=await enterpriseAccess(request,"optimizer");if(access.response)return access.response;
   const token=request.cookies.get("mgp_access_token")?.value;if(!token)return NextResponse.json({error:"No autorizado"},{status:401});
   const org=access.access!.organizationId;const id=request.nextUrl.searchParams.get("id");if(!id)return NextResponse.json({error:"Falta la conversación."},{status:400});
   try{const r=await fetch(`${SUPABASE_URL}/rest/v1/brand_ai_conversations?id=eq.${encodeURIComponent(id)}&organization_id=eq.${encodeURIComponent(org)}&conversation_type=eq.price_map`,{method:"DELETE",headers:headers(token),cache:"no-store",signal:AbortSignal.timeout(8000)});const d=await readJson(r);if(!r.ok)return NextResponse.json({error:d?.message||"No fue posible eliminar la conversación."},{status:r.status});return NextResponse.json({ok:true});}catch(e){return NextResponse.json({error:e instanceof Error?e.message:"No fue posible eliminar la conversación."},{status:500});}
