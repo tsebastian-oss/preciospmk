@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import styles from "./marketing.module.css";
 
-export type MarketingPage = "inicio" | "soluciones" | "modulos" | "precios" | "contacto" | "registro";
+export type MarketingPage = "inicio" | "soluciones" | "modulos" | "precios" | "contacto" | "registro" | "cobertura";
 
 export const CONTACT_PHONE_DISPLAY = "+56 9 8231 5934";
 export const CONTACT_PHONE_LINK = "tel:+56982315934";
@@ -12,20 +12,20 @@ export const CONTACT_EMAIL = "sebastian@mgpconsultoria.cl";
 const solutionItems = [
   ["Supermercados", "Monitorea precios, promociones y surtido para competir categoría a categoría.", "▣"],
   ["Farmacias", "Controla precios, disponibilidad y promociones en el canal farma.", "✚"],
-  ["Multitiendas", "Compara precios y promociones online y físicas en múltiples formatos.", "▤"],
+  ["Multitiendas", "Compara catálogos, precios y promociones online entre retailers.", "▤"],
   ["Brand Intelligence", "Entiende el posicionamiento de tu marca y sus competidores.", "◇"],
   ["Pricing Intelligence", "Convierte datos de precios en señales comerciales accionables.", "$"],
-  ["Reportes Ejecutivos", "Dashboards y reportes listos para decisiones de negocio.", "↗"],
+  ["Reportes Ejecutivos", "Dashboards y exportaciones listos para decisiones de negocio.", "↗"],
 ] as const;
 
 const moduleItems = [
-  ["Dashboards", "KPIs y tendencias en tiempo real.", "▦"],
+  ["Dashboards", "KPIs y tendencias con actualización automatizada.", "▦"],
   ["AI Price Map", "Mapas competitivos construidos con IA.", "⌖"],
   ["Brand Intelligence AI", "Análisis conversacional de marcas.", "◇"],
-  ["Alertas", "Señales automáticas de cambios relevantes.", "!"],
-  ["Reportes", "Salidas ejecutivas y programadas.", "▤"],
-  ["Exportaciones", "CSV, Excel y flujos de datos.", "↓"],
-  ["Scraping Automatizado", "Captura continua de precios y surtido.", "⌁"],
+  ["Alertas", "Señales dentro de la plataforma ante cambios relevantes.", "!"],
+  ["Reportes", "Entregables ejecutivos según el alcance del cliente.", "▤"],
+  ["Exportaciones", "CSV y Excel con permisos por plan.", "↓"],
+  ["Scraping Automatizado", "Captura automatizada de precios y surtido.", "⌁"],
 ] as const;
 
 function NavDropdown({ label, href, active, items }: { label: string; href: string; active: boolean; items: readonly (readonly [string, string, string])[] }) {
@@ -57,6 +57,7 @@ export function SiteHeader({ active }: { active: MarketingPage }) {
           <Link href="/landing" className={active === "inicio" ? styles.navActive : undefined}>Inicio</Link>
           <NavDropdown label="Soluciones" href="/landing/soluciones" active={active === "soluciones"} items={solutionItems} />
           <NavDropdown label="Módulos" href="/landing/modulos" active={active === "modulos"} items={moduleItems} />
+          <Link href="/landing/cobertura" className={active === "cobertura" ? styles.navActive : undefined}>Cobertura</Link>
           <Link href="/landing/precios" className={active === "precios" ? styles.navActive : undefined}>Precios</Link>
           <Link href="/landing/contacto" className={active === "contacto" ? styles.navActive : undefined}>Contacto</Link>
         </nav>
@@ -123,7 +124,7 @@ export function AIPriceMapPreview() {
       <div className={styles.aiChat}>
         <div className={styles.aiTitle}>Asistente IA <span>BETA</span></div>
         <div className={styles.chatUser}>¿Cómo está posicionada Coca-Cola en formato lata?</div>
-        <div className={styles.chatAi}>Analicé los productos equivalentes y normalicé packs. Coca-Cola está por encima del índice medio de precio, con cobertura alta.</div>
+        <div className={styles.chatAi}>Analicé productos comparables y normalicé los packs equivalentes disponibles. Coca-Cola aparece por encima del índice medio de precio, con cobertura alta.</div>
         <div className={styles.chatAi}><strong>Insight:</strong> Pepsi es el competidor más cercano en precio equivalente.</div>
         <div className={styles.chatInput}>Escribe tu pregunta… <b>↗</b></div>
       </div>
@@ -175,8 +176,8 @@ export function PillIcon({ children, tone = "blue" }: { children: ReactNode; ton
   return <span className={`${styles.pillIcon} ${styles[`tone_${tone}`]}`}>{children}</span>;
 }
 
-export function BottomCTA({ title = "Convierte datos de precios en decisiones más rápidas", copy = "Agenda una demo personalizada y descubre el poder de MGP Super Precios." }: { title?: string; copy?: string }) {
-  return <section className={styles.bottomCta}><div className={styles.rocket}>↗</div><div><h2>{title}</h2><p>{copy}</p></div><Link href="/landing/contacto#demo">Solicitar demo hoy</Link></section>;
+export function BottomCTA({ title = "Convierte datos de precios en decisiones más rápidas", copy = "Coordina una demo personalizada y descubre MGP Super Precios." }: { title?: string; copy?: string }) {
+  return <section className={styles.bottomCta}><div className={styles.rocket}>↗</div><div><h2>{title}</h2><p>{copy}</p></div><Link href="/landing/contacto#demo">Solicitar demo</Link></section>;
 }
 
 export function SiteFooter() {
@@ -189,8 +190,8 @@ export function SiteFooter() {
           <a href={CONTACT_PHONE_LINK}>☎ {CONTACT_PHONE_DISPLAY}</a>
           <a href={`mailto:${CONTACT_EMAIL}`}>✉ {CONTACT_EMAIL}</a>
         </div>
-        <div><strong>Plataforma</strong><Link href="/landing/soluciones">Soluciones</Link><Link href="/landing/modulos">Módulos</Link><Link href="/landing/precios">Precios</Link><Link href="/registro">Crear cuenta</Link><Link href="/login">Ingresar</Link></div>
-        <div><strong>Recursos</strong><Link href="/landing/modulos">AI Price Map</Link><Link href="/landing/modulos">Brand Intelligence AI</Link><Link href="/landing/modulos">Dashboards</Link><Link href="/landing/contacto">Preguntas frecuentes</Link></div>
+        <div><strong>Plataforma</strong><Link href="/landing/soluciones">Soluciones</Link><Link href="/landing/modulos">Módulos</Link><Link href="/landing/cobertura">Cobertura</Link><Link href="/landing/precios">Precios</Link><Link href="/registro">Crear cuenta</Link><Link href="/login">Ingresar</Link></div>
+        <div><strong>Recursos</strong><Link href="/landing/modulos">AI Price Map</Link><Link href="/landing/modulos">Brand Intelligence AI</Link><Link href="/landing/cobertura">Retailers monitoreados</Link><Link href="/landing/contacto">Preguntas frecuentes</Link></div>
         <div><strong>Empresa</strong><Link href="/landing/contacto">Contacto</Link><a href={CONTACT_WHATSAPP} target="_blank" rel="noreferrer">WhatsApp</a><a href={`mailto:${CONTACT_EMAIL}`}>Correo</a><Link href="/login">Acceso clientes</Link></div>
         <div><strong>Legal</strong><Link href="/landing/legal/privacidad">Privacidad y seguridad</Link><Link href="/landing/legal/terminos">Términos de uso</Link><Link href="/landing/legal/uso-datos">Uso responsable de datos</Link><Link href="/landing/legal/informacion-publica">Información pública de mercado</Link><Link href="/landing/legal/acceso-producto">Acceso autenticado al producto</Link></div>
       </div>
