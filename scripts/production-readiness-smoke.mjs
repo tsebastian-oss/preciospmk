@@ -90,7 +90,23 @@ async function main() {
   });
   assert(invalidRecovery.status === 400, `recovery inválido debía responder 400 y respondió ${invalidRecovery.status}`);
 
-  console.log("Production readiness smoke OK: marketing, coverage, auth protection, alerts, customer account and health validated");
+  const predictablePassword = await request("/api/auth/register", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      displayName: "Security Smoke",
+      email: "security-smoke@example.com",
+      company: "Smoke Test Company",
+      password: "Password123!",
+      acceptedTerms: true,
+      startedAt: Date.now() - 10_000,
+    }),
+  });
+  assert(predictablePassword.status === 400, `contraseña predecible debía bloquearse con 400 y respondió ${predictablePassword.status}`);
+  const passwordPayload = await predictablePassword.json().catch(() => ({}));
+  assert(/predecible|secuencias|comunes/i.test(String(passwordPayload?.error || "")), "la política de contraseña no devolvió un mensaje seguro esperado");
+
+  console.log("Production readiness smoke OK: marketing, coverage, auth protection, hardened passwords, alerts, customer account and health validated");
 }
 
 main().catch((error) => {
