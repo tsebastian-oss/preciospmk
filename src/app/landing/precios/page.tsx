@@ -23,7 +23,7 @@ const plans = [
     href: "/registro?plan=starter&utm_source=pricing&utm_medium=website&utm_campaign=self_service",
     cta: "Probar Starter 7 días",
     copy: "Para equipos que comienzan a profesionalizar su monitoreo competitivo.",
-    features: ["Hasta 2 usuarios", "Hasta 3 retailers", "Monitoreo de precios", "Promociones y movimientos", "Dashboards estándar", "Alertas", "20 exportaciones / mes", "Onboarding incluido"],
+    features: ["Hasta 2 usuarios", "Hasta 3 retailers", "Monitoreo de precios", "Promociones y movimientos", "Dashboards estándar", "Alertas dentro de la plataforma", "20 exportaciones / mes", "Onboarding incluido"],
   },
   {
     name: "Business",
@@ -33,7 +33,7 @@ const plans = [
     cta: "Probar Business 7 días",
     copy: "Para equipos que necesitan inteligencia completa, IA y análisis avanzado.",
     popular: true,
-    features: ["Hasta 10 usuarios", "Hasta 9 retailers", "Monitoreo avanzado", "AI Price Map y Competitive AI", "Brand Intelligence AI", "Dashboards avanzados", "250 exportaciones / mes", "Soporte prioritario", "Onboarding incluido"],
+    features: ["Hasta 10 usuarios", "Hasta 9 retailers", "Monitoreo avanzado", "AI Price Map", "Brand Intelligence AI", "Assortment Gaps y tendencias", "250 exportaciones / mes", "Soporte prioritario", "Onboarding incluido"],
   },
   {
     name: "Enterprise",
@@ -72,7 +72,8 @@ export default function PricingPage() {
               <h1>Empieza pequeño y escala cuando <em>veas valor</em></h1>
               <p>Prueba la plataforma con datos reales, valida el caso de uso y luego elige el nivel de cobertura, IA y soporte que necesita tu equipo.</p>
               <div className={styles.heroActions}><Link href="/registro?utm_source=pricing&utm_medium=website&utm_campaign=trial">Comenzar trial gratis</Link><Link href="/landing/contacto#demo">Solicitar demo</Link></div>
-              <div className={styles.heroTrust}><span>Sin tarjeta de crédito</span><span>Onboarding inmediato</span><span>Soporte local</span></div>
+              <div className={styles.heroTrust}><span>Sin tarjeta de crédito</span><span>Onboarding inmediato</span><span>Límites visibles por plan</span></div>
+              <p style={{ marginTop: 18, fontSize: 12 }}><Link href="/landing/cobertura">Ver cobertura actual de retailers →</Link></p>
             </div>
             <DashboardPreview compact />
           </div>
@@ -86,7 +87,7 @@ export default function PricingPage() {
         </section>
 
         <section className={styles.section}>
-          <SectionHeading title="Comparación de planes" copy="El precio anual es la referencia comercial recomendada. El alcance final depende de retailers, categorías, frecuencia, usuarios e integraciones." />
+          <SectionHeading title="Comparación de planes" copy="El precio anual es la referencia comercial recomendada. Los límites de usuarios, retailers, módulos y exportaciones se aplican en la plataforma según el plan activo." />
           <div className={styles.compareWrap}><table className={styles.compareTable}><thead><tr><th>Capacidad</th><th>Starter</th><th>Business</th><th>Enterprise</th></tr></thead><tbody>{comparison.map((row) => <tr key={row[0]}>{row.map((cell) => <td key={cell}>{cell}</td>)}</tr>)}</tbody></table></div>
         </section>
 
@@ -103,9 +104,9 @@ export default function PricingPage() {
         <section className={styles.section}>
           <SectionHeading title="Preguntas frecuentes" />
           <div className={styles.faqGrid}>
-            <details><summary>¿Cómo funciona el trial?</summary><p>Tienes 7 días para probar el entorno inicial con 3 retailers. No pedimos tarjeta. Para prospectos calificados podemos extenderlo una sola vez hasta 7 días adicionales.</p></details>
+            <details><summary>¿Cómo funciona el trial?</summary><p>Tienes 7 días para probar el entorno inicial con hasta 3 retailers que tú eliges entre las fuentes disponibles. No pedimos tarjeta. Para prospectos calificados podemos extenderlo una sola vez hasta 7 días adicionales.</p></details>
+            <details><summary>¿Qué pasa con mi configuración si contrato?</summary><p>Conservamos tu organización, industria y retailers seleccionados. El nuevo plan amplía límites y módulos sin reiniciar tu espacio de trabajo.</p></details>
             <details><summary>¿Puedo contratar mes a mes?</summary><p>Sí, en Starter y Business. La modalidad mensual tiene un precio mayor por la flexibilidad y no requiere compromiso anual.</p></details>
-            <details><summary>¿Qué precio recomendamos?</summary><p>El precio publicado principal corresponde al compromiso anual y es la opción con mejor relación valor/precio.</p></details>
             <details><summary>¿Los precios incluyen IVA?</summary><p>No. Todos los valores se expresan en CLP + IVA.</p></details>
             <details><summary>¿Qué define el valor final?</summary><p>Principalmente retailers, categorías, volumen, frecuencia de actualización, usuarios, módulos e integraciones.</p></details>
             <details><summary>¿Existe una solución Enterprise?</summary><p>Sí. Parte desde $2.900.000 CLP + IVA mensuales y se configura según cobertura, gobierno, integraciones y soporte requerido.</p></details>
@@ -118,7 +119,7 @@ export default function PricingPage() {
           <Link href="/landing/contacto#demo">Hablar con ventas</Link>
         </section>
 
-        <BottomCTA title="Empieza con 7 días de trial" copy="Crea tu cuenta, configura tu industria y valida MGP Super Precios con tu caso de uso." />
+        <BottomCTA title="Empieza con 7 días de trial" copy="Crea tu cuenta, elige tus retailers y valida MGP Super Precios con tu caso de uso." />
       </main>
     </PageChrome>
   );
