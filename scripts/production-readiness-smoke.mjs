@@ -40,9 +40,12 @@ async function main() {
 
   for (const path of publicPages) await expectStatus(path, [200]);
 
-  const landingBody = await expectBody("/landing", ["Ver demo interactiva", "Revisar cobertura actual", "MGP Super Precios"]);
+  const landingBody = await expectBody("/landing", ["Ver demo interactiva", "Revisar cobertura actual", "MGP Super Precios", "Abrir menú"]);
   assert(!landingBody.includes("Competitive AI"), "landing todavía contiene Competitive AI");
   assert(!landingBody.includes("AI Price Optimizer"), "landing todavía contiene AI Price Optimizer");
+
+  const demoBody = await expectBody("/landing/demo", ["DEMO INTERACTIVA", "AI Price Map", "Brand Intelligence"]);
+  assert(demoBody.includes("Sin login") || demoBody.includes("SIN LOGIN"), "la demo pública no comunica acceso sin login");
 
   const pricingBody = await expectBody("/landing/precios", ["AI Price Map", "Brand Intelligence AI", "20 exportaciones / mes", "250 exportaciones / mes"]);
   assert(!pricingBody.includes("Competitive AI"), "pricing todavía contiene Competitive AI");
@@ -106,7 +109,7 @@ async function main() {
   const passwordPayload = await predictablePassword.json().catch(() => ({}));
   assert(/predecible|secuencias|comunes/i.test(String(passwordPayload?.error || "")), "la política de contraseña no devolvió un mensaje seguro esperado");
 
-  console.log("Production readiness smoke OK: marketing, coverage, auth protection, hardened passwords, alerts, customer account and health validated");
+  console.log("Production readiness smoke OK: marketing mobile, demo, coverage, auth protection, hardened passwords, alerts, customer account and health validated");
 }
 
 main().catch((error) => {
