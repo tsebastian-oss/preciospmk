@@ -32,7 +32,7 @@ async function touchConversation(token: string, organizationId: string, conversa
 }
 
 export async function POST(request: NextRequest) {
-  const authorization = await enterpriseAccess(request, "pricing");
+  const authorization = await enterpriseAccess(request, "brand-intelligence");
   if (authorization.response) return authorization.response;
   const token = request.cookies.get("mgp_access_token")?.value;
   if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
