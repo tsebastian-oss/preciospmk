@@ -19,6 +19,7 @@ const PRIVATE_PAGE_PREFIXES = [
   "/admin",
   "/enterprise",
   "/onboarding",
+  "/reset-password",
 ];
 
 type SessionState = {
@@ -146,7 +147,7 @@ export async function middleware(request: NextRequest) {
 
   if (isPrivatePage(pathname) && !session.authenticated) {
     const loginUrl = request.nextUrl.clone();
-    loginUrl.pathname = "/login";
+    loginUrl.pathname = pathname === "/reset-password" ? "/forgot-password" : "/login";
     return applyHeaders(NextResponse.redirect(loginUrl));
   }
 
