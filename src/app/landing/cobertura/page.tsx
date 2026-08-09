@@ -9,7 +9,7 @@ export const metadata = {
 };
 
 export default function CoveragePage() {
-  return <PageChrome active="inicio">
+  return <PageChrome active="cobertura">
     <main>
       <section className={marketing.subHero}>
         <div className={marketing.subHeroInner}>
