@@ -54,7 +54,6 @@ function accessToken(request: NextRequest) {
 
 function safeError(status: number, raw: string) {
   if (status === 401) return "Tu sesión expiró. Ingresa nuevamente.";
-  if (status === 403) return "Tu organización no tiene acceso a esta función.";
   try {
     const parsed = JSON.parse(raw) as { message?: string; error?: string; hint?: string };
     const message = parsed.message || parsed.error;
@@ -65,6 +64,7 @@ function safeError(status: number, raw: string) {
   } catch {
     // Return a generic message below.
   }
+  if (status === 403) return "Tu organización no tiene acceso a esta función.";
   return status >= 500 ? "No fue posible completar la operación enterprise." : "Solicitud inválida.";
 }
 
@@ -151,6 +151,9 @@ export async function enterpriseAccess(
   if (accessResult.response) return { response: accessResult.response };
   if (!accessResult.data) {
     return { response: NextResponse.json({ error: "No fue posible resolver el acceso enterprise." }, { status: 500 }) };
+  }
+  if (moduleName && !accessResult.data.moduleAllowed && !accessResult.data.isSaasAdmin) {
+    return { response: NextResponse.json({ error: "Este módulo no está habilitado para tu organización." }, { status: 403 }) };
   }
   return { access: accessResult.data };
 }
