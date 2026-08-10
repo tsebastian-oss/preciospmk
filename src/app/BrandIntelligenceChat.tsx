@@ -22,13 +22,17 @@ type StructuredAnalysis = {
 };
 
 type BrandSummary = {
-  skus?: number;
-  retailers?: number;
-  inStock?: number;
-  offers?: number;
-  averagePrice?: number;
-  minPrice?: number;
-  maxPrice?: number;
+  skus?: number | null;
+  retailers?: number | null;
+  stockKnown?: number | null;
+  inStock?: number | null;
+  availabilityPct?: number | null;
+  offers?: number | null;
+  offerPct?: number | null;
+  averagePrice?: number | null;
+  medianPrice?: number | null;
+  minPrice?: number | null;
+  maxPrice?: number | null;
   lastObservedAt?: string | null;
 };
 
@@ -122,13 +126,18 @@ function historyDate(value: string) {
     : new Intl.DateTimeFormat("es-CL", { day: "2-digit", month: "short" }).format(date);
 }
 
-function money(value?: number) {
-  if (!Number.isFinite(value)) return "—";
-  return `$${new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 }).format(Number(value))}`;
+function finiteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function money(value?: number | null) {
+  if (!finiteNumber(value)) return "Sin dato";
+  return `${new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 }).format(Number(value))}`;
 }
 
 function availability(summary?: BrandSummary) {
-  if (!summary?.skus || summary.inStock === undefined) return "—";
+  if (finiteNumber(summary?.availabilityPct)) return `${new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 }).format(summary.availabilityPct)}%`;
+  if (!finiteNumber(summary?.skus) || summary.skus <= 0 || !finiteNumber(summary.inStock)) return "Sin dato";
   return `${Math.round((summary.inStock / summary.skus) * 100)}%`;
 }
 
@@ -143,6 +152,11 @@ function Kpi({ label, value, detail }: { label: string; value: string; detail?: 
 function ExecutiveAnswer({ message }: { message: ChatMessage }) {
   const analysis = message.analysis!;
   const summary = message.summary;
+  const hasSku = finiteNumber(summary?.skus);
+  const hasRetailers = finiteNumber(summary?.retailers);
+  const hasStock = finiteNumber(summary?.inStock) && finiteNumber(summary?.stockKnown);
+  const hasOffers = finiteNumber(summary?.offers);
+  const hasPriceRange = finiteNumber(summary?.minPrice) && finiteNumber(summary?.maxPrice);
   return <div className={styles.executiveCard}>
     <div className={styles.executiveTop}>
       <div>
@@ -153,10 +167,10 @@ function ExecutiveAnswer({ message }: { message: ChatMessage }) {
     </div>
 
     {summary && <div className={styles.kpiGrid}>
-      <Kpi label="SKU monitoreados" value={summary.skus !== undefined ? new Intl.NumberFormat("es-CL").format(summary.skus) : "—"} detail={summary.retailers !== undefined ? `${summary.retailers} cadenas` : undefined}/>
-      <Kpi label="Disponibilidad" value={availability(summary)} detail={summary.inStock !== undefined && summary.skus !== undefined ? `${summary.inStock} de ${summary.skus} con stock` : undefined}/>
-      <Kpi label="Precio promedio" value={money(summary.averagePrice)} detail={summary.minPrice !== undefined && summary.maxPrice !== undefined ? `${money(summary.minPrice)} – ${money(summary.maxPrice)}` : undefined}/>
-      <Kpi label="En oferta" value={summary.offers !== undefined ? new Intl.NumberFormat("es-CL").format(summary.offers) : "—"} detail="productos con promoción"/>
+      <Kpi label="SKU vigentes" value={hasSku ? new Intl.NumberFormat("es-CL").format(summary.skus!) : "Sin dato"} detail={hasRetailers ? `${summary.retailers} cadenas` : undefined}/>
+      <Kpi label="Disponibilidad" value={availability(summary)} detail={hasStock ? `${summary.inStock} de ${summary.stockKnown} con stock informado` : undefined}/>
+      <Kpi label="Ticket mediano" value={money(summary.medianPrice)} detail={hasPriceRange ? `${money(summary.minPrice)} – ${money(summary.maxPrice)} · mezcla de formatos` : "No es precio unitario comparable"}/>
+      <Kpi label="Ofertas detectadas" value={hasOffers ? new Intl.NumberFormat("es-CL").format(summary.offers!) : "Sin dato"} detail={hasOffers ? "productos con precio regular y promocional" : undefined}/>
     </div>}
 
     <div className={styles.analysisColumns}>
@@ -369,8 +383,8 @@ export default function BrandIntelligenceChat({ filters }: { filters: ChatFilter
               {message.brand && <div className={styles.brandTag}><span>●</span>{message.brand}</div>}
               <div className={styles.answer}>{message.content}</div>
               {message.summary && <footer>
-                {message.summary.skus !== undefined && <span>{new Intl.NumberFormat("es-CL").format(message.summary.skus)} SKU</span>}
-                {message.summary.retailers !== undefined && <span>{message.summary.retailers} cadenas</span>}
+                {finiteNumber(message.summary.skus) && <span>{new Intl.NumberFormat("es-CL").format(message.summary.skus)} SKU</span>}
+                {finiteNumber(message.summary.retailers) && <span>{message.summary.retailers} cadenas</span>}
                 {message.summary.lastObservedAt && <span>Datos al {displayDate(message.summary.lastObservedAt)}</span>}
                 {message.ai === false && <span>Respuesta de respaldo</span>}
               </footer>}
