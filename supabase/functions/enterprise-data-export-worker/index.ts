@@ -131,7 +131,8 @@ Deno.serve(async (request: Request) => {
   if (selectedProductIds.length && !selectedCategory) return response({ error: "category_required_for_product_filter" }, 400);
 
   const service = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
-  await service.from("report_jobs").update({ status: "processing", started_at: new Date().toISOString(), error_message: null }).eq("id", job.id);
+  const generateExport = (async () => {
+    await service.from("report_jobs").update({ status: "processing", started_at: new Date().toISOString(), error_message: null }).eq("id", job.id);
 
   try {
     const [{ data: organization, error: organizationError }, { data: scope, error: scopeError }, { data: settings, error: settingsError }] = await Promise.all([
@@ -239,7 +240,7 @@ Deno.serve(async (request: Request) => {
       extension = "xlsx";
     } else {
       bytes = new TextEncoder().encode(csv(rows));
-      mime = "text/csv; charset=utf-8";
+      mime = "text/csv";
       extension = "csv";
     }
 
@@ -275,10 +276,15 @@ Deno.serve(async (request: Request) => {
       expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     }).eq("id", job.id).select("*").single();
     if (updateError) throw new Error(updateError.message);
-    return response({ job: completed, generatedAt: completedAt });
+    return completed;
   } catch (cause) {
     const message = cause instanceof Error ? cause.message : "export_generation_failed";
     await service.from("report_jobs").update({ status: "failed", error_message: message.slice(0, 1000), completed_at: new Date().toISOString() }).eq("id", job.id);
-    return response({ error: "export_generation_failed", detail: message }, 500);
+    console.error("enterprise_data_export_failed", { jobId: job.id, message });
+    return null;
   }
+  })();
+
+  EdgeRuntime.waitUntil(generateExport);
+  return response({ job, accepted: true }, 202);
 });

@@ -106,6 +106,7 @@ export default function DataExportPortal() {
   const [selectedProductIds, setSelectedProductIds] = useState<string[]>([]);
   const [format, setFormat] = useState<ExportFormat>("xlsx");
   const datesInitialized = useRef(false);
+  const pendingDownloadJob = useRef<string | null>(null);
 
   useEffect(() => {
     let currentNav: HTMLElement | null = null;
@@ -153,9 +154,21 @@ export default function DataExportPortal() {
       const response = await fetch(`/api/data-exports?live=${Date.now()}`, { cache: "no-store" });
       const payload = await response.json() as ExportPayload;
       if (!response.ok) throw new Error(payload.error || "No fue posible cargar las exportaciones");
-      setHistory(payload.exports ?? []);
+      const exports = payload.exports ?? [];
+      setHistory(exports);
       setAvailability(payload.availability ?? null);
-      setError("");
+      const pending = pendingDownloadJob.current;
+      const pendingResult = pending ? exports.find((job) => job.id === pending) : null;
+      if (pendingResult?.status === "completed" && pendingResult.result_url) {
+        pendingDownloadJob.current = null;
+        triggerDownload(pendingResult.result_url);
+        setError("");
+      } else if (pendingResult?.status === "failed") {
+        pendingDownloadJob.current = null;
+        setError(pendingResult.error_message || "No fue posible generar el archivo.");
+      } else if (!pendingResult) {
+        setError("");
+      }
       if (!datesInitialized.current && payload.availability?.lastDate) {
         const last = payload.availability.lastDate;
         const lastDate = new Date(`${last}T12:00:00`);
@@ -216,8 +229,12 @@ export default function DataExportPortal() {
       });
       const payload = await response.json() as CreatePayload;
       if (!response.ok || !payload.job) throw new Error(payload.error || payload.detail || "No fue posible generar el archivo");
+      if (payload.job.status === "completed" && payload.job.result_url) {
+        triggerDownload(payload.job.result_url);
+      } else {
+        pendingDownloadJob.current = payload.job.id;
+      }
       await loadHistory(true);
-      if (payload.job.status === "completed" && payload.job.result_url) triggerDownload(payload.job.result_url);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "No fue posible generar el archivo");
     } finally {
