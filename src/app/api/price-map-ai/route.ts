@@ -27,7 +27,7 @@ export async function POST(request:NextRequest){
     const org=access.access!.organizationId;let conversationId=typeof body?.conversationId==="string"?body.conversationId:"";let conversationTitle:string|undefined;
     if(!conversationId){const c=await createConversation(token,org,last);conversationId=c.id;conversationTitle=c.title;}
     await save(token,org,conversationId,{role:"user",content:last});
-    const r=await fetch(`${SUPABASE_URL}/functions/v1/ai-price-map`,{method:"POST",headers:headers(token),body:JSON.stringify({organizationId:org,messages,filters:body?.filters??{}}),cache:"no-store",signal:AbortSignal.timeout(60000)});
+    const r=await fetch(`${SUPABASE_URL}/functions/v1/ai-price-map`,{method:"POST",headers:headers(token),body:JSON.stringify({organizationId:org,messages,filters:body?.filters??{}}),cache:"no-store",signal:AbortSignal.timeout(90000)});
     const d=await json(r)??{};
     if(!r.ok&&isDataTimeout(d?.error)){return NextResponse.json({error:"El análisis está tardando más de lo habitual. Intenta nuevamente en unos segundos.",code:"DATA_TIMEOUT",transient:true,conversationId,conversationTitle},{status:503});}
     if(!r.ok&&d?.error){d.error=safeFailure(d.error,"No fue posible construir el mapa en este momento.");}
