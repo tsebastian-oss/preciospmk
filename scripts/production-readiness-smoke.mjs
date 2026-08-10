@@ -36,6 +36,7 @@ async function main() {
     "/login",
     "/forgot-password",
     "/auth/recovery",
+    "/auth/confirm",
   ];
 
   for (const path of publicPages) await expectStatus(path, [200]);
@@ -93,6 +94,13 @@ async function main() {
   });
   assert(invalidRecovery.status === 400, `recovery inválido debía responder 400 y respondió ${invalidRecovery.status}`);
 
+  const invalidConfirmation = await request("/api/auth/confirmation/session", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  assert(invalidConfirmation.status === 400, `confirmación vacía debía responder 400 y respondió ${invalidConfirmation.status}`);
+
   const predictablePassword = await request("/api/auth/register", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -109,7 +117,7 @@ async function main() {
   const passwordPayload = await predictablePassword.json().catch(() => ({}));
   assert(/predecible|secuencias|comunes/i.test(String(passwordPayload?.error || "")), "la política de contraseña no devolvió un mensaje seguro esperado");
 
-  console.log("Production readiness smoke OK: marketing mobile, demo, coverage, auth protection, hardened passwords, alerts, customer account and health validated");
+  console.log("Production readiness smoke OK: marketing mobile, demo, coverage, signup confirmation, auth protection, hardened passwords, alerts, customer account and health validated");
 }
 
 main().catch((error) => {
