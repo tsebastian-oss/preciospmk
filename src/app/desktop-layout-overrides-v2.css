@@ -56,6 +56,30 @@
     padding-left: 34px !important;
     padding-right: 34px !important;
   }
+
+  /* Five retailer-type buttons must stay inside their own grid cell. */
+  :is([class*="UnifiedPlatformApp_typeFilter__"],[class*="UnifiedPlatformApp_module__typeFilter"]) {
+    min-width: 0 !important;
+    overflow: hidden !important;
+  }
+  :is([class*="UnifiedPlatformApp_typeFilter__"],[class*="UnifiedPlatformApp_module__typeFilter"]) > div {
+    display: grid !important;
+    grid-template-columns: repeat(5,minmax(0,1fr)) !important;
+    gap: 5px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+  :is([class*="UnifiedPlatformApp_typeFilter__"],[class*="UnifiedPlatformApp_module__typeFilter"]) button {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 40px !important;
+    height: auto !important;
+    padding: 5px 5px !important;
+    white-space: normal !important;
+    line-height: 1.05 !important;
+    text-align: center !important;
+    overflow: hidden !important;
+  }
 }
 
 @media (min-width: 1600px) {
