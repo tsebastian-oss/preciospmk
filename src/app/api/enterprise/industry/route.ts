@@ -30,8 +30,12 @@ export async function GET(request: NextRequest) {
   });
   if (industries.response) return industries.response;
 
+  const trialScopeConfigured = access.status !== "trial"
+    || Boolean((access.limits as unknown as Record<string, unknown> | null)?.trial_scope_configured);
+  const includeRetailers = request.nextUrl.searchParams.get("includeRetailers") === "1";
+
   let channels: RetailerChannel[] = [];
-  if (access.status === "trial") {
+  if (access.status === "trial" && includeRetailers) {
     const options = await enterpriseRpc<RetailerOptionsPayload>(request, "enterprise_trial_retailer_options", {
       p_organization_id: access.organizationId,
     });
@@ -39,8 +43,6 @@ export async function GET(request: NextRequest) {
     channels = options.data?.channels ?? [];
   }
 
-  const trialScopeConfigured = access.status !== "trial"
-    || Boolean((access.limits as unknown as Record<string, unknown> | null)?.trial_scope_configured);
   const onboardingConfigured = Boolean(access.industryConfigured) && trialScopeConfigured;
 
   return NextResponse.json({
