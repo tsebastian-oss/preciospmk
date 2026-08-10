@@ -5,7 +5,7 @@ const apiPath = "src/app/api/brand-chat/route.ts";
 const cssPath = "src/app/BrandIntelligenceChat.module.css";
 let ui = fs.readFileSync(uiPath, "utf8");
 
-const summaryType = `type BrandSummary = {
+const legacySummaryType = `type BrandSummary = {
   skus?: number;
   retailers?: number;
   inStock?: number;
@@ -15,6 +15,21 @@ const summaryType = `type BrandSummary = {
   maxPrice?: number;
   lastObservedAt?: string | null;
 };`;
+const currentSummaryType = `type BrandSummary = {
+  skus?: number | null;
+  retailers?: number | null;
+  stockKnown?: number | null;
+  inStock?: number | null;
+  availabilityPct?: number | null;
+  offers?: number | null;
+  offerPct?: number | null;
+  averagePrice?: number | null;
+  medianPrice?: number | null;
+  minPrice?: number | null;
+  maxPrice?: number | null;
+  lastObservedAt?: string | null;
+};`;
+const summaryType = ui.includes(currentSummaryType) ? currentSummaryType : legacySummaryType;
 const sourceType = `${summaryType}
 type BrandSource = {
   product?: string;
