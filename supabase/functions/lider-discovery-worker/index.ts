@@ -14,6 +14,22 @@ type QueueTask = {
   payload: ValueRecord;
 };
 
+type Product = {
+  supermarket: "Lider";
+  external_id: string;
+  name: string;
+  brand: string | null;
+  category: string | null;
+  url: string;
+  image_url: string | null;
+  regular_price: number | null;
+  offer_price: number;
+  unit: string | null;
+  unit_price: number | null;
+  in_stock: boolean;
+  observed_at: string;
+};
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const USER_AGENT =
@@ -44,6 +60,15 @@ function positiveInteger(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? Math.floor(parsed) : undefined;
 }
 
+function priceValue(value: unknown): number | undefined {
+  if (typeof value === "number") return Number.isFinite(value) && value > 0 ? value : undefined;
+  if (typeof value !== "string") return undefined;
+  const digits = value.replace(/[^0-9]/g, "");
+  if (!digits) return undefined;
+  const parsed = Number(digits);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
 function decodeXml(value: string) {
   return value
     .replace(/&amp;/g, "&")
@@ -60,6 +85,21 @@ function allowedUrl(raw: string): URL {
     throw new Error(`Blocked Lider URL: ${url.hostname}`);
   }
   return url;
+}
+
+function categoryFromUrl(raw: string): string | null {
+  try {
+    const parts = new URL(raw).pathname
+      .split("/")
+      .filter(Boolean)
+      .map((part) => decodeURIComponent(part).replace(/[-_]+/g, " ").trim())
+      .filter(Boolean);
+    const browseIndex = parts.findIndex((part) => part.toLowerCase() === "browse");
+    if (browseIndex >= 0 && parts[browseIndex + 1]) return parts[browseIndex + 1];
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 async function rpc<T>(name: string, body: unknown): Promise<T> {
@@ -82,20 +122,9 @@ async function fetchText(raw: string, xml = false) {
   const result = await fetch(url, {
     headers: {
       "user-agent": USER_AGENT,
-      accept: xml
-        ? "application/xml,text/xml,text/plain,*/*"
-        : "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+      ...(xml ? { accept: "application/xml,text/xml,text/plain,*/*" } : {}),
       "accept-language": "es-CL,es;q=0.9,en;q=0.7",
       "cache-control": "no-cache",
-      pragma: "no-cache",
-      ...(xml
-        ? {}
-        : {
-            "sec-fetch-dest": "document",
-            "sec-fetch-mode": "navigate",
-            "sec-fetch-site": "none",
-            "upgrade-insecure-requests": "1",
-          }),
     },
     redirect: "follow",
     signal: AbortSignal.timeout(40_000),
@@ -135,6 +164,105 @@ function productUrls(value: unknown, result = new Set<string>()): Set<string> {
   return result;
 }
 
+function embeddedProductRecords(html: string): ValueRecord[] {
+  const marker = '{"__typename":"Product"';
+  const products: ValueRecord[] = [];
+  let cursor = 0;
+
+  while (cursor < html.length) {
+    const start = html.indexOf(marker, cursor);
+    if (start < 0) break;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    let end = -1;
+
+    for (let index = start; index < html.length; index += 1) {
+      const character = html[index];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (character === "\\") escaped = true;
+        else if (character === '"') inString = false;
+        continue;
+      }
+      if (character === '"') inString = true;
+      else if (character === "{") depth += 1;
+      else if (character === "}") {
+        depth -= 1;
+        if (depth === 0) {
+          end = index + 1;
+          break;
+        }
+      }
+    }
+
+    if (end < 0) break;
+    try {
+      const parsed = JSON.parse(html.slice(start, end));
+      const record = objectValue(parsed);
+      if (record) products.push(record);
+    } catch {
+      // Continue after malformed framework payloads.
+    }
+    cursor = end;
+  }
+
+  return products;
+}
+
+function embeddedProduct(node: ValueRecord): Product | undefined {
+  const name = stringValue(node.name);
+  const externalId = String(node.usItemId ?? node.offerId ?? "").trim();
+  const priceInfo = objectValue(node.priceInfo) ?? {};
+  const price = priceValue(node.price) ?? priceValue(priceInfo.linePrice) ?? priceValue(priceInfo.itemPrice);
+  if (!name || !externalId || !price) return undefined;
+
+  const regularCandidates = [
+    priceValue(priceInfo.wasPrice),
+    priceValue(priceInfo.linePriceDisplay),
+  ].filter((item): item is number => item !== undefined && item > price);
+  const category = objectValue(node.category);
+  const categoryPath = Array.isArray(category?.path)
+    ? category.path
+      .map(objectValue)
+      .map((item) => stringValue(item?.name))
+      .filter((item): item is string => Boolean(item))
+    : [];
+  const imageInfo = objectValue(node.imageInfo);
+  const canonicalPath = stringValue(node.canonicalUrl);
+  const productUrl = canonicalPath
+    ? new URL(canonicalPath, "https://super.lider.cl").toString()
+    : `https://super.lider.cl/ip/producto/${externalId}`;
+  const unitPriceText = stringValue(priceInfo.unitPrice);
+  const unitMatch = unitPriceText?.match(/x\s+(.+)$/i);
+  const availability = String(objectValue(node.availabilityStatusV2)?.value ?? "").toUpperCase();
+
+  return {
+    supermarket: "Lider",
+    external_id: externalId,
+    name,
+    brand: stringValue(node.brand) ?? null,
+    category: categoryPath.length ? categoryPath.join(" > ") : categoryFromUrl(productUrl),
+    url: productUrl,
+    image_url: stringValue(imageInfo?.thumbnailUrl) ?? stringValue(node.image) ?? null,
+    regular_price: regularCandidates.length ? Math.max(...regularCandidates) : null,
+    offer_price: price,
+    unit: unitMatch?.[1]?.trim() ?? null,
+    unit_price: priceValue(unitPriceText) ?? null,
+    in_stock: node.isOutOfStock !== true && availability !== "OUT_OF_STOCK",
+    observed_at: new Date().toISOString(),
+  };
+}
+
+function embeddedProducts(html: string): Product[] {
+  const unique = new Map<string, Product>();
+  for (const record of embeddedProductRecords(html)) {
+    const product = embeddedProduct(record);
+    if (product) unique.set(product.external_id, product);
+  }
+  return [...unique.values()];
+}
+
 function totalResults(html: string): number | undefined {
   const heading = html.match(
     /<h1[^>]*>[\s\S]*?<span[^>]*>\s*\(([0-9.]+)\)\s*<\/span>[\s\S]*?<\/h1>/i,
@@ -166,7 +294,7 @@ async function enqueue(runId: number, tasks: QueueTask[]) {
   return inserted;
 }
 
-async function discover(task: DiscoveryTask): Promise<QueueTask[]> {
+async function discover(task: DiscoveryTask): Promise<{ products: Product[]; tasks: QueueTask[] }> {
   if (task.kind === "lider_browse_sitemap") {
     const raw = stringValue(task.payload.url);
     if (!raw) throw new Error("Invalid Lider browse sitemap task");
@@ -189,13 +317,14 @@ async function discover(task: DiscoveryTask): Promise<QueueTask[]> {
       }
     }
     if (!unique.size) throw new Error("No Lider shelves found");
-    return [...unique.values()];
+    return { products: [], tasks: [...unique.values()] };
   }
 
   const raw = stringValue(task.payload.url);
   const page = Math.max(1, positiveInteger(task.payload.page) ?? 1);
   if (!raw) throw new Error("Invalid Lider listing task");
   const html = await fetchText(listingUrl(raw, page));
+  const products = embeddedProducts(html);
   const urls = new Set<string>();
   for (const match of html.matchAll(
     /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi,
@@ -208,20 +337,29 @@ async function discover(task: DiscoveryTask): Promise<QueueTask[]> {
   }
 
   const tasks = new Map<string, QueueTask>();
-  urls.forEach((url) => {
-    tasks.set(`lider-product-page:${url}`, {
-      task_key: `lider-product-page:${url}`,
-      supermarket: "Lider",
-      kind: "lider_product_page",
-      payload: { url },
+
+  // Some Lider shelves include complete product records, while others only
+  // expose product links in JSON-LD. Keep the existing per-product worker as
+  // a fallback so either server-rendered shape can complete the daily crawl.
+  if (!products.length) {
+    urls.forEach((url) => {
+      tasks.set(`lider-product-page:${url}`, {
+        task_key: `lider-product-page:${url}`,
+        supermarket: "Lider",
+        kind: "lider_product_page",
+        payload: { url },
+      });
     });
-  });
+  }
+
+  // A shelf can remain in Lider's sitemap after its assortment becomes empty.
+  // Treat that as a successful zero-result page instead of poisoning the run.
 
   if (page === 1) {
     const total = totalResults(html);
     const pages = total
       ? Math.min(1000, Math.max(1, Math.ceil(total / PAGE_SIZE)))
-      : urls.size >= PAGE_SIZE
+      : Math.max(products.length, urls.size) >= PAGE_SIZE
         ? 2
         : 1;
     for (let next = 2; next <= pages; next += 1) {
@@ -232,7 +370,7 @@ async function discover(task: DiscoveryTask): Promise<QueueTask[]> {
         payload: { url: raw, page: next },
       });
     }
-  } else if (urls.size >= PAGE_SIZE && page < 1000) {
+  } else if (Math.max(products.length, urls.size) >= PAGE_SIZE && page < 1000) {
     const next = page + 1;
     tasks.set(`lider-listing:${raw}:${next}`, {
       task_key: `lider-listing:${raw}:${next}`,
@@ -241,19 +379,26 @@ async function discover(task: DiscoveryTask): Promise<QueueTask[]> {
       payload: { url: raw, page: next },
     });
   }
-  return [...tasks.values()];
+  return { products, tasks: [...tasks.values()] };
 }
 
 async function handle(task: DiscoveryTask) {
   try {
-    const tasks = await discover(task);
-    const tasksInserted = await enqueue(task.run_id, tasks);
+    const result = await discover(task);
+    const tasksInserted = await enqueue(task.run_id, result.tasks);
     const completion = await rpc<ValueRecord>("complete_catalog_task_service", {
       p_task_id: task.id,
-      p_products: [],
+      p_products: result.products,
       p_error: null,
     });
-    return { taskId: task.id, kind: task.kind, discovered: tasks.length, tasksInserted, completion };
+    return {
+      taskId: task.id,
+      kind: task.kind,
+      products: result.products.length,
+      discovered: result.tasks.length,
+      tasksInserted,
+      completion,
+    };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const completion = await rpc<ValueRecord>("complete_catalog_task_service", {

@@ -271,13 +271,15 @@ async function handle(task: Task) {
 
 Deno.serve(async (request: Request) => {
   if (request.method !== "POST") return reply({ error: "method_not_allowed" }, 405);
+  if (!SERVICE_ROLE_KEY || request.headers.get("authorization") !== `Bearer ${SERVICE_ROLE_KEY}`) {
+    return reply({ error: "unauthorized" }, 401);
+  }
   const body = await request.text();
   if (body && body !== "{}") return reply({ error: "request_body_not_accepted" }, 400);
   try {
-    const tasks = await rpc<Task[]>("claim_falabella_listing_tasks_service", { p_limit: 1 });
+    const tasks = await rpc<Task[]>("claim_falabella_listing_tasks_service", { p_limit: 2 });
     if (!tasks.length) return reply({ ok: true, claimed: 0 });
-    const results = [];
-    for (const task of tasks) results.push(await handle(task));
+    const results = await Promise.all(tasks.map(handle));
     return reply({ ok: true, claimed: tasks.length, results });
   } catch (error) {
     return reply({ error: error instanceof Error ? error.message : String(error) }, 500);
