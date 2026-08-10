@@ -11,11 +11,21 @@ export async function GET(request: NextRequest) {
     p_organization_id: authorization.access?.organizationId,
   });
   if (result.response) return result.response;
-  return NextResponse.json(result.data ?? {
+
+  const coverage = await enterpriseRpc<Record<string, unknown>>(request, "enterprise_pharmacy_crawl_coverage", {
+    p_organization_id: authorization.access?.organizationId,
+  });
+
+  const payload = result.data ?? {
     summary: null,
     supermarkets: [],
     categories: [],
     run: null,
     topOffers: [],
+  };
+
+  return NextResponse.json({
+    ...payload,
+    pharmacyCoverage: coverage.response ? { parallel: true, retailers: [] } : (coverage.data ?? { parallel: true, retailers: [] }),
   });
 }

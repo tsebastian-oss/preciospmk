@@ -1,9 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-type Payload = {
-  mode?: "pilot" | "full";
-  retailers?: string[];
-};
+type Payload = { mode?: "pilot" | "full"; retailers?: string[] };
+type StartResult = { mode: string; parallel: boolean; runs: Array<{ retailer: string; runId: number; status: string }> };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -12,10 +10,7 @@ const ALLOWED = new Set(["Salcobrand", "Cruz Verde", "Farmacias Ahumada"]);
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: {
-      "content-type": "application/json; charset=utf-8",
-      "cache-control": "no-store",
-    },
+    headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
   });
 }
 
@@ -47,16 +42,21 @@ Deno.serve(async (request) => {
   if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
   try {
     const payload = await request.json().catch(() => ({})) as Payload;
-    const mode = payload.mode === "full" ? "full" : "pilot";
+    const mode = payload.mode === "pilot" ? "pilot" : "full";
     const retailers = normalizeRetailers(payload.retailers);
-    const runId = await rpc<number>("start_pharmacy_crawl_service", {
+    const result = await rpc<StartResult>("start_pharmacy_crawls_service", {
       p_mode: mode,
       p_retailers: retailers,
     });
-    const status = await rpc<Record<string, unknown>>("pharmacy_crawl_status_service", {
-      p_run_id: runId,
-    });
-    return json({ ok: true, runId, mode, retailers, status });
+    const statuses = await Promise.all(result.runs.map(async (run) => ({
+      ...run,
+      statusDetail: await rpc<Record<string, unknown>>("pharmacy_crawl_status_service", { p_run_id: run.runId }),
+      coverage: await rpc<Record<string, unknown>>("pharmacy_retailer_crawl_coverage_service", {
+        p_retailer: run.retailer,
+        p_run_id: run.runId,
+      }),
+    })));
+    return json({ ok: true, ...result, runs: statuses });
   } catch (error) {
     return json({ error: error instanceof Error ? error.message : String(error) }, 500);
   }

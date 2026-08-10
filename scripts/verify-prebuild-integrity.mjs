@@ -22,6 +22,9 @@ const requiredApp = [
   ['Minimum plan label', 'const minimumPlan = minimumPlanForView(item.view);'],
   ['Export limit gate', 'exportLimitReached'],
   ['Contextual trend endpoint', 'endpoint = "/api/contextual-pricing-trend";'],
+  ['Pharmacy coverage payload', 'pharmacyCoverage?: PharmacyCoveragePayload;'],
+  ['Pharmacy coverage UI', 'Cobertura de catálogo · Farmacias'],
+  ['Parallel pharmacy run indicator', 'farmacias corriendo en paralelo'],
 ];
 
 const forbiddenApp = [
@@ -60,4 +63,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("Prebuild integrity OK: IA, trazabilidad, permisos por plan, labels de upsell, trial, alertas persistentes, cuenta, navegación y tendencias validados.");
+console.log("Prebuild integrity OK: IA, trazabilidad, permisos por plan, labels de upsell, trial, alertas persistentes, cuenta, navegación, tendencias y cobertura de farmacias validados.");

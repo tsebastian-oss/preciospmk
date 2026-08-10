@@ -25,11 +25,13 @@ type Signals = {
   name: string | null;
   externalId: string | null;
   brand: string | null;
+  category: string | null;
   regular: number | null;
   offer: number | null;
   unitPrice: number | null;
   unit: string | null;
   image: string | null;
+  unavailable: boolean;
   metadata: JsonRecord;
 };
 
@@ -156,10 +158,24 @@ function absolute(raw: string, base: string): string {
   try { return new URL(raw, base).toString(); } catch { return base; }
 }
 
+function canonicalProductUrl(retailer: string, raw: string, base: string): string {
+  try {
+    const url = new URL(raw, base);
+    url.hash = "";
+    if (["Salcobrand", "Cruz Verde", "Farmacias Ahumada"].includes(retailer)) url.search = "";
+    return url.toString();
+  } catch {
+    return base;
+  }
+}
+
 function idFromUrl(retailer: string, raw: string): string {
   const path = decodeURIComponent(new URL(raw).pathname);
   if (retailer === "Farmacias Ahumada") {
     return path.match(/-([0-9]{4,})\.html$/)?.[1] ?? path.split("/").filter(Boolean).at(-1) ?? raw;
+  }
+  if (retailer === "Cruz Verde") {
+    return path.match(/\/([0-9]+)\.html$/)?.[1] ?? path.split("/").filter(Boolean).at(-1)?.replace(/\.html$/i, "") ?? raw;
   }
   return (path.split("/").filter(Boolean).at(-1) ?? raw).replace(/\.html$/i, "");
 }
@@ -178,10 +194,48 @@ function categoryFromUrl(raw: string): string | null {
   }
 }
 
+function breadcrumbCategory(html: string, productName: string | null): string | null {
+  for (const payload of jsonLdPayloads(html)) {
+    try {
+      const root = JSON.parse(payload) as unknown;
+      const stack: unknown[] = [root];
+      while (stack.length) {
+        const value = stack.pop();
+        if (Array.isArray(value)) {
+          stack.push(...value);
+          continue;
+        }
+        const node = record(value);
+        if (!node) continue;
+        if (types(node).some((type) => type.toLowerCase() === "breadcrumblist") && Array.isArray(node.itemListElement)) {
+          const names = node.itemListElement
+            .map((entry) => {
+              const item = record(entry);
+              const nested = record(item?.item);
+              return stringValue(item?.name) ?? stringValue(nested?.name);
+            })
+            .filter((item): item is string => Boolean(item))
+            .map((item) => decode(item))
+            .filter((item) => !/^inicio$|^home$/i.test(item));
+          while (names.length && productName && names.at(-1)?.toLowerCase() === productName.toLowerCase()) names.pop();
+          const meaningful = names.filter((item) => !/^productos?$|^farmacias?$/i.test(item));
+          if (meaningful.length) return meaningful.at(-1) ?? null;
+        }
+        for (const child of Object.values(node)) {
+          if (child && typeof child === "object") stack.push(child);
+        }
+      }
+    } catch {
+      // Continue through all public structured-data blocks.
+    }
+  }
+  return null;
+}
+
 function label(content: string, name: string): string | null {
   const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const match = content.match(new RegExp(
-    `${escaped}\\s*:?\\s*([^|/]{2,120}?)(?=\\s+(?:Forma Farmac[eé]utica|Dosis por|Precio|Detalles|Formato|Condici[oó]n|Registro|Laboratorio)\\b|$)`,
+    `${escaped}\\s*:?\\s*([^|/]{2,120}?)(?=\\s+(?:Forma Farmac[eé]utica|Dosis por|Precio|Detalles|Formato|Condici[oó]n|Registro|Laboratorio|Marca|Concentracion)\\b|$)`,
     "i",
   ));
   return match?.[1]?.trim() ?? null;
@@ -192,35 +246,51 @@ function price(content: string, pattern: RegExp): number | null {
   return match?.[1] ? numberValue(match[1]) : null;
 }
 
+function cleanMetadataValue(value: string | null): string | null {
+  if (!value) return null;
+  const cleaned = value
+    .split(/,\s*(?:desarrollado|producido|fabricado|elaborado)\b/i)[0]
+    .split(/\s+(?:Almacenamiento|Presentaci[oó]n|Precauciones|Indicaciones|Contraindicaciones)\b/i)[0]
+    .replace(/^[■•\-\s]+/, "")
+    .trim();
+  return cleaned.length >= 2 ? cleaned : null;
+}
+
 function signals(retailer: string, html: string, pageUrl: string): Signals {
   const content = plain(html);
-  const metadata: JsonRecord = { capture_status: "accepted" };
-  const active = label(content, "Principio Activo") ?? label(content, "Principios Activos");
+  const name = h1(html);
+  const metadata: JsonRecord = { capture_status: "accepted", parserVersion: "pharmacy-1.2" };
+  const active = cleanMetadataValue(label(content, "Principio Activo") ?? label(content, "Principios Activos"));
   if (active) metadata.activeIngredient = active;
-  const form = label(content, "Forma Farmacéutica");
+  const form = cleanMetadataValue(label(content, "Forma Farmacéutica") ?? label(content, "Forma Farmaceutica"));
   if (form) metadata.pharmaceuticalForm = form;
-  const dosage = label(content, "Dosis por Forma Farmacéutica") ?? label(content, "Concentracion");
+  const dosage = cleanMetadataValue(label(content, "Dosis por Forma Farmacéutica") ?? label(content, "Concentracion") ?? label(content, "Concentración"));
   if (dosage) metadata.dosage = dosage;
-  const laboratory = label(content, "Laboratorio");
+  const laboratory = cleanMetadataValue(label(content, "Laboratorio"));
   if (laboratory) metadata.laboratory = laboratory;
-  const registration = label(content, "Registro Sanitario") ?? label(content, "Registro Farmacéutico");
+  const registration = cleanMetadataValue(label(content, "Registro Sanitario") ?? label(content, "Registro Farmacéutico"));
   if (registration) metadata.healthRegistration = registration;
   const prescription = content.match(/\b(Receta\s+(?:simple|retenida|archivada|m[eé]dica retenida)|Controlado|Venta\s+(?:libre|directa)|Sin receta)\b/i)?.[1];
   if (prescription) metadata.prescriptionRequirement = prescription;
+  const category = meta(html, "product:category") ?? breadcrumbCategory(html, name);
+  if (category) metadata.sourceCategory = category;
+  const unavailable = /\b(?:sin stock|agotado|producto no disponible|no disponible)\b/i.test(content);
 
   if (retailer === "Salcobrand") {
     const regular = price(content, /\$?\s*([0-9.]+)\s+Precio Farmacia/i);
     const offer = price(content, /\$?\s*([0-9.]+)\s+Precio Internet/i) ?? regular;
-    const unitMatch = content.match(/Precio por unidad de medida:\s*\$?\s*([0-9.]+)\s+por\s+([A-ZÁÉÍÓÚÑa-záéíóúñ]+)/i);
+    const unitMatch = content.match(/Precio por unidad de medida:\s*\$?\s*([0-9.]+)\s+por\s+([A-ZÁÉÍÓÚÑa-záéíóúñ0-9 ]+)/i);
     return {
-      name: h1(html),
+      name,
       externalId: content.match(/SKU:\s*([0-9A-Za-z_-]+)/i)?.[1] ?? null,
       brand: meta(html, "product:brand"),
+      category,
       regular,
       offer,
       unitPrice: unitMatch?.[1] ? numberValue(unitMatch[1]) : null,
-      unit: unitMatch?.[2] ?? null,
+      unit: unitMatch?.[2]?.trim() ?? null,
       image: meta(html, "og:image"),
+      unavailable,
       metadata: { ...metadata, pharmacyPrice: regular, internetPrice: offer },
     };
   }
@@ -228,29 +298,38 @@ function signals(retailer: string, html: string, pageUrl: string): Signals {
   if (retailer === "Cruz Verde") {
     const offer = price(content, /\$\s*([0-9.]+)\s*\(Oferta\)/i);
     const regular = price(content, /(?:Precio reducido de\s*)?\$\s*([0-9.]+)\s*\(Normal\)/i);
+    const unitMatch = content.match(/Precio por Unidad Fraccionada:\s*\$?\s*([0-9.]+)\s+por\s+([A-ZÁÉÍÓÚÑa-záéíóúñ0-9 ]+)/i);
     return {
-      name: h1(html),
-      externalId: html.match(/data-pid=["']([^"']+)["']/i)?.[1] ?? null,
-      brand: meta(html, "product:brand"),
+      name,
+      externalId: html.match(/data-pid=["']([^"']+)["']/i)?.[1] ?? idFromUrl(retailer, pageUrl),
+      brand: meta(html, "product:brand") ?? laboratory ?? null,
+      category,
       regular,
       offer,
-      unitPrice: null,
-      unit: null,
+      unitPrice: unitMatch?.[1] ? numberValue(unitMatch[1]) : null,
+      unit: unitMatch?.[2]?.trim() ?? null,
       image: meta(html, "og:image"),
+      unavailable,
       metadata,
     };
   }
 
+  const ahumadaOffer = numberValue(meta(html, "product:price:amount"));
+  const ahumadaRegular = price(content, /Price reduced from\s*\$?\s*([0-9.]+)\s+to\s+Precio normal/i)
+    ?? price(content, /Precio normal\s*[:\-]?\s*\$?\s*([0-9.]+)/i);
+  const unitMatch = content.match(/(?:Precio unitario|\$\s*[0-9.]+\s*x)\s*:?\s*\$?\s*([0-9.]+)(?:\s+x\s+([A-ZÁÉÍÓÚÑa-záéíóúñ]+))?/i);
   return {
-    name: h1(html),
+    name,
     externalId: idFromUrl(retailer, pageUrl),
-    brand: meta(html, "product:brand") ?? laboratory ?? null,
-    regular: null,
-    offer: null,
-    unitPrice: null,
-    unit: null,
+    brand: meta(html, "product:brand") ?? cleanMetadataValue(label(content, "Marca")) ?? laboratory ?? null,
+    category,
+    regular: ahumadaRegular,
+    offer: ahumadaOffer,
+    unitPrice: unitMatch?.[1] ? numberValue(unitMatch[1]) : null,
+    unit: unitMatch?.[2] ?? null,
     image: meta(html, "og:image"),
-    metadata,
+    unavailable,
+    metadata: { ...metadata, normalPrice: ahumadaRegular, internetPrice: ahumadaOffer },
   };
 }
 
@@ -267,11 +346,7 @@ function mapNode(retailer: string, pageUrl: string, node: JsonRecord, sig: Signa
     .sort((left, right) => left.price - right.price);
   const selected = priced[0]?.offer ?? allOffers[0] ?? {};
   const jsonLdOffer = priced[0]?.price ?? 0;
-  const offerPrice = retailer === "Salcobrand"
-    ? (sig.offer ?? jsonLdOffer)
-    : retailer === "Cruz Verde"
-      ? (sig.offer ?? jsonLdOffer)
-      : jsonLdOffer;
+  const offerPrice = sig.offer ?? jsonLdOffer;
   if (offerPrice <= 0) return null;
 
   const explicitRegular = numberValue(
@@ -280,15 +355,11 @@ function mapNode(retailer: string, pageUrl: string, node: JsonRecord, sig: Signa
   const jsonLdRegular = [explicitRegular, ...priced.map((item) => item.price)]
     .filter((item): item is number => item !== null && item > offerPrice)
     .sort((left, right) => right - left)[0] ?? null;
-  let regularPrice: number | null = retailer === "Salcobrand"
-    ? (sig.regular ?? jsonLdRegular)
-    : retailer === "Cruz Verde"
-      ? (sig.regular ?? jsonLdRegular)
-      : jsonLdRegular;
+  let regularPrice: number | null = sig.regular ?? jsonLdRegular;
   if (regularPrice !== null && regularPrice <= offerPrice) regularPrice = null;
 
   const rawUrl = stringValue(node.url) ?? stringValue(node["@id"]) ?? pageUrl;
-  const productUrl = absolute(rawUrl, pageUrl);
+  const productUrl = canonicalProductUrl(retailer, absolute(rawUrl, pageUrl), pageUrl);
   const externalId = String(
     node.sku ?? node.productID ?? node.gtin13 ?? node.gtin ?? node.mpn ?? sig.externalId ?? idFromUrl(retailer, productUrl),
   ).trim();
@@ -303,7 +374,7 @@ function mapNode(retailer: string, pageUrl: string, node: JsonRecord, sig: Signa
     parent_external_id: stringValue(parent?.sku) ?? stringValue(parent?.productID),
     name,
     brand: brand(node.brand) ?? sig.brand ?? brand(node.manufacturer),
-    category: stringValue(node.category) ?? categoryFromUrl(productUrl),
+    category: stringValue(node.category) ?? sig.category ?? categoryFromUrl(productUrl),
     seller: stringValue(sellerValue) ?? stringValue(sellerRecord?.name) ?? retailer,
     seller_id: stringValue(sellerRecord?.identifier) ?? stringValue(selected.sellerId),
     variant: stringValue(node.size) ?? stringValue(node.model),
@@ -313,10 +384,10 @@ function mapNode(retailer: string, pageUrl: string, node: JsonRecord, sig: Signa
     offer_price: offerPrice,
     unit: sig.unit,
     unit_price: sig.unitPrice,
-    in_stock: !availability.includes("outofstock") && !availability.includes("soldout") && !availability.includes("discontinued"),
+    in_stock: !sig.unavailable && !availability.includes("outofstock") && !availability.includes("soldout") && !availability.includes("discontinued"),
     observed_at: new Date().toISOString(),
     source_metadata: {
-      parser: "pharmacy_json_ld",
+      parser: "pharmacy_json_ld_v2",
       priceCurrency: stringValue(selected.priceCurrency) ?? "CLP",
       pharmacyMetadata: sig.metadata,
       capture_status: "accepted",
@@ -327,30 +398,31 @@ function mapNode(retailer: string, pageUrl: string, node: JsonRecord, sig: Signa
 function fallback(retailer: string, pageUrl: string, html: string, sig: Signals): ParsedProduct | null {
   const name = sig.name ?? meta(html, "og:title");
   const metaPrice = numberValue(meta(html, "product:price:amount"));
-  const offer = retailer === "Farmacias Ahumada" ? metaPrice : (sig.offer ?? metaPrice);
+  const offer = sig.offer ?? metaPrice;
   if (!name || !offer || offer <= 0) return null;
   const externalId = sig.externalId ?? idFromUrl(retailer, pageUrl);
   if (!externalId) return null;
+  const url = canonicalProductUrl(retailer, pageUrl, pageUrl);
   return {
     supermarket: retailer,
     external_id: externalId,
     parent_external_id: null,
     name: decode(name),
     brand: sig.brand,
-    category: meta(html, "product:category") ?? categoryFromUrl(pageUrl),
+    category: sig.category ?? meta(html, "product:category") ?? categoryFromUrl(url),
     seller: retailer,
     seller_id: null,
     variant: null,
-    url: pageUrl,
+    url,
     image_url: sig.image,
     regular_price: sig.regular && sig.regular > offer ? sig.regular : null,
     offer_price: offer,
     unit: sig.unit,
     unit_price: sig.unitPrice,
-    in_stock: !plain(html).toLowerCase().includes("sin stock"),
+    in_stock: !sig.unavailable,
     observed_at: new Date().toISOString(),
     source_metadata: {
-      parser: "pharmacy_site_fallback",
+      parser: "pharmacy_site_fallback_v2",
       pharmacyMetadata: sig.metadata,
       priceMissing: false,
       capture_status: "accepted",

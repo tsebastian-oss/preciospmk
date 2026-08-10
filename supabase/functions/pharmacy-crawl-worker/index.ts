@@ -8,7 +8,7 @@ type Result = { products: ParsedProduct[]; newTasks: QueueTask[] };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-const USER_AGENT = "MGP-PharmacyCatalogBot/1.1 (+public-price-research; respects robots.txt)";
+const USER_AGENT = "MGP-PharmacyCatalogBot/1.2 (+public-price-research; respects robots.txt)";
 const HOSTS = new Set([
   "salcobrand.cl", "www.salcobrand.cl",
   "beta.cruzverde.cl", "cruzverde.cl", "www.cruzverde.cl",
@@ -32,16 +32,61 @@ function numberValue(value: unknown): number | null {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+function decodeUrlEntities(raw: string): string {
+  return raw
+    .replace(/\\u0026/gi, "&")
+    .replace(/&amp%3B/gi, "&")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#38;/gi, "&");
+}
+
 function safeUrl(raw: string): URL {
-  const url = new URL(raw);
+  const url = new URL(decodeUrlEntities(raw));
   if (url.protocol !== "https:" || !HOSTS.has(url.hostname.toLowerCase())) {
     throw new Error(`Blocked pharmacy URL host: ${url.hostname}`);
   }
   url.hash = "";
-  for (const key of ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "gclid", "fbclid"]) {
+  for (const key of [
+    "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "gclid", "fbclid",
+    "taxon_id", "current_store_id", "store_id", "ref", "source",
+  ]) {
     url.searchParams.delete(key);
   }
   return url;
+}
+
+function canonicalProductKey(retailer: string, raw: string): string {
+  const url = safeUrl(raw);
+  if (retailer === "Salcobrand" || retailer === "Cruz Verde" || retailer === "Farmacias Ahumada") {
+    return `${url.origin}${url.pathname}`.replace(/\/$/, "");
+  }
+  return url.toString();
+}
+
+function preferredProductUrl(retailer: string, current: string | undefined, candidate: string): string {
+  const cleanCandidate = safeUrl(candidate).toString();
+  if (!current) return cleanCandidate;
+  if (retailer === "Salcobrand") {
+    const currentUrl = safeUrl(current);
+    const candidateUrl = safeUrl(cleanCandidate);
+    if (!currentUrl.searchParams.get("default_sku") && candidateUrl.searchParams.get("default_sku")) {
+      return cleanCandidate;
+    }
+  }
+  return current;
+}
+
+function uniqueProductUrls(retailer: string, items: string[]): string[] {
+  const map = new Map<string, string>();
+  for (const item of items) {
+    try {
+      const key = canonicalProductKey(retailer, item);
+      map.set(key, preferredProductUrl(retailer, map.get(key), item));
+    } catch {
+      // Ignore external or malformed product URLs.
+    }
+  }
+  return [...map.values()];
 }
 
 function hash(value: string): string {
@@ -88,8 +133,7 @@ async function fetchPublic(raw: string, timeout = 45_000): Promise<string> {
 function locations(xml: string): string[] {
   return [...new Set(Array.from(
     xml.matchAll(/<loc[^>]*>([\s\S]*?)<\/loc>/gi),
-    (match) => match[1]
-      .replace(/&amp;/g, "&")
+    (match) => decodeUrlEntities(match[1])
       .replace(/&quot;/g, '"')
       .replace(/&#39;|&apos;/g, "'")
       .trim(),
@@ -101,7 +145,7 @@ function hrefs(html: string, base: string): string[] {
   const output: string[] = [];
   for (const item of raw) {
     try {
-      output.push(safeUrl(new URL(item.replace(/\\u0026/g, "&"), base).toString()).toString());
+      output.push(safeUrl(new URL(decodeUrlEntities(item), base).toString()).toString());
     } catch {
       // Ignore external or malformed links.
     }
@@ -111,7 +155,7 @@ function hrefs(html: string, base: string): string[] {
 
 function sitemapUrl(raw: string): boolean {
   try {
-    const value = `${new URL(raw).pathname}${new URL(raw).search}`.toLowerCase();
+    const value = `${safeUrl(raw).pathname}${safeUrl(raw).search}`.toLowerCase();
     return value.includes("sitemap") || value.endsWith(".xml") || value.includes(".xml?");
   } catch {
     return false;
@@ -123,19 +167,13 @@ function productUrl(retailer: string, raw: string): boolean {
   try { path = decodeURIComponent(safeUrl(raw).pathname).toLowerCase(); }
   catch { return false; }
   if (retailer === "Salcobrand") {
-    return path.includes("/products/") && path.split("/").filter(Boolean).length >= 2;
+    return path.startsWith("/products/") && path.split("/").filter(Boolean).length === 2;
   }
   if (retailer === "Farmacias Ahumada") {
     return /-[0-9]{4,}\.html$/.test(path) && !path.includes("terms-and-conditions");
   }
   if (retailer === "Cruz Verde") {
-    const excluded = [
-      "/servicio-al-cliente/", "/servicios/", "/bases-legales/", "/contents-content-pages-module/",
-      "/campanas/", "/vive-mejor/", "/especiales/", "/content/", "/legal/",
-    ];
-    if (excluded.some((item) => path.includes(item))) return false;
-    if (!path.endsWith(".html")) return false;
-    return !["/index.html", "/home.html"].some((item) => path.endsWith(item));
+    return /\/[0-9]+\.html$/.test(path);
   }
   return false;
 }
@@ -145,13 +183,19 @@ function listingUrl(retailer: string, raw: string): boolean {
     const path = safeUrl(raw).pathname.toLowerCase();
     if (productUrl(retailer, raw) || sitemapUrl(raw)) return false;
     if (retailer === "Salcobrand") {
-      return path === "/" || ["medic", "cuidado", "vitamin", "belleza", "salud"].some((item) => path.includes(item));
+      return path === "/" || path === "/mi-salcobrand-productos" || path.startsWith("/t/");
     }
     if (retailer === "Cruz Verde") {
-      return ["/medicamentos/", "/ofertas/", "/precios-bajos/", "/productos-mas/", "/cuidado-de-la-piel/"].some((item) => path.includes(item));
+      return [
+        "/medicamentos/", "/medicamentos-1/", "/medicamentos-y-vitaminas/", "/ofertas/",
+        "/precios-bajos/", "/productos-mas/", "/cuidado-de-la-piel/", "/dermocosmetica/",
+        "/nutricion-y-vitaminas/", "/infantil-y-mama/", "/cuidado-personal/",
+      ].some((item) => path.includes(item));
     }
     if (retailer === "Farmacias Ahumada") {
-      return path === "/" || ["/medicamentos", "/genericos", "/promociones", "/hotdeals", "/dermocosmetica", "/vitaminas"].some((item) => path.includes(item));
+      return path === "/" || [
+        "/medicamentos", "/genericos", "/promociones", "/hotdeals", "/dermocosmetica", "/vitaminas",
+      ].some((item) => path.includes(item));
     }
   } catch {
     return false;
@@ -177,6 +221,16 @@ function batches<T>(items: T[], size: number): T[][] {
   return output;
 }
 
+function productTask(task: Task, rawUrl: string): QueueTask {
+  const url = safeUrl(rawUrl).toString();
+  return {
+    task_key: `pharmacy-product:${task.supermarket.toLowerCase()}:${hash(canonicalProductKey(task.supermarket, url))}`,
+    supermarket: task.supermarket,
+    kind: "pharmacy_product_page",
+    payload: inherited(task, { url, recovery_from_batch: task.id }),
+  };
+}
+
 async function processSitemap(task: Task): Promise<Result> {
   const raw = stringValue(task.payload.url);
   if (!raw) throw new Error("Missing pharmacy sitemap URL");
@@ -190,16 +244,13 @@ async function processSitemap(task: Task): Promise<Result> {
   if (!discovered.length) throw new Error(`Sitemap returned no allowed locations: ${raw}`);
 
   const pilot = stringValue(task.payload.mode) !== "full";
-  let child = discovered.filter(sitemapUrl);
-  let products = discovered.filter((item) => productUrl(task.supermarket, item));
-  let listings = discovered.filter((item) => listingUrl(task.supermarket, item));
+  let child = [...new Set(discovered.filter(sitemapUrl))];
+  let products = uniqueProductUrls(task.supermarket, discovered.filter((item) => productUrl(task.supermarket, item)));
+  let listings = [...new Set(discovered.filter((item) => listingUrl(task.supermarket, item)))];
   if (pilot) {
     child = child.slice(0, 3);
     products = products.slice(0, 250);
     listings = listings.slice(0, 8);
-  } else {
-    products = products.slice(0, 15000);
-    listings = listings.slice(0, 100);
   }
 
   const tasks: QueueTask[] = child.map((url) => ({
@@ -218,7 +269,7 @@ async function processSitemap(task: Task): Promise<Result> {
   }
   for (const urls of batches(products, BATCH_SIZE)) {
     tasks.push({
-      task_key: `pharmacy-batch:${task.supermarket.toLowerCase()}:${hash(urls.join("|"))}`,
+      task_key: `pharmacy-batch:${task.supermarket.toLowerCase()}:${hash(urls.map((url) => canonicalProductKey(task.supermarket, url)).join("|"))}`,
       supermarket: task.supermarket,
       kind: "pharmacy_product_batch",
       payload: inherited(task, { urls }),
@@ -234,16 +285,15 @@ async function processListing(task: Task): Promise<Result> {
   const maxPages = Math.max(1, numberValue(task.payload.max_pages) ?? 3);
   const html = await fetchPublic(raw, 55_000);
   const links = hrefs(html, raw);
-  const productLinks = links
-    .filter((item) => productUrl(task.supermarket, item))
-    .slice(0, stringValue(task.payload.mode) === "full" ? 1200 : 180);
+  let productLinks = uniqueProductUrls(task.supermarket, links.filter((item) => productUrl(task.supermarket, item)));
+  if (stringValue(task.payload.mode) !== "full") productLinks = productLinks.slice(0, 180);
   const nextListings = page < maxPages
-    ? links.filter((item) => listingUrl(task.supermarket, item) && (/[?&](?:start|page|p|sz)=/i.test(item) || /\/page\/[0-9]+/i.test(item))).slice(0, 3)
+    ? [...new Set(links.filter((item) => listingUrl(task.supermarket, item) && (/[?&](?:start|page|p|sz)=/i.test(item) || /\/page\/[0-9]+/i.test(item))))].slice(0, 12)
     : [];
   const tasks: QueueTask[] = [];
   for (const urls of batches(productLinks, BATCH_SIZE)) {
     tasks.push({
-      task_key: `pharmacy-batch:${task.supermarket.toLowerCase()}:${hash(urls.join("|"))}`,
+      task_key: `pharmacy-batch:${task.supermarket.toLowerCase()}:${hash(urls.map((url) => canonicalProductKey(task.supermarket, url)).join("|"))}`,
       supermarket: task.supermarket,
       kind: "pharmacy_product_batch",
       payload: inherited(task, { urls }),
@@ -257,39 +307,44 @@ async function processListing(task: Task): Promise<Result> {
       payload: inherited(task, { url, page: page + 1 }),
     });
   }
-  if (!tasks.length) throw new Error(`No public pharmacy product links found at ${raw}`);
   return { products: [], newTasks: tasks };
 }
 
 async function processPage(task: Task): Promise<Result> {
   const raw = stringValue(task.payload.url);
   if (!raw) throw new Error("Missing pharmacy product URL");
-  const products = parsePharmacyPage(task.supermarket, safeUrl(raw).toString(), await fetchPublic(raw), true);
-  if (!products.length) throw new Error(`No public pharmacy product metadata found at ${raw}`);
+  const url = safeUrl(raw).toString();
+  const products = parsePharmacyPage(task.supermarket, url, await fetchPublic(url), true);
+  if (!products.length) throw new Error(`No public pharmacy product metadata found at ${url}`);
   return { products, newTasks: [] };
 }
 
 async function processBatch(task: Task): Promise<Result> {
-  const urls = Array.isArray(task.payload.urls)
+  const rawUrls = Array.isArray(task.payload.urls)
     ? task.payload.urls.map(stringValue).filter((item): item is string => Boolean(item)).slice(0, BATCH_SIZE)
     : [];
+  const urls = uniqueProductUrls(task.supermarket, rawUrls);
   if (!urls.length) throw new Error("Missing pharmacy batch URLs");
   const delay = Math.max(400, Math.min(10000, numberValue(task.payload.crawl_delay_ms) ?? 1200));
   const output = new Map<string, ParsedProduct>();
-  const failures: string[] = [];
+  const failures: Array<{ url: string; error: string }> = [];
   for (let index = 0; index < urls.length; index += 1) {
+    const url = safeUrl(urls[index]).toString();
     try {
-      for (const product of parsePharmacyPage(task.supermarket, safeUrl(urls[index]).toString(), await fetchPublic(urls[index]), true)) {
-        output.set(product.external_id, product);
+      const parsed = parsePharmacyPage(task.supermarket, url, await fetchPublic(url), true);
+      if (!parsed.length) {
+        failures.push({ url, error: "No public pharmacy product metadata found" });
+      } else {
+        for (const product of parsed) output.set(product.external_id, product);
       }
     } catch (error) {
-      failures.push(error instanceof Error ? error.message : String(error));
+      failures.push({ url, error: error instanceof Error ? error.message : String(error) });
     }
     if (index < urls.length - 1) await new Promise((resolve) => setTimeout(resolve, delay));
   }
-  if (!output.size && failures.length) throw new Error(failures.slice(0, 3).join(" | "));
-  if (!output.size) throw new Error("No valid pharmacy products were parsed from the batch");
-  return { products: [...output.values()], newTasks: [] };
+
+  const recoveryTasks = failures.map((failure) => productTask(task, failure.url));
+  return { products: [...output.values()], newTasks: recoveryTasks };
 }
 
 async function processTask(task: Task): Promise<Result> {
@@ -313,25 +368,33 @@ async function enqueue(runId: number, tasks: QueueTask[]): Promise<number> {
   return inserted;
 }
 
+async function completeSuccess(task: Task, products: ParsedProduct[], newTasks: QueueTask[], note?: string): Promise<JsonRecord> {
+  const tasksInserted = await enqueue(task.run_id, newTasks);
+  const completion = await rpc<JsonRecord>("complete_pharmacy_task_service", {
+    p_task_id: task.id,
+    p_products: products,
+    p_error: null,
+  });
+  return {
+    taskId: task.id,
+    retailer: task.supermarket,
+    kind: task.kind,
+    products: products.length,
+    tasksInserted,
+    ...(note ? { note } : {}),
+    completion,
+  };
+}
+
 async function handle(task: Task): Promise<JsonRecord> {
   try {
     const result = await processTask(task);
-    const tasksInserted = await enqueue(task.run_id, result.newTasks);
-    const completion = await rpc<JsonRecord>("complete_pharmacy_task_service", {
-      p_task_id: task.id,
-      p_products: result.products,
-      p_error: null,
-    });
-    return {
-      taskId: task.id,
-      retailer: task.supermarket,
-      kind: task.kind,
-      products: result.products.length,
-      tasksInserted,
-      completion,
-    };
+    return await completeSuccess(task, result.products, result.newTasks);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (task.kind === "pharmacy_listing_page" && /^HTTP (404|410)\b/i.test(message)) {
+      return await completeSuccess(task, [], [], "listing_not_found_terminal");
+    }
     const completion = await rpc<JsonRecord>("complete_pharmacy_task_service", {
       p_task_id: task.id,
       p_products: [],
