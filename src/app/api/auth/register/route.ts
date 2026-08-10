@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
   if (!acceptedTerms) return NextResponse.json({ error: "Debes aceptar los términos de uso y la política de privacidad." }, { status: 400 });
 
   const origin = request.nextUrl.hostname === "localhost" ? request.nextUrl.origin : PRODUCTION_ORIGIN;
-  const redirectTo = `${origin}/login?confirmed=1`;
+  const redirectTo = `${origin}/auth/confirm`;
 
   const response = await fetch(`${supabaseUrl}/auth/v1/signup?redirect_to=${encodeURIComponent(redirectTo)}`, {
     method: "POST",
