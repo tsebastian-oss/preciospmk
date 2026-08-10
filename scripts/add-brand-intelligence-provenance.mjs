@@ -5,33 +5,7 @@ const apiPath = "src/app/api/brand-chat/route.ts";
 const cssPath = "src/app/BrandIntelligenceChat.module.css";
 let ui = fs.readFileSync(uiPath, "utf8");
 
-const legacySummaryType = `type BrandSummary = {
-  skus?: number;
-  retailers?: number;
-  inStock?: number;
-  offers?: number;
-  averagePrice?: number;
-  minPrice?: number;
-  maxPrice?: number;
-  lastObservedAt?: string | null;
-};`;
-const currentSummaryType = `type BrandSummary = {
-  skus?: number | null;
-  retailers?: number | null;
-  stockKnown?: number | null;
-  inStock?: number | null;
-  availabilityPct?: number | null;
-  offers?: number | null;
-  offerPct?: number | null;
-  averagePrice?: number | null;
-  medianPrice?: number | null;
-  minPrice?: number | null;
-  maxPrice?: number | null;
-  lastObservedAt?: string | null;
-};`;
-const summaryType = ui.includes(currentSummaryType) ? currentSummaryType : legacySummaryType;
-const sourceType = `${summaryType}
-type BrandSource = {
+const sourceType = `type BrandSource = {
   product?: string;
   category?: string | null;
   supermarkets?: number;
@@ -44,8 +18,11 @@ type BrandSource = {
   listings?: Array<{ retailer?: string; price?: number; inStock?: boolean }>;
 };`;
 if (!ui.includes("type BrandSource =")) {
-  if (!ui.includes(summaryType)) throw new Error("Brand summary type anchor missing");
-  ui = ui.replace(summaryType, sourceType);
+  const summaryStart = ui.indexOf("type BrandSummary = {");
+  const summaryEnd = summaryStart >= 0 ? ui.indexOf("\n};", summaryStart) : -1;
+  if (summaryStart < 0 || summaryEnd < 0) throw new Error("Brand summary type anchor missing");
+  const insertAt = summaryEnd + 3;
+  ui = `${ui.slice(0, insertAt)}\n${sourceType}${ui.slice(insertAt)}`;
 }
 
 ui = ui.replace(

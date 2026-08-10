@@ -29,6 +29,7 @@ type BrandSummary = {
   availabilityPct?: number | null;
   offers?: number | null;
   offerPct?: number | null;
+  priceComparable?: boolean | null;
   averagePrice?: number | null;
   medianPrice?: number | null;
   minPrice?: number | null;
@@ -157,6 +158,7 @@ function ExecutiveAnswer({ message }: { message: ChatMessage }) {
   const hasStock = finiteNumber(summary?.inStock) && finiteNumber(summary?.stockKnown);
   const hasOffers = finiteNumber(summary?.offers);
   const hasPriceRange = finiteNumber(summary?.minPrice) && finiteNumber(summary?.maxPrice);
+  const hasComparablePrice = summary?.priceComparable === true && finiteNumber(summary.medianPrice);
   return <div className={styles.executiveCard}>
     <div className={styles.executiveTop}>
       <div>
@@ -169,7 +171,7 @@ function ExecutiveAnswer({ message }: { message: ChatMessage }) {
     {summary && <div className={styles.kpiGrid}>
       <Kpi label="SKU vigentes" value={hasSku ? new Intl.NumberFormat("es-CL").format(summary.skus!) : "Sin dato"} detail={hasRetailers ? `${summary.retailers} cadenas` : undefined}/>
       <Kpi label="Disponibilidad" value={availability(summary)} detail={hasStock ? `${summary.inStock} de ${summary.stockKnown} con stock informado` : undefined}/>
-      <Kpi label="Ticket mediano" value={money(summary.medianPrice)} detail={hasPriceRange ? `${money(summary.minPrice)} – ${money(summary.maxPrice)} · mezcla de formatos` : "No es precio unitario comparable"}/>
+      <Kpi label="Precio comparable" value={hasComparablePrice ? money(summary.medianPrice) : "No comparable"} detail={hasComparablePrice && hasPriceRange ? `${money(summary.minPrice)} – ${money(summary.maxPrice)}` : "Especifica tamaño y si es unidad o pack."}/>
       <Kpi label="Ofertas detectadas" value={hasOffers ? new Intl.NumberFormat("es-CL").format(summary.offers!) : "Sin dato"} detail={hasOffers ? "productos con precio regular y promocional" : undefined}/>
     </div>}
 
