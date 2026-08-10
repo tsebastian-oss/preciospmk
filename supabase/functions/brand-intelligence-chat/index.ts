@@ -35,6 +35,13 @@ type SegmentIntent = {
   packageMode: "all" | "single" | "multipack";
   volumeMl: number | null;
 };
+type VariantIntent = {
+  active: boolean;
+  label: string | null;
+  includeTerms: string[];
+  excludeTerms: string[];
+  excludeComposites: boolean;
+};
 
 const norm = (v: string) =>
   v
@@ -174,6 +181,54 @@ function productSegmentIntent(question: string): SegmentIntent {
     volumeMl,
   };
 }
+
+function productVariantIntent(question: string): VariantIntent {
+  const text = question
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  const variant = (
+    label: string,
+    includeTerms: string[],
+    excludeTerms: string[] = [],
+    excludeComposites = true,
+  ): VariantIntent => ({
+    active: true,
+    label,
+    includeTerms,
+    excludeTerms,
+    excludeComposites,
+  });
+  if (/\boreo\b/.test(text) && /\bzero\b/.test(text))
+    return variant("Oreo Zero", ["oreo", "zero"], [], false);
+  if (/\bmarshmell?o(?:w)?\b/.test(text) && /\bzero\b/.test(text))
+    return variant("Marshmello Zero", ["marshmello", "zero"], [], false);
+  if (/\bzero\b|\bsin\s+azucar\b/.test(text))
+    return variant("Zero", ["zero"], [
+      "oreo",
+      "marshmello",
+      "fanta",
+      "sprite",
+      "nordic",
+      "jack coke",
+    ]);
+  if (/\blight\b/.test(text)) return variant("Light", ["light"]);
+  if (/\b(?:original|clasica|tradicional)\b/.test(text))
+    return variant("Original", [], [
+      "zero",
+      "light",
+      "sin azucar",
+      "oreo",
+      "marshmello",
+    ]);
+  return {
+    active: false,
+    label: null,
+    includeTerms: [],
+    excludeTerms: [],
+    excludeComposites: false,
+  };
+}
 async function askJson(
   apiKey: string,
   models: string[],
@@ -303,6 +358,26 @@ function contextualSegmentIntent(
         : previous.packageMode,
     volumeMl: current.volumeMl ?? (changedFormat ? null : previous.volumeMl),
   } satisfies SegmentIntent;
+}
+
+function contextualVariantIntent(
+  question: string,
+  messages: Msg[],
+  useConversationContext: boolean,
+) {
+  const current = productVariantIntent(question);
+  if (current.active || !useConversationContext || !isContextualFollowUp(question))
+    return current;
+  const previousQuestion = [...messages]
+    .slice(0, -1)
+    .reverse()
+    .find(
+      (message) =>
+        message.role === "user" && productVariantIntent(message.content).active,
+    );
+  return previousQuestion
+    ? productVariantIntent(previousQuestion.content)
+    : current;
 }
 
 async function resolveBrand(
@@ -586,7 +661,13 @@ Deno.serve(async (req: Request) => {
         .filter((m) => m.role === "user")
         .slice(-4, -1)
         .map((m) => m.content)
-        .join(" \n ");
+        .join(" \n "),
+      previousBrand =
+        [...messages]
+          .slice(0, -1)
+          .reverse()
+          .find((message) => message.role === "assistant" && message.brand)
+          ?.brand ?? null;
     const resolution = await resolveBrand(
       user,
       config,
@@ -594,11 +675,7 @@ Deno.serve(async (req: Request) => {
       q,
       history,
       filters,
-      [...messages]
-        .slice(0, -1)
-        .reverse()
-        .find((message) => message.role === "assistant" && message.brand)
-        ?.brand ?? null,
+      previousBrand,
     );
     if (!resolution.brand) {
       if (config.enabled && config.api_key) {
@@ -646,12 +723,50 @@ Deno.serve(async (req: Request) => {
         ai: false,
       });
     }
+    const sameBrandFollowUp = Boolean(
+      previousBrand &&
+        isContextualFollowUp(q) &&
+        norm(previousBrand) === norm(resolution.brand),
+    );
     const segmentIntent = contextualSegmentIntent(
       q,
       messages,
-      resolution.method === "conversation_context",
+      resolution.method === "conversation_context" || sameBrandFollowUp,
     );
-    const contextResult = segmentIntent.active
+    const variantIntent = contextualVariantIntent(
+      q,
+      messages,
+      resolution.method === "conversation_context" || sameBrandFollowUp,
+    );
+    const contextResult = variantIntent.active
+      ? await user.rpc("enterprise_brand_variant_context_v1", {
+          p_organization_id: org,
+          p_brand: resolution.brand,
+          p_name_terms: variantIntent.includeTerms,
+          p_exclude_terms: variantIntent.excludeTerms,
+          p_variant_label: variantIntent.label,
+          p_exclude_composites: variantIntent.excludeComposites,
+          p_format: segmentIntent.format,
+          p_package_mode: segmentIntent.packageMode,
+          p_volume_ml: segmentIntent.volumeMl,
+          p_retailer_type:
+            typeof filters.retailerType === "string"
+              ? filters.retailerType
+              : "all",
+          p_supermarket:
+            typeof filters.supermarket === "string" && filters.supermarket
+              ? filters.supermarket
+              : null,
+          p_category:
+            typeof filters.category === "string" && filters.category
+              ? filters.category
+              : null,
+          p_stock: typeof filters.stock === "string" ? filters.stock : "all",
+          p_days: Number.isFinite(Number(filters.period))
+            ? Math.max(7, Math.min(90, Number(filters.period)))
+            : 30,
+        })
+      : segmentIntent.active
       ? await user.rpc("enterprise_brand_segment_context_v1", {
           p_organization_id: org,
           p_brand: resolution.brand,
@@ -720,16 +835,18 @@ Deno.serve(async (req: Request) => {
         ai: false,
         warning: "no_current_observations",
       });
-    const lens = await pricingLens(
-      user,
-      config,
-      org,
-      resolution.brand,
-      q,
-      history,
-      filters,
-      segmentIntent,
-    );
+    const lens = variantIntent.active
+      ? null
+      : await pricingLens(
+          user,
+          config,
+          org,
+          resolution.brand,
+          q,
+          history,
+          filters,
+          segmentIntent,
+        );
     const learning = ctx?.learning?.ready ? ctx.learning : null;
     if (!config.enabled || !config.api_key)
       return Response.json({
@@ -744,7 +861,12 @@ Deno.serve(async (req: Request) => {
     const compact = {
       brand: ctx.brand,
       current: ctx.current,
-      segment: ctx.segment ?? { ...segmentIntent, active: false },
+      segment:
+        ctx.segment ?? {
+          ...segmentIntent,
+          variant: variantIntent.label,
+          active: segmentIntent.active || variantIntent.active,
+        },
       trend: ctx.trend,
       quality: ctx.quality,
       scope: ctx.scope,
@@ -784,7 +906,8 @@ Deno.serve(async (req: Request) => {
         "Haz como máximo una pregunta de aclaración cuando sea imprescindible para responder con datos comparables.",
         "Los cálculos vienen del motor determinístico. No recalcules ni inventes cifras.",
         "CURRENT es el estado vigente dentro del alcance solicitado; úsalo para SKU, cadenas, stock, disponibilidad y ofertas. LEARNING y TREND solo contienen días locales cerrados.",
-        "Si SEGMENT.active=true, CURRENT ya está filtrado al formato, tamaño y/o tipo de pack solicitado. Está prohibido reutilizar cifras de toda la marca o ampliar ese alcance.",
+        "Si SEGMENT.active=true, CURRENT ya está filtrado a la variante, formato, tamaño y/o tipo de pack solicitado. Está prohibido reutilizar cifras de toda la marca o ampliar ese alcance.",
+        "Si SEGMENT.variant existe, responde exclusivamente sobre esa variante. TREND.periodVariationPct compara los mismos SKU presentes al inicio y al final del período; TREND.points contiene la evolución diaria cerrada de esa variante.",
         "Si SEGMENT.needsPriceClarification=true o CURRENT.summary.priceComparable=false, no entregues un único precio representativo: explica que se mezclan tamaños o packs y pide tamaño más unidad individual/multipack.",
         "No describas disponibilidad como total, completa o plena salvo que CURRENT.summary.availabilityPct sea exactamente 100.",
         "Si TREND.available=false, no menciones evolución, estabilidad, subidas o bajas; explica la falta de histórico a ese mismo nivel solo si la pregunta lo requiere.",
