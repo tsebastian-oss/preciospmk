@@ -67,6 +67,7 @@ type AiNarrative = {
 
 async function createAiNarrative(
   request: NextRequest,
+  organizationId: string,
   target: ProductRecord,
   matches: CompetitorMatch[],
   fallback: string,
@@ -93,7 +94,7 @@ async function createAiNarrative(
     const response = await fetch(`${SUPABASE_URL}/functions/v1/competitive-ai`, {
       method: "POST",
       headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
-      body: JSON.stringify({ target, competitors: compactMatches }),
+      body: JSON.stringify({ organizationId, target, competitors: compactMatches }),
       cache: "no-store",
     });
     const result = await response.json() as {
@@ -198,7 +199,7 @@ export async function GET(request: NextRequest) {
     const metrics = buildMetrics(target, competitors);
     const fallback = deterministicExplanation(target, competitors, metrics);
     const aiEnabled = access.isSaasAdmin || access.settings?.ai_enabled !== false;
-    const ai = await createAiNarrative(request, target, competitors, fallback, aiEnabled);
+    const ai = await createAiNarrative(request, access.organizationId, target, competitors, fallback, aiEnabled);
 
     return NextResponse.json({
       target,
