@@ -72,7 +72,7 @@ export default function OnboardingPage() {
     let cancelled = false;
     async function load() {
       try {
-        const response = await fetch("/api/enterprise/industry", { cache: "no-store" });
+        const response = await fetch("/api/enterprise/industry?includeRetailers=1", { cache: "no-store" });
         const payload = await response.json() as Payload;
         if (!response.ok) {
           const reason = payload.error || "No fue posible cargar las industrias";
