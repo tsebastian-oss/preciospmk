@@ -52,20 +52,42 @@ function accessToken(request: NextRequest) {
   return request.cookies.get("mgp_access_token")?.value ?? null;
 }
 
+function isStatementTimeout(raw: string) {
+  const normalized = raw.toLowerCase();
+  return normalized.includes("57014")
+    || normalized.includes("canceling statement due to statement timeout")
+    || normalized.includes("statement timeout")
+    || normalized.includes("query_canceled")
+    || normalized.includes("query canceled");
+}
+
 function safeError(status: number, raw: string) {
   if (status === 401) return "Tu sesión expiró. Ingresa nuevamente.";
+  if (isStatementTimeout(raw)) return "La consulta está tardando más de lo habitual. Intenta actualizar nuevamente en unos segundos.";
+
   try {
-    const parsed = JSON.parse(raw) as { message?: string; error?: string; hint?: string };
+    const parsed = JSON.parse(raw) as { message?: string; error?: string; hint?: string; code?: string };
     const message = parsed.message || parsed.error;
     if (message === "forbidden") return "No tienes permisos para realizar esta acción.";
     if (message === "module not enabled") return "Este módulo no está habilitado para tu organización.";
     if (message === "organization suspended") return "La organización está suspendida.";
-    if (message) return message;
+    if (status < 500 && message) return message;
   } catch {
-    // Return a generic message below.
+    // Return a generic message below. Never expose raw SQL/Postgres errors.
   }
   if (status === 403) return "Tu organización no tiene acceso a esta función.";
-  return status >= 500 ? "No fue posible completar la operación enterprise." : "Solicitud inválida.";
+  return status >= 500 ? "El servicio de datos no respondió correctamente. Intenta nuevamente." : "Solicitud inválida.";
+}
+
+function enterpriseErrorResponse(status: number, raw: string) {
+  const timeout = isStatementTimeout(raw);
+  const responseStatus = timeout ? 503 : status;
+  return NextResponse.json(
+    timeout
+      ? { error: safeError(responseStatus, raw), code: "DATA_TIMEOUT", transient: true }
+      : { error: safeError(responseStatus, raw) },
+    { status: responseStatus },
+  );
 }
 
 export async function enterpriseRpc<T>(
@@ -89,7 +111,7 @@ export async function enterpriseRpc<T>(
   const text = await response.text();
   if (!response.ok) {
     const status = response.status === 400 && text.includes("42501") ? 403 : response.status;
-    return { response: NextResponse.json({ error: safeError(status, text) }, { status }) };
+    return { response: enterpriseErrorResponse(status, text) };
   }
   return { data: text ? JSON.parse(text) as T : undefined };
 }
@@ -119,7 +141,7 @@ export async function enterpriseRest<T>(
   });
   const text = await response.text();
   if (!response.ok) {
-    return { response: NextResponse.json({ error: safeError(response.status, text) }, { status: response.status }) };
+    return { response: enterpriseErrorResponse(response.status, text) };
   }
   return { data: text ? JSON.parse(text) as T : undefined };
 }
