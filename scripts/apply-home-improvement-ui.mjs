@@ -2,6 +2,8 @@ import fs from "node:fs";
 
 const appPath = "src/app/UnifiedPlatformApp.tsx";
 const onboardingPath = "src/app/onboarding/page.tsx";
+const brandPath = "src/app/BrandIntelligenceChat.tsx";
+const priceMapPath = "src/app/AIPriceMap.tsx";
 
 let app = fs.readFileSync(appPath, "utf8");
 
@@ -61,9 +63,29 @@ for (const [before, after] of onboardingReplacements) {
 }
 fs.writeFileSync(onboardingPath, onboarding);
 
+let brand = fs.readFileSync(brandPath, "utf8");
+const oldBrandType = 'retailerType: "all" | "supermarket" | "department_store" | "pharmacy";';
+const newBrandType = 'retailerType: "all" | "supermarket" | "department_store" | "pharmacy" | "home_improvement";';
+if (brand.includes(oldBrandType)) brand = brand.replace(oldBrandType, newBrandType);
+else if (!brand.includes(newBrandType)) throw new Error("Brand Intelligence retailer type pattern not found");
+const oldBrandScope = 'filters.retailerType === "supermarket" ? "Supermercados" : filters.retailerType === "pharmacy" ? "Farmacias" : "Multitiendas"';
+const newBrandScope = 'filters.retailerType === "supermarket" ? "Supermercados" : filters.retailerType === "pharmacy" ? "Farmacias" : filters.retailerType === "home_improvement" ? "Hogar y construcción" : "Multitiendas"';
+if (brand.includes(oldBrandScope)) brand = brand.replace(oldBrandScope, newBrandScope);
+else if (!brand.includes(newBrandScope)) throw new Error("Brand Intelligence scope label pattern not found");
+fs.writeFileSync(brandPath, brand);
+
+let priceMap = fs.readFileSync(priceMapPath, "utf8");
+const oldPriceMapType = 'type Filters={retailerType:"all"|"supermarket"|"department_store"|"pharmacy";';
+const newPriceMapType = 'type Filters={retailerType:"all"|"supermarket"|"department_store"|"pharmacy"|"home_improvement";';
+if (priceMap.includes(oldPriceMapType)) priceMap = priceMap.replace(oldPriceMapType, newPriceMapType);
+else if (!priceMap.includes(newPriceMapType)) throw new Error("AI Price Map retailer type pattern not found");
+fs.writeFileSync(priceMapPath, priceMap);
+
 const finalApp = fs.readFileSync(appPath, "utf8");
 const finalOnboarding = fs.readFileSync(onboardingPath, "utf8");
+const finalBrand = fs.readFileSync(brandPath, "utf8");
+const finalPriceMap = fs.readFileSync(priceMapPath, "utf8");
 for (const token of ['"home_improvement"', 'easy: "home_improvement"', 'sodimac: "home_improvement"', '"Hogar y construcción"']) {
-  if (!finalApp.includes(token) && !finalOnboarding.includes(token)) throw new Error(`Missing home improvement UI token: ${token}`);
+  if (!finalApp.includes(token) && !finalOnboarding.includes(token) && !finalBrand.includes(token) && !finalPriceMap.includes(token)) throw new Error(`Missing home improvement UI token: ${token}`);
 }
 console.log("Home improvement UI applied");
