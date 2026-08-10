@@ -43,8 +43,8 @@ if (!source.includes("const pharmacyCoverage = dashboard?.pharmacyCoverage?.reta
       const pharmacyErrors = pharmacyCoverage.reduce((sum, item) => sum + numeric(item.failedTasks), 0);
       return <section className={styles.workspace}>
         <section className={styles.metrics}>
-          <Metric label="Estado general" value={dashboard?.run?.status === "running" ? "Procesando" : "Operativo"} detail={pharmacyCoverage.length ? `${pharmacyCoverage.filter((item) => item.runStatus === "running").length} farmacias corriendo en paralelo` : `Run ${dashboard?.run?.id ?? "—"}`} tone="green"/>
-          <Metric label="Cobertura farmacias" value={averageCoverage === null ? "Midiendo" : `${averageCoverage.toFixed(2)}%`} detail="URLs capturadas / descubiertas" tone={averageCoverage !== null && averageCoverage >= 99 ? "green" : "purple"}/>
+          <Metric label="Estado general" value={dashboard?.run?.status === "running" ? "Procesando" : "Operativo"} detail={pharmacyCoverage.length ? pharmacyCoverage.filter((item) => item.runStatus === "running").length + " farmacias corriendo en paralelo" : "Run " + (dashboard?.run?.id ?? "—")} tone="green"/>
+          <Metric label="Cobertura farmacias" value={averageCoverage === null ? "Midiendo" : averageCoverage.toFixed(2) + "%"} detail="URLs capturadas / descubiertas" tone={averageCoverage !== null && averageCoverage >= 99 ? "green" : "purple"}/>
           <Metric label="Errores farmacias" value={number(pharmacyErrors)} detail="Tareas fallidas en runs activos" tone={pharmacyErrors ? "orange" : "green"}/>
           <Metric label="Productos encontrados" value={number(dashboard?.run?.products_found)} detail="En la corrida actual" tone="purple"/>
         </section>
@@ -52,9 +52,9 @@ if (!source.includes("const pharmacyCoverage = dashboard?.pharmacyCoverage?.reta
           <CardHead title="Cobertura de catálogo · Farmacias" subtitle="Runs independientes y paralelos por cadena" action="Actualizar" onAction={() => void loadCore()}/>
           <div className={styles.scrapeRows}>{pharmacyCoverage.map((item) => <div key={item.retailer}>
             <span><i/>{item.retailer}</span>
-            <b>{item.coveragePct === null ? "Midiendo" : `${item.coveragePct.toFixed(2)}%`}</b>
+            <b>{item.coveragePct === null ? "Midiendo" : item.coveragePct.toFixed(2) + "%"}</b>
             <strong>{number(item.capturedUrls)} / {number(item.discoveredUrls)}</strong>
-            <small>{item.discoveryComplete ? `${number(item.missingUrls)} faltantes` : `Descubriendo · ${item.taskProgressPct === null ? "—" : `${item.taskProgressPct.toFixed(1)}%`} avance`} · Run ${item.runId ?? "—"}</small>
+            <small>{item.discoveryComplete ? number(item.missingUrls) + " faltantes" : "Descubriendo · " + (item.taskProgressPct === null ? "—" : item.taskProgressPct.toFixed(1) + "%") + " avance"} · Run {item.runId ?? "—"}</small>
           </div>)}</div>
         </article>}
         <article className={styles.card}><CardHead title="Pipeline por retailer" subtitle="Última actividad registrada" action="Actualizar" onAction={() => void loadCore()}/><div className={styles.scrapeRows}>{(dashboard?.supermarkets ?? []).map((item) => <div key={item.supermarket}><span><i/>{item.supermarket}</span><b>Operativo</b><strong>{number(item.products)} SKU</strong><small>{displayDate(item.last_updated)}</small></div>)}</div></article>
