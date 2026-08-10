@@ -22,9 +22,12 @@ const requiredApp = [
   ['Minimum plan label', 'const minimumPlan = minimumPlanForView(item.view);'],
   ['Export limit gate', 'exportLimitReached'],
   ['Contextual trend endpoint', 'endpoint = "/api/contextual-pricing-trend";'],
-  ['Pharmacy coverage payload', 'pharmacyCoverage?: PharmacyCoveragePayload;'],
+  ['Pharmacy coverage state', 'const [pharmacyCoverage, setPharmacyCoverage]'],
+  ['Pharmacy coverage endpoint', '/api/pharmacy-coverage?live='],
   ['Pharmacy coverage UI', 'Cobertura de catálogo · Farmacias'],
   ['Parallel pharmacy run indicator', 'farmacias corriendo en paralelo'],
+  ['Scoped product loading', '(["products", "promotions"] as View[]).includes(view)'],
+  ['Scoped match loading', '(["overview", "price-matching", "competitive", "optimizer", "basket"] as View[]).includes(view)'],
 ];
 
 const forbiddenApp = [
@@ -63,4 +66,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("Prebuild integrity OK: IA, trazabilidad, permisos por plan, labels de upsell, trial, alertas persistentes, cuenta, navegación, tendencias y cobertura de farmacias validados.");
+console.log("Prebuild integrity OK: IA, trazabilidad, permisos por plan, navegación, cargas por vista y cobertura de farmacias validados.");
