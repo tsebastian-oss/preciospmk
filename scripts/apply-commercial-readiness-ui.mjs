@@ -131,7 +131,7 @@ if (!app.includes('useEffect(() => {\n    if (!commercialAccount) return;\n    c
     if (required && !enabledModules.has(required)) {
       setView("overview");
       window.history.replaceState(null, "", "#overview");
-      setNotice(`Este módulo requiere ${minimumPlanForView(view)} o superior. Volvimos al Resumen Ejecutivo.`);
+      setNotice(\`Este módulo requiere \${minimumPlanForView(view)} o superior. Volvimos al Resumen Ejecutivo.\`);
     }
   }, [commercialAccount, enabledModules, view]);
 
