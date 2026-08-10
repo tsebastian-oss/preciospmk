@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import styles from "./login.module.css";
 
 export default function LoginPage() {
@@ -9,6 +9,16 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    const query = new URLSearchParams(window.location.search);
+    if (query.get("registered") === "1") {
+      setNotice("Cuenta creada. Revisa tu correo y confirma tu dirección antes de ingresar. El enlace te llevará directamente a configurar tu trial.");
+    } else if (query.get("confirmed") === "1") {
+      setNotice("Correo confirmado correctamente. Ya puedes ingresar con tu contraseña.");
+    }
+  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -42,6 +52,8 @@ export default function LoginPage() {
         <span className={styles.eyebrow}>ACCESO CLIENTES</span>
         <h1>Ingresa a tu plataforma.</h1>
         <p>Usa el correo y contraseña asociados a tu cuenta.</p>
+
+        {notice && <div style={{ marginBottom: 18, padding: "13px 14px", borderRadius: 12, border: "1px solid rgba(189,243,75,.28)", background: "rgba(189,243,75,.08)", color: "#dfffa0", fontSize: 12, lineHeight: 1.55 }}>{notice}</div>}
 
         <form onSubmit={submit}>
           <label>
