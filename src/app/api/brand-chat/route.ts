@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     }
     if (!response.ok && data?.error) data.error = safeFailure(data.error, "No fue posible consultar el analista de marca en este momento.");
     if (response.ok && data?.answer) {
-      await saveMessage(token, organizationId, conversationId, { role: "assistant", content: String(data.answer), brand: data.brand ?? null, ai: data.ai, payload: { analysis: data.analysis ?? null, summary: data.data?.current?.summary ?? null, model: data.model ?? null } });
+      await saveMessage(token, organizationId, conversationId, { role: "assistant", content: String(data.answer), brand: data.brand ?? null, ai: data.ai, payload: { analysis: data.analysis ?? null, summary: data.data?.current?.summary ?? null, sources: Array.isArray(data.data?.priceMatches) ? data.data.priceMatches.slice(0, 6) : [], model: data.model ?? null } });
       await touchConversation(token, organizationId, conversationId, data.brand ?? null);
     }
     return NextResponse.json({ ...data, conversationId, conversationTitle: title }, { status: response.status });

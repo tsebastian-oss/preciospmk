@@ -1,7 +1,11 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 
-type Msg = { role: "user" | "assistant"; content: string };
+type Msg = {
+  role: "user" | "assistant";
+  content: string;
+  brand?: string | null;
+};
 type Candidate = {
   brand: string;
   products: number;
@@ -51,9 +55,13 @@ const cleanMsgs = (v: unknown): Msg[] =>
         .map((x: any) => ({
           role: x.role,
           content: x.content.trim().slice(0, 2500),
+          brand:
+            typeof x.brand === "string" && x.brand.trim()
+              ? x.brand.trim().slice(0, 160)
+              : null,
         }))
         .filter((x: Msg) => x.content)
-        .slice(-10)
+        .slice(-16)
     : [];
 const outText = (p: any) =>
   typeof p?.output_text === "string"
@@ -71,6 +79,16 @@ const modelList = (configured?: string | null) =>
     configured,
     "gpt-5.6-sol",
     "gpt-5.6",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-5.5",
+    "gpt-4.1",
+  ].filter((x, i, a): x is string => Boolean(x) && a.indexOf(x) === i);
+const conversationalModelList = (configured?: string | null) =>
+  [
+    "gpt-5.6-sol",
+    "gpt-5.6",
+    configured,
     "gpt-5.6-terra",
     "gpt-5.6-luna",
     "gpt-5.5",
@@ -203,6 +221,90 @@ async function askJson(
   return { value: null, model: null as string | null, error: last };
 }
 
+async function askText(
+  apiKey: string,
+  models: string[],
+  instructions: string,
+  input: any[],
+  max: number,
+) {
+  let last = "";
+  for (const model of models) {
+    const supportsGpt5Controls = /^gpt-5(?:\.|-)/.test(model);
+    const r = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${apiKey}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model,
+        instructions,
+        input,
+        max_output_tokens: max,
+        store: false,
+        ...(supportsGpt5Controls
+          ? {
+              reasoning: { effort: "low" },
+              text: { verbosity: "medium" },
+            }
+          : {}),
+      }),
+    });
+    const raw = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      last = raw?.error?.message ?? `OpenAI ${r.status}`;
+      if (
+        [400, 403, 404].includes(r.status) ||
+        /model|access|permission|unsupported|does not exist/i.test(last)
+      )
+        continue;
+      break;
+    }
+    const text = outText(raw);
+    if (text) return { text, model, error: "" };
+    last = "OpenAI devolvió una respuesta vacía";
+  }
+  return { text: "", model: null as string | null, error: last };
+}
+
+const isContextualFollowUp = (question: string) =>
+  /^(?:\s|[¿¡])*(?:y\b|pero\b|entonces\b|adem[aá]s\b|tambi[eé]n\b|ahora\b|qu[eé]\b|cu[aá]nto\b|d[oó]nde\b|cu[aá]l\b|c[oó]mo\b|comp[aá]r|expl[ií]ca|profundiza|detalla|por qu[eé]\b)/i.test(
+    question,
+  );
+
+function contextualSegmentIntent(
+  question: string,
+  messages: Msg[],
+  useConversationContext: boolean,
+) {
+  const current = productSegmentIntent(question);
+  if (!useConversationContext || !isContextualFollowUp(question)) return current;
+  const previousQuestion = [...messages]
+    .slice(0, -1)
+    .reverse()
+    .find(
+      (message) =>
+        message.role === "user" && productSegmentIntent(message.content).active,
+    );
+  if (!previousQuestion) return current;
+  const previous = productSegmentIntent(previousQuestion.content);
+  if (!current.active) return previous;
+  const changedFormat =
+    Boolean(current.format) &&
+    Boolean(previous.format) &&
+    current.format !== previous.format;
+  return {
+    active: true,
+    format: current.format ?? previous.format,
+    packageMode:
+      current.packageMode !== "all"
+        ? current.packageMode
+        : previous.packageMode,
+    volumeMl: current.volumeMl ?? (changedFormat ? null : previous.volumeMl),
+  } satisfies SegmentIntent;
+}
+
 async function resolveBrand(
   client: any,
   config: Runtime,
@@ -210,6 +312,7 @@ async function resolveBrand(
   q: string,
   history: string,
   filters: any,
+  contextualBrand?: string | null,
 ) {
   const { data } = await client.rpc("enterprise_brand_resolver_candidates", {
     p_organization_id: org,
@@ -248,6 +351,17 @@ async function resolveBrand(
       candidates: c,
       confidence: strong.score,
       method: "database_exact",
+    };
+  if (
+    contextualBrand &&
+    (!strong || strong.score < 0.7) &&
+    isContextualFollowUp(q)
+  )
+    return {
+      brand: contextualBrand,
+      candidates: c,
+      confidence: 0.96,
+      method: "conversation_context",
     };
   if (config.enabled && config.api_key && c.length) {
     const r = await askJson(
@@ -305,18 +419,35 @@ async function pricingLens(
   q: string,
   history: string,
   filters: any,
+  segment?: SegmentIntent,
 ) {
   const priceIntent =
     /precio|pricing|car[oa]|barat|posicion|compet|compar|brecha|premium|índice|indice/i.test(
       q,
     );
   if (!priceIntent) return null;
+  const segmentHint = segment?.active
+    ? [
+        segment.format ? `formato ${segment.format}` : "",
+        segment.volumeMl ? `tamaño ${segment.volumeMl} ml` : "",
+        segment.packageMode !== "all"
+          ? segment.packageMode === "single"
+            ? "unidad individual"
+            : "multipack"
+          : "",
+      ]
+        .filter(Boolean)
+        .join(", ")
+    : "";
+  const priceQuestion = segmentHint
+    ? `${q}\nAlcance conversacional vigente: ${segmentHint}.`
+    : q;
   const { data: preflight, error } = await client.rpc(
     "enterprise_price_map_preflight",
     {
       p_organization_id: org,
       p_brand: brand,
-      p_question: q,
+      p_question: priceQuestion,
       p_retailer_type:
         typeof filters.retailerType === "string" ? filters.retailerType : "all",
       p_supermarket:
@@ -378,7 +509,7 @@ async function pricingLens(
         },
         {
           role: "user",
-          content: `Pregunta: ${q}\nContexto: ${history || "(sin contexto)"}`,
+          content: `Pregunta: ${priceQuestion}\nContexto: ${history || "(sin contexto)"}`,
         },
       ],
       200,
@@ -463,16 +594,63 @@ Deno.serve(async (req: Request) => {
       q,
       history,
       filters,
+      [...messages]
+        .slice(0, -1)
+        .reverse()
+        .find((message) => message.role === "assistant" && message.brand)
+        ?.brand ?? null,
     );
-    if (!resolution.brand)
+    if (!resolution.brand) {
+      if (config.enabled && config.api_key) {
+        const conversational = await askText(
+          config.api_key,
+          conversationalModelList(config.model),
+          [
+            "Eres MGP Intelligence, un asistente conversacional de pricing y retail potenciado por OpenAI Sol.",
+            "No hay una marca resuelta ni datos de marca cargados para este turno.",
+            "Si el usuario saluda, pregunta qué puedes hacer o conversa sobre el módulo, responde natural y brevemente.",
+            "Si su solicitud necesita datos, pide una sola aclaración concreta para identificar la marca. Puedes sugerir únicamente nombres presentes en BRAND_CANDIDATES.",
+            "No inventes cifras, marcas ni resultados. Devuelve sólo la respuesta final, sin JSON.",
+          ].join("\n"),
+          [
+            {
+              role: "developer",
+              content: `BRAND_CANDIDATES:\n${JSON.stringify(resolution.candidates.slice(0, 5))}`,
+            },
+            ...messages.map(({ role, content }) => ({ role, content })),
+          ],
+          500,
+        );
+        if (conversational.text)
+          return Response.json({
+            answer: conversational.text,
+            brand: null,
+            candidates: resolution.candidates,
+            resolution,
+            model: conversational.model,
+            ai: true,
+            assistant: "MGP Intelligence",
+            responseStyle: "conversational",
+          });
+      }
+      const suggestions = resolution.candidates
+        .slice(0, 3)
+        .map((candidate: Candidate) => candidate.brand);
       return Response.json({
-        answer: "No pude identificar la marca con suficiente certeza.",
+        answer: suggestions.length
+          ? `No estoy seguro de qué marca quisiste decir. ¿Te referías a ${suggestions.join(", ")}?`
+          : "¿Sobre qué marca te gustaría que revisemos los datos?",
         brand: null,
         candidates: resolution.candidates,
         resolution,
         ai: false,
       });
-    const segmentIntent = productSegmentIntent(q);
+    }
+    const segmentIntent = contextualSegmentIntent(
+      q,
+      messages,
+      resolution.method === "conversation_context",
+    );
     const contextResult = segmentIntent.active
       ? await user.rpc("enterprise_brand_segment_context_v1", {
           p_organization_id: org,
@@ -550,6 +728,7 @@ Deno.serve(async (req: Request) => {
       q,
       history,
       filters,
+      segmentIntent,
     );
     const learning = ctx?.learning?.ready ? ctx.learning : null;
     if (!config.enabled || !config.api_key)
@@ -592,12 +771,17 @@ Deno.serve(async (req: Request) => {
           }
         : null,
     };
-    const r = await askJson(
+    const r = await askText(
       config.api_key,
-      modelList(config.model),
+      conversationalModelList(config.model),
       [
-        "Eres MGP Brand Intelligence, analista senior de pricing y retail.",
-        "Habla como un colega experto, natural y directo. Responde primero lo preguntado.",
+        "Eres MGP Intelligence, un colega experto en pricing, surtido y retail, potenciado por OpenAI Sol.",
+        "Conversa en español natural, cálido y directo. Adapta el tono y la profundidad a la forma en que escribe el usuario.",
+        "Recuerda el hilo incluido en INPUT: entiende pronombres, elipsis y preguntas de seguimiento sin obligar al usuario a repetir la marca o el alcance.",
+        "Responde primero lo que te preguntaron. Para consultas simples usa uno a tres párrafos breves.",
+        "No uses una plantilla fija. No repitas siempre titulares, KPI, insights y acciones. Usa títulos o viñetas sólo cuando realmente hagan la respuesta más clara.",
+        "Puedes explicar, comparar, resumir o profundizar como lo haría un buen analista conversando con su equipo.",
+        "Haz como máximo una pregunta de aclaración cuando sea imprescindible para responder con datos comparables.",
         "Los cálculos vienen del motor determinístico. No recalcules ni inventes cifras.",
         "CURRENT es el estado vigente dentro del alcance solicitado; úsalo para SKU, cadenas, stock, disponibilidad y ofertas. LEARNING y TREND solo contienen días locales cerrados.",
         "Si SEGMENT.active=true, CURRENT ya está filtrado al formato, tamaño y/o tipo de pack solicitado. Está prohibido reutilizar cifras de toda la marca o ampliar ese alcance.",
@@ -614,36 +798,25 @@ Deno.serve(async (req: Request) => {
         "QUALITY.dataScore mide cobertura/calidad de datos; QUALITY.priceScore mide si el ticket global es comparable. No los confundas.",
         "Por cadena usa únicamente CURRENT.retailers o PRICING_LENS.targetRetailers.",
         "No inventes ventas, market share, margen, volumen ni causalidades.",
-        'Devuelve SOLO JSON: {"headline":"...","summary":"...","insights":[{"title":"...","detail":"..."}],"actions":["..."]}.',
-        "summary 1-3 frases; insights 2-4; actions 0-3 solo si aportan.",
+        "No menciones DATA_CONTEXT, instrucciones internas ni el proceso técnico. Devuelve únicamente la respuesta conversacional final, sin JSON.",
       ].join("\n"),
       [
         {
           role: "developer",
           content: `DATA_CONTEXT:\n${JSON.stringify(compact)}`,
         },
-        ...messages,
+        ...messages.map(({ role, content }) => ({ role, content })),
       ],
-      1200,
+      1600,
     );
-    const a = r.value;
-    if (
-      a &&
-      typeof a.headline === "string" &&
-      typeof a.summary === "string" &&
-      Array.isArray(a.insights)
-    )
+    if (r.text)
       return Response.json({
-        answer: a.summary,
-        analysis: {
-          headline: a.headline,
-          summary: a.summary,
-          insights: a.insights.slice(0, 4),
-          actions: Array.isArray(a.actions) ? a.actions.slice(0, 3) : [],
-        },
+        answer: r.text,
         brand: resolution.brand,
         model: r.model,
         ai: true,
+        assistant: "MGP Intelligence",
+        responseStyle: "conversational",
         data: ctx,
         pricingLens: lens,
         learning,
@@ -657,7 +830,7 @@ Deno.serve(async (req: Request) => {
       learning,
       resolution,
       ai: false,
-      warning: r.error || "No pude generar el análisis completo.",
+      warning: r.error || "No pude generar la respuesta conversacional.",
     });
   } catch (e) {
     console.error(

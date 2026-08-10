@@ -65,7 +65,7 @@ const contextualReplacements = [
 
 for (const { label, old, next } of contextualReplacements) replaceOnce(label, old, next);
 
-// ---- Brand Intelligence AI ---------------------------------------------------
+// ---- MGP Intelligence powered by OpenAI Sol ---------------------------------
 replaceOnce(
   "BrandIntelligenceChat import",
   'import styles from "./UnifiedPlatformApp.module.css";',
@@ -84,7 +84,7 @@ if (text.includes(' | "basket"')) {
 replaceOnce(
   "Brand Intelligence menu",
   '{ view: "competitive", label: "Competitive AI", icon: "✦" },',
-  '{ view: "brand-ai", label: "Brand Intelligence AI", icon: "✦" },',
+  '{ view: "brand-ai", label: "MGP Intelligence", icon: "✦" },',
 );
 
 if (text.includes('    { view: "basket", label: "Basket Simulator", icon: "▤" },\n')) {
@@ -95,7 +95,7 @@ if (text.includes('    { view: "basket", label: "Basket Simulator", icon: "▤" 
 replaceOnce(
   "Brand Intelligence copy",
   '  competitive: { title: "Competitive AI", description: "Analiza posición de precio, riesgo competitivo y acciones sugeridas por producto." },',
-  '  "brand-ai": { title: "Brand Intelligence AI", description: "Conversa con tus datos de marca y obtén análisis de precios, surtido, stock y promociones con OpenAI." },',
+  '  "brand-ai": { title: "MGP Intelligence", description: "Conversa naturalmente con tus datos diarios de precios, surtido, stock y promociones, potenciado por OpenAI Sol." },',
 );
 
 if (text.includes('  basket: { title: "Basket Simulator", description: "Compara el costo de una canasta homologada entre supermercados." },\n')) {
@@ -153,7 +153,7 @@ if (text.includes('    if (view === "basket") {')) {
 }
 
 const oldShortcut = '<QuickAction title="IA / Insights" copy="Prioriza brechas, alzas y oportunidades." button="Abrir Competitive AI" onClick={() => navigate("competitive")}/>';
-const newShortcut = '<QuickAction title="Brand Intelligence AI" copy="Pregunta por cualquier marca usando datos reales de la plataforma." button="Abrir chat" onClick={() => navigate("brand-ai")}/>';
+const newShortcut = '<QuickAction title="MGP Intelligence" copy="Conversa con tus datos diarios usando OpenAI Sol." button="Abrir módulo" onClick={() => navigate("brand-ai")}/>';
 if (!text.includes(newShortcut)) {
   if (!text.includes(oldShortcut)) throw new Error('No se encontró el acceso rápido de Competitive AI');
   text = text.replace(oldShortcut, newShortcut);
@@ -165,4 +165,4 @@ if (text.includes('Competitive AI') || text.includes('Basket Simulator') || text
 }
 
 if (changed) writeFileSync(path, text);
-console.log(changed ? "Brand Intelligence AI y tendencia contextual aplicados" : "Prebuild ya aplicado");
+console.log(changed ? "MGP Intelligence y tendencia contextual aplicados" : "Prebuild ya aplicado");

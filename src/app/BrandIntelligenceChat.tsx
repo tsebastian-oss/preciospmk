@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./BrandIntelligenceChat.module.css";
 import historyStyles from "./BrandIntelligenceHistory.module.css";
 
@@ -37,6 +37,17 @@ type BrandSummary = {
   lastObservedAt?: string | null;
 };
 
+type BrandSource = {
+  product?: string;
+  category?: string | null;
+  supermarkets?: number;
+  bestPrice?: number;
+  highestPrice?: number;
+  savingsPct?: number;
+  bestRetailer?: string | null;
+  listings?: Array<{ retailer?: string; price?: number; inStock?: boolean }>;
+};
+
 type ChatMessage = {
   id: string;
   role: "user" | "assistant";
@@ -44,6 +55,8 @@ type ChatMessage = {
   brand?: string | null;
   summary?: BrandSummary;
   analysis?: StructuredAnalysis;
+  sources?: BrandSource[];
+  model?: string | null;
   ai?: boolean;
 };
 
@@ -51,13 +64,14 @@ type ChatResponse = {
   answer?: string;
   analysis?: StructuredAnalysis;
   brand?: string | null;
+  model?: string | null;
   ai?: boolean;
   warning?: string;
   error?: string;
   conversationId?: string;
   conversationTitle?: string;
   candidates?: Array<{ brand: string; products: number }>;
-  data?: { current?: { summary?: BrandSummary } };
+  data?: { current?: { summary?: BrandSummary }; priceMatches?: BrandSource[] };
 };
 
 type Conversation = {
@@ -77,20 +91,23 @@ type StoredMessage = {
   payload?: {
     analysis?: StructuredAnalysis | null;
     summary?: BrandSummary | null;
+    sources?: BrandSource[] | null;
+    model?: string | null;
   } | null;
 };
 
 const EXAMPLES = [
-  "¿Cómo está Becker?",
-  "Analiza OMO y dime qué te llama la atención",
-  "¿En qué cadenas está mejor posicionada Nivea?",
-  "¿Qué oportunidades de precio ves para Coca-Cola?",
+  "¿Cómo está Coca-Cola en lata hoy?",
+  "¿Qué te llama la atención de OMO?",
+  "Explícame la situación de Nivea sin lenguaje técnico",
+  "¿Dónde está más barata Becker y qué tan confiable es la comparación?",
 ];
 
 const WELCOME: ChatMessage = {
   id: "welcome",
   role: "assistant",
-  content: "Pregúntame por cualquier marca presente en la base. Puedo analizar su surtido, cadenas donde aparece, stock, precios, promociones, evolución y brechas competitivas usando los datos monitoreados por MGP.",
+  content: "Hola, soy MGP Intelligence, potenciado por OpenAI Sol. Puedes preguntarme por precios, surtido, stock, promociones o evolución de una marca y seguir conversando sin repetir todo el contexto. Mis respuestas se apoyan en los datos diarios monitoreados por MGP.",
+  model: "gpt-5.6-sol",
   ai: true,
 };
 
@@ -140,6 +157,40 @@ function availability(summary?: BrandSummary) {
   if (finiteNumber(summary?.availabilityPct)) return `${new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 }).format(summary.availabilityPct)}%`;
   if (!finiteNumber(summary?.skus) || summary.skus <= 0 || !finiteNumber(summary.inStock)) return "Sin dato";
   return `${Math.round((summary.inStock / summary.skus) * 100)}%`;
+}
+
+function inlineText(value: string) {
+  return value.split(/(\*\*[^*]+\*\*)/g).map((part, index) =>
+    part.startsWith("**") && part.endsWith("**")
+      ? <strong key={`${part}-${index}`}>{part.slice(2, -2)}</strong>
+      : <Fragment key={`${part}-${index}`}>{part}</Fragment>,
+  );
+}
+
+function ConversationalAnswer({ text }: { text: string }) {
+  const blocks = text.trim().split(/\n\s*\n/).filter(Boolean);
+  return <div className={styles.answer}>{blocks.map((block, index) => {
+    const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
+    if (lines.length && lines.every((line) => /^[-*]\s+/.test(line))) {
+      return <ul key={index}>{lines.map((line, lineIndex) => <li key={lineIndex}>{inlineText(line.replace(/^[-*]\s+/, ""))}</li>)}</ul>;
+    }
+    if (lines.length && lines.every((line) => /^\d+[.)]\s+/.test(line))) {
+      return <ol key={index}>{lines.map((line, lineIndex) => <li key={lineIndex}>{inlineText(line.replace(/^\d+[.)]\s+/, ""))}</li>)}</ol>;
+    }
+    if (lines.length === 1 && /^#{1,3}\s+/.test(lines[0])) {
+      return <h3 key={index}>{inlineText(lines[0].replace(/^#{1,3}\s+/, ""))}</h3>;
+    }
+    return <p key={index}>{lines.map((line, lineIndex) => <Fragment key={lineIndex}>{lineIndex > 0 && <br/>}{inlineText(line)}</Fragment>)}</p>;
+  })}</div>;
+}
+
+function SourceDetails({ sources }: { sources?: BrandSource[] }) {
+  if (!sources?.length) return null;
+  return <details className={styles.provenance}>
+    <summary>Ver comparables usados en el análisis ({sources.length})</summary>
+    <div className={styles.provenanceTable}><table><thead><tr><th>Producto comparable</th><th>Mejor retailer</th><th>Mejor precio</th><th>Precio máx.</th><th>Brecha</th><th>Cadenas</th></tr></thead><tbody>{sources.slice(0, 6).map((source, index) => <tr key={(source.product || "source") + "-" + index}><td><strong>{source.product || "Comparable"}</strong><small>{source.category || ""}</small></td><td>{source.bestRetailer || "—"}</td><td>{money(source.bestPrice)}</td><td>{money(source.highestPrice)}</td><td>{source.savingsPct !== undefined ? Number(source.savingsPct).toFixed(1) + "%" : "—"}</td><td>{source.supermarkets ?? source.listings?.length ?? "—"}</td></tr>)}</tbody></table></div>
+    <p>Estos datos provienen del alcance y período activos. Sol interpreta la información; los precios y brechas se calculan desde la base monitoreada.</p>
+  </details>;
 }
 
 function Kpi({ label, value, detail }: { label: string; value: string; detail?: string }) {
@@ -200,6 +251,7 @@ function ExecutiveAnswer({ message }: { message: ChatMessage }) {
       {summary?.lastObservedAt && <span>Datos al {displayDate(summary.lastObservedAt)}</span>}
       {message.ai === false && <span>Respuesta de respaldo</span>}
     </footer>
+    <SourceDetails sources={message.sources}/>
   </div>;
 }
 
@@ -247,6 +299,8 @@ export default function BrandIntelligenceChat({ filters }: { filters: ChatFilter
         ai: message.ai ?? undefined,
         analysis: message.payload?.analysis ?? undefined,
         summary: message.payload?.summary ?? undefined,
+        sources: message.payload?.sources ?? undefined,
+        model: message.payload?.model ?? undefined,
       }));
       setConversationId(conversation.id);
       setMessages(restored.length ? restored : [WELCOME]);
@@ -294,7 +348,7 @@ export default function BrandIntelligenceChat({ filters }: { filters: ChatFilter
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           conversationId,
-          messages: next.filter((item) => item.id !== "welcome").map(({ role, content }) => ({ role, content })),
+          messages: next.filter((item) => item.id !== "welcome").map(({ role, content, brand }) => ({ role, content, brand })),
           filters,
         }),
       });
@@ -313,6 +367,8 @@ export default function BrandIntelligenceChat({ filters }: { filters: ChatFilter
         ai: data.ai,
         analysis: data.analysis,
         summary: data.data?.current?.summary,
+        sources: data.data?.priceMatches ?? [],
+        model: data.model,
       }]);
       void loadHistory();
       if (data.warning) setError(data.warning);
@@ -333,9 +389,9 @@ export default function BrandIntelligenceChat({ filters }: { filters: ChatFilter
     <div className={styles.hero}>
       <div className={styles.heroIcon}>✦</div>
       <div>
-        <span>MGP · OPENAI</span>
-        <h2>Brand Intelligence AI</h2>
-        <p>Pregunta en lenguaje natural y obtén respuestas basadas en la información real de precios y surtido de la plataforma.</p>
+        <span>POWERED BY OPENAI SOL</span>
+        <h2>MGP Intelligence</h2>
+        <p>Conversa naturalmente con tus datos diarios de precios, surtido, stock y promociones. El módulo recuerda el contexto del hilo.</p>
       </div>
       <div className={styles.scopeBox}>
         <small>ALCANCE ACTUAL</small>
@@ -362,7 +418,7 @@ export default function BrandIntelligenceChat({ filters }: { filters: ChatFilter
             <span className={historyStyles.historyIcon}>✦</span>
             <span className={historyStyles.historyCopy}>
               <strong>{conversation.title}</strong>
-              <small>{conversation.last_brand || "Brand Intelligence"} · {historyDate(conversation.updated_at)}</small>
+              <small>{conversation.last_brand || "MGP Intelligence"} · {historyDate(conversation.updated_at)}</small>
             </span>
             <span
               className={historyStyles.deleteHistory}
@@ -380,19 +436,21 @@ export default function BrandIntelligenceChat({ filters }: { filters: ChatFilter
         <div className={styles.messages}>
           {conversationLoading && <div className={historyStyles.loadingConversation}>Abriendo conversación…</div>}
           {!conversationLoading && messages.map((message) => <article key={message.id} className={`${styles.message} ${message.role === "user" ? styles.user : styles.assistant} ${message.analysis ? styles.executiveMessage : ""}`}>
-            {message.role === "assistant" && <div className={styles.avatar}>AI</div>}
+            {message.role === "assistant" && <div className={styles.avatar}>Sol</div>}
             {message.analysis ? <ExecutiveAnswer message={message}/> : <div className={styles.bubble}>
               {message.brand && <div className={styles.brandTag}><span>●</span>{message.brand}</div>}
-              <div className={styles.answer}>{message.content}</div>
+              <ConversationalAnswer text={message.content}/>
+              <SourceDetails sources={message.sources}/>
               {message.summary && <footer>
                 {finiteNumber(message.summary.skus) && <span>{new Intl.NumberFormat("es-CL").format(message.summary.skus)} SKU</span>}
                 {finiteNumber(message.summary.retailers) && <span>{message.summary.retailers} cadenas</span>}
                 {message.summary.lastObservedAt && <span>Datos al {displayDate(message.summary.lastObservedAt)}</span>}
+                {message.model && <span>{/^gpt-5\.6(?:-sol)?$/.test(message.model) ? "OpenAI Sol" : "OpenAI"}</span>}
                 {message.ai === false && <span>Respuesta de respaldo</span>}
               </footer>}
             </div>}
           </article>)}
-          {loading && <article className={`${styles.message} ${styles.assistant}`}><div className={styles.avatar}>AI</div><div className={`${styles.bubble} ${styles.thinking}`}><i/><i/><i/><span>Analizando la base y preparando respuesta…</span></div></article>}
+          {loading && <article className={`${styles.message} ${styles.assistant}`}><div className={styles.avatar}>Sol</div><div className={`${styles.bubble} ${styles.thinking}`}><i/><i/><i/><span>Revisando los datos y pensando la respuesta…</span></div></article>}
         </div>
 
         {messages.length === 1 && !conversationLoading && <div className={styles.examples}>
@@ -413,7 +471,7 @@ export default function BrandIntelligenceChat({ filters }: { filters: ChatFilter
                 if (input.trim()) void ask(input);
               }
             }}
-            placeholder="Ej: Quiero saber cómo está Becker y dónde tiene las mayores diferencias de precio…"
+            placeholder="Pregúntame algo o continúa la conversación…"
             rows={2}
             maxLength={2500}
             disabled={conversationLoading}
@@ -421,7 +479,7 @@ export default function BrandIntelligenceChat({ filters }: { filters: ChatFilter
           <button type="submit" disabled={loading || conversationLoading || !input.trim()} aria-label="Enviar pregunta">↑</button>
         </form>
         <div className={styles.composerFooter}>
-          <span>Las conversaciones se guardan de forma privada en tu cuenta y las respuestas usan datos de la plataforma.</span>
+          <span>OpenAI Sol conversa sobre datos calculados por MGP. Las conversaciones se guardan de forma privada en tu cuenta.</span>
           {messages.length > 1 && <button onClick={newConversation}>Nueva conversación</button>}
         </div>
       </div>
