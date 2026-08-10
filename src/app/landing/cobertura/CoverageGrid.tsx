@@ -14,8 +14,13 @@ type Retailer = {
 };
 type Payload = { generatedAt?: string; retailers?: Retailer[]; error?: string };
 
-const TYPE_LABELS: Record<string, string> = { supermarket: "Supermercado", pharmacy: "Farmacia", department_store: "Multitienda" };
-const TYPE_ORDER: Record<string, number> = { supermarket: 1, pharmacy: 2, department_store: 3 };
+const TYPE_LABELS: Record<string, string> = {
+  supermarket: "Supermercado",
+  pharmacy: "Farmacia",
+  department_store: "Multitienda",
+  home_improvement: "Hogar y construcción",
+};
+const TYPE_ORDER: Record<string, number> = { supermarket: 1, pharmacy: 2, department_store: 3, home_improvement: 4 };
 
 function freshness(item: Retailer) {
   if (item.freshnessStatus === "fresh") return { label: "Actualización activa", tone: styles.fresh };
