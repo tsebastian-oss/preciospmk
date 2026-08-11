@@ -61,7 +61,7 @@ function dashboardContextFromSignals(signals: DashboardSignal[], filters: Intell
     if (!brand && typeof args.brand === "string" && args.brand.trim()) brand = args.brand.trim().slice(0, 140);
     if (!category && typeof args.category === "string" && args.category.trim()) category = args.category.trim().slice(0, 180);
     if (!retailers.length && Array.isArray(args.supermarkets)) {
-      retailers = [...new Set(args.supermarkets.filter((item): item is string => typeof item === "string" && item.trim()).map((item) => item.trim()))].slice(0, 12);
+      retailers = [...new Set(args.supermarkets.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim()))].slice(0, 12);
     }
     if (Number.isFinite(Number(args.days))) selectedDays = Math.max(7, Math.min(365, Number(args.days)));
 
