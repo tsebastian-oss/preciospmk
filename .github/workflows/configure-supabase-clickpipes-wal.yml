@@ -1,3 +1,4 @@
+# Triggered after SUPABASE_ACCESS_TOKEN was configured
 name: Configure Supabase ClickPipes CDC
 
 on:
