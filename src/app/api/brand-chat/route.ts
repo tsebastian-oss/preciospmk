@@ -48,14 +48,34 @@ export async function POST(request: NextRequest) {
     let title: string | undefined;
     if (!conversationId) { const conversation = await createConversation(token, organizationId, lastUser); conversationId = conversation.id; title = conversation.title; }
     await saveMessage(token, organizationId, conversationId, { role: "user", content: lastUser });
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/brand-intelligence-chat`, { method: "POST", headers: { apikey: SUPABASE_KEY, authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ organizationId, messages, filters: body?.filters ?? {} }), cache: "no-store", signal: AbortSignal.timeout(90_000) });
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/brand-intelligence-chat-v2`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_KEY, authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ organizationId, messages, filters: body?.filters ?? {} }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(120_000),
+    });
     const data = await readJson(response) ?? {};
     if (!response.ok && isDataTimeout(data?.error)) {
       return NextResponse.json({ error: "El análisis está tardando más de lo habitual. Intenta nuevamente en unos segundos.", code: "DATA_TIMEOUT", transient: true, conversationId, conversationTitle: title }, { status: 503 });
     }
     if (!response.ok && data?.error) data.error = safeFailure(data.error, "No fue posible consultar el analista de marca en este momento.");
     if (response.ok && data?.answer) {
-      await saveMessage(token, organizationId, conversationId, { role: "assistant", content: String(data.answer), brand: data.brand ?? null, ai: data.ai, payload: { analysis: data.analysis ?? null, summary: data.data?.current?.summary ?? null, sources: Array.isArray(data.data?.priceMatches) ? data.data.priceMatches.slice(0, 6) : [], model: data.model ?? null } });
+      await saveMessage(token, organizationId, conversationId, {
+        role: "assistant",
+        content: String(data.answer),
+        brand: data.brand ?? null,
+        ai: data.ai,
+        payload: {
+          analysis: data.analysis ?? null,
+          summary: data.data?.current?.summary ?? null,
+          sources: Array.isArray(data.data?.priceMatches) ? data.data.priceMatches.slice(0, 6) : [],
+          model: data.model ?? null,
+          analysisMode: data.analysisMode ?? null,
+          reasoningEffort: data.reasoningEffort ?? null,
+          toolsUsed: Array.isArray(data.toolsUsed) ? data.toolsUsed : [],
+        },
+      });
       await touchConversation(token, organizationId, conversationId, data.brand ?? null);
     }
     return NextResponse.json({ ...data, conversationId, conversationTitle: title }, { status: response.status });
