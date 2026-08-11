@@ -132,7 +132,8 @@ export default function DashboardContextChat({ filters, activeContext, onContext
       });
       const data = await response.json() as ChatResponse;
       if (!response.ok || !data.answer) throw new Error(data.error || "No fue posible responder.");
-      setMessages((current) => [...current, { role: "assistant", content: data.answer as string }].slice(-14));
+      const assistantMessage: ChatMessage = { role: "assistant", content: data.answer };
+      setMessages((current) => [...current, assistantMessage].slice(-14));
       if (data.model) setModel(data.model);
       if (data.dashboardContext) onContextChange(data.dashboardContext);
     } catch (err) {
