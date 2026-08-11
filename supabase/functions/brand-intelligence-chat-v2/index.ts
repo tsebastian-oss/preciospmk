@@ -11,203 +11,49 @@ const outputText=(r:any)=>typeof r?.output_text==="string"?r.output_text.trim():
 const followUp=(q:string)=>/^(?:\s|[¿¡])*(?:y\b|pero\b|entonces\b|ahora\b|adem[aá]s\b|tambi[eé]n\b|el\b|la\b|los\b|las\b|ese\b|esa\b|esos\b|esas\b|qu[eé]\b|cu[aá]nto\b|d[oó]nde\b|cu[aá]l\b|c[oó]mo\b|comp[aá]r|expl[ií]ca|profundiza|detalla|por qu[eé]\b)/i.test(q);
 const smallTalk=(q:string)=>/^(hola|holi|buenas|gracias|ok|perfecto|dale|qu[eé] puedes hacer|ayuda)[.!?\s]*$/i.test(q.trim());
 
-function modeFor(q:string):Mode{
-  const t=norm(q);
-  if(/estrateg|oportunidad|recomiend|recomend|diagnost|profund|por que|causa|plan de accion|competidor|compara.*con|ultimos (30|60|90)|tendencia.*promoc|anomal/.test(t)||q.length>180)return"deep";
-  if(/precio|barat|caro|compar|brecha|stock|disponib|oferta|promoc|tendencia|evoluc|retailer|cadena|surtido/.test(t)||q.length>90)return"analyst";
-  return"fast";
-}
-function segment(q:string){
-  const t=norm(q);
-  const format=/\blata\b/.test(t)?"lata":/\bbotella\b/.test(t)?"botella":/\bbolsa\b/.test(t)?"bolsa":/\bcaja\b/.test(t)?"caja":/\bfrasco\b/.test(t)?"frasco":/\bpote\b/.test(t)?"pote":/\bsachet\b/.test(t)?"sachet":null;
-  const m=t.match(/\b(\d{2,4})\s*(?:ml|cc)\b/); const l=t.match(/\b(\d+(?:[.,]\d+)?)\s*(?:l|lt|litro|litros)\b/);
-  let volumeMl=m?Number(m[1]):l?Math.round(Number(l[1].replace(",","."))*1000):null;
-  if(!Number.isFinite(volumeMl)||Number(volumeMl)<=0||Number(volumeMl)>20000)volumeMl=null;
-  const packageMode=/\b(pack|multipack|x\s*[2-9]\d*)\b/.test(t)?"multipack":/\b(unidad|individual|x\s*1)\b/.test(t)?"single":"all";
-  return{active:Boolean(format||volumeMl||packageMode!=="all"),format,volumeMl,packageMode};
-}
-function variant(q:string){
-  const t=norm(q);
-  if(/\bzero\b|sin azucar/.test(t))return{active:true,label:"Zero",include:["zero"],exclude:["oreo","marshmello","fanta","sprite"]};
-  if(/\blight\b/.test(t))return{active:true,label:"Light",include:["light"],exclude:[]};
-  if(/\b(original|clasica|tradicional)\b/.test(t))return{active:true,label:"Original",include:[],exclude:["zero","light","sin azucar"]};
-  return{active:false,label:null,include:[] as string[],exclude:[] as string[]};
-}
+function modeFor(q:string):Mode{const t=norm(q);if(/estrateg|oportunidad|recomiend|recomend|diagnost|profund|por que|causa|plan de accion|competidor|compara.*con|ultimos (30|60|90)|tendencia.*promoc|anomal/.test(t)||q.length>180)return"deep";if(/precio|barat|caro|compar|brecha|stock|disponib|oferta|promoc|tendencia|evoluc|retailer|cadena|surtido/.test(t)||q.length>90)return"analyst";return"fast";}
+function segment(q:string){const t=norm(q);const format=/\blata\b/.test(t)?"lata":/\bbotella\b/.test(t)?"botella":/\bbolsa\b/.test(t)?"bolsa":/\bcaja\b/.test(t)?"caja":/\bfrasco\b/.test(t)?"frasco":/\bpote\b/.test(t)?"pote":/\bsachet\b/.test(t)?"sachet":null;const m=t.match(/\b(\d{2,4})\s*(?:ml|cc)\b/),l=t.match(/\b(\d+(?:[.,]\d+)?)\s*(?:l|lt|litro|litros)\b/);let volumeMl=m?Number(m[1]):l?Math.round(Number(l[1].replace(",","."))*1000):null;if(!Number.isFinite(volumeMl)||Number(volumeMl)<=0||Number(volumeMl)>20000)volumeMl=null;const packageMode=/\b(pack|multipack|x\s*[2-9]\d*)\b/.test(t)?"multipack":/\b(unidad|individual|x\s*1)\b/.test(t)?"single":"all";return{active:Boolean(format||volumeMl||packageMode!=="all"),format,volumeMl,packageMode};}
+function variant(q:string){const t=norm(q);if(/\bzero\b|sin azucar/.test(t))return{active:true,label:"Zero",include:["zero"],exclude:["oreo","marshmello","fanta","sprite"]};if(/\blight\b/.test(t))return{active:true,label:"Light",include:["light"],exclude:[]};if(/\b(original|clasica|tradicional)\b/.test(t))return{active:true,label:"Original",include:[],exclude:["zero","light","sin azucar"]};return{active:false,label:null,include:[] as string[],exclude:[] as string[]};}
 const effort=(mode:Mode)=>mode==="deep"?"high":mode==="analyst"?"medium":"low";
 const supportsReasoning=(model:string)=>/^gpt-5/i.test(model)||/^o\d/i.test(model);
 
-function usableModelId(id:string){
-  const x=id.toLowerCase();
-  if(!/^(gpt-|o[134]\b|o[134]-)/.test(x))return false;
-  if(/audio|realtime|image|transcrib|tts|search|codex|chat|instruct|embedding|moderation/.test(x))return false;
-  return /^gpt-5/.test(x)||/^gpt-4\.1/.test(x)||/^o3/.test(x)||/^o4-mini/.test(x)||/^o1/.test(x);
-}
-function modelScore(id:string,mode:Mode){
-  const x=id.toLowerCase();
-  let s=0;
-  const ver=x.match(/^gpt-5(?:\.(\d+))?/);
-  if(ver){s=1000+(ver[1]?Number(ver[1])*20:0); if(/pro/.test(x))s+=mode==="deep"?250:-80; if(/mini/.test(x))s+=mode==="fast"?120:-150; if(/nano/.test(x))s+=mode==="fast"?40:-300;}
-  else if(/^o3-pro/.test(x))s=mode==="deep"?900:650;
-  else if(/^o3/.test(x))s=820;
-  else if(/^o4-mini/.test(x))s=760;
-  else if(/^gpt-4\.1/.test(x))s=650;
-  else if(/^o1/.test(x))s=600;
-  if(/-\d{4}-\d{2}-\d{2}$/.test(x))s-=2;
-  return s;
-}
-async function availableModels(apiKey:string){
-  try{
-    const r=await fetch("https://api.openai.com/v1/models",{headers:{authorization:`Bearer ${apiKey}`}});
-    if(!r.ok)return[] as string[];
-    const raw=await r.json().catch(()=>({}));
-    return Array.isArray(raw?.data)?raw.data.map((m:any)=>String(m?.id||"")).filter(Boolean):[];
-  }catch{return[] as string[];}
-}
-function chooseModels(mode:Mode,available:string[],configured?:string|null){
-  const usable=available.filter(usableModelId);
-  const ranked=[...usable].sort((a,b)=>modelScore(b,mode)-modelScore(a,mode));
-  const exactConfigured=configured&&usable.includes(configured)?configured:null;
-  const aliases=ranked.filter(x=>!/-\d{4}-\d{2}-\d{2}$/.test(x));
-  const dated=ranked.filter(x=>/-\d{4}-\d{2}-\d{2}$/.test(x));
-  const result=[exactConfigured,...aliases,...dated,"gpt-4.1"].filter((x,i,a):x is string=>Boolean(x)&&a.indexOf(x)===i);
-  return result.slice(0,12);
-}
+function usableModelId(id:string){const x=id.toLowerCase();if(/audio|realtime|image|transcrib|tts|search|codex|chat|instruct|embedding|moderation/.test(x))return false;return /^gpt-5/.test(x)||/^gpt-4\.1/.test(x)||/^o3/.test(x)||/^o4-mini/.test(x)||/^o1/.test(x);}
+function modelScore(id:string,mode:Mode){const x=id.toLowerCase();let s=0;const ver=x.match(/^gpt-5(?:\.(\d+))?/);if(ver){s=1000+(ver[1]?Number(ver[1])*20:0);if(/pro/.test(x))s+=mode==="deep"?250:-80;if(/mini/.test(x))s+=mode==="fast"?120:-150;if(/nano/.test(x))s+=mode==="fast"?40:-300;}else if(/^o3-pro/.test(x))s=mode==="deep"?900:650;else if(/^o3/.test(x))s=820;else if(/^o4-mini/.test(x))s=760;else if(/^gpt-4\.1/.test(x))s=650;else if(/^o1/.test(x))s=600;if(/-\d{4}-\d{2}-\d{2}$/.test(x))s-=2;return s;}
+async function availableModels(apiKey:string){try{const r=await fetch("https://api.openai.com/v1/models",{headers:{authorization:`Bearer ${apiKey}`}});if(!r.ok)return[] as string[];const raw=await r.json().catch(()=>({}));return Array.isArray(raw?.data)?raw.data.map((m:any)=>String(m?.id||"")).filter(Boolean):[];}catch{return[] as string[];}}
+function chooseModels(mode:Mode,available:string[],configured?:string|null){const usable=available.filter(usableModelId),ranked=[...usable].sort((a,b)=>modelScore(b,mode)-modelScore(a,mode));const exactConfigured=configured&&configured!=="auto"&&usable.includes(configured)?configured:null;const aliases=ranked.filter(x=>!/-\d{4}-\d{2}-\d{2}$/.test(x));const dated=ranked.filter(x=>/-\d{4}-\d{2}-\d{2}$/.test(x));const fallback=usable.includes("gpt-4.1")?"gpt-4.1":null;return [exactConfigured,...aliases,...dated,fallback].filter((x,i,a):x is string=>Boolean(x)&&a.indexOf(x)===i).slice(0,3);}
 
-async function resolveBrand(client:any,org:string,q:string,filters:any,previous:string|null){
-  const {data}=await client.rpc("enterprise_brand_resolver_candidates",{p_organization_id:org,p_query:q,p_retailer_type:filters.retailerType||"all",p_supermarket:filters.supermarket||null,p_category:filters.category||null,p_limit:20});
-  const candidates=Array.isArray(data?.candidates)?data.candidates:[];
-  if(filters.brand)return{brand:filters.brand,candidates,method:"filter"};
-  const strong=candidates[0];
-  const formatOnly=/^(?:el|la|los|las|ese|esa|esos|esas|y|ahora|pero|tambien|también|de|en|del|con|sin|pack|unidad|individual|multipack|lata|latas|botella|botellas|caja|cajas|bolsa|bolsas|frasco|frascos|pote|potes|sachet|sachets|ml|cc|lt|litro|litros|\d+|x\d+|\s)+$/i.test(q.trim());
-  if(previous&&followUp(q)&&(formatOnly||!strong||Number(strong.score)<.93))return{brand:previous,candidates,method:"conversation_context"};
-  if(strong&&Number(strong.score)>=.97&&["exact","phrase","normalized_exact"].includes(strong.matchType))return{brand:strong.brand,candidates,method:"database_exact"};
-  if(previous&&followUp(q))return{brand:previous,candidates,method:"conversation_context"};
-  if(strong&&Number(strong.score)>=.72)return{brand:strong.brand,candidates,method:"database_fuzzy"};
-  return{brand:null,candidates,method:"unresolved"};
-}
-async function currentContext(client:any,org:string,brand:string,q:string,filters:any){
-  const s=segment(q),v=variant(q),days=Math.max(7,Math.min(90,Number(filters.period)||30));
-  if(v.active)return await client.rpc("enterprise_brand_variant_context_v1",{p_organization_id:org,p_brand:brand,p_name_terms:v.include,p_exclude_terms:v.exclude,p_variant_label:v.label,p_exclude_composites:true,p_format:s.format,p_package_mode:s.packageMode,p_volume_ml:s.volumeMl,p_retailer_type:filters.retailerType||"all",p_supermarket:filters.supermarket||null,p_category:filters.category||null,p_stock:filters.stock||"all",p_days:days});
-  if(s.active)return await client.rpc("enterprise_brand_segment_context_v1",{p_organization_id:org,p_brand:brand,p_format:s.format,p_package_mode:s.packageMode,p_volume_ml:s.volumeMl,p_retailer_type:filters.retailerType||"all",p_supermarket:filters.supermarket||null,p_category:filters.category||null,p_stock:filters.stock||"all"});
-  return await client.rpc("enterprise_brand_intelligence_context_v5",{p_organization_id:org,p_brand:brand,p_retailer_type:filters.retailerType||"all",p_supermarket:filters.supermarket||null,p_category:filters.category||null,p_stock:filters.stock||"all",p_days:days});
-}
-async function pricePosition(client:any,org:string,brand:string,q:string,filters:any){
-  const {data:pre,error}=await client.rpc("enterprise_price_map_preflight",{p_organization_id:org,p_brand:brand,p_question:q,p_retailer_type:filters.retailerType||"all",p_supermarket:filters.supermarket||null,p_category:filters.category||null,p_stock:filters.stock||"all"});
-  if(error||!Array.isArray(pre?.clusters)||!pre.clusters.length)return{found:false};
-  const c=pre.clusters[0];
-  const {data,error:ce}=await client.rpc("enterprise_ai_price_map_context_v4",{p_organization_id:org,p_brand:brand,p_category:c.category,p_format:c.format??null,p_measure_type:c.measureType,p_size_bucket:c.sizeBucket??null,p_retailer_type:filters.retailerType||"all",p_supermarket:filters.supermarket||null,p_stock:filters.stock||"all"});
-  if(ce||!data?.found)return{found:false};
-  return{found:true,cluster:c,category:data.category,format:data.format,measureType:data.measureType,sizeBucket:data.sizeBucket,priceBasis:data.priceBasis,quality:data.quality,targetRetailers:data.targetRetailers,points:(data.points??[]).slice(0,16)};
-}
+async function resolveBrand(client:any,org:string,q:string,filters:any,previous:string|null){const {data}=await client.rpc("enterprise_brand_resolver_candidates",{p_organization_id:org,p_query:q,p_retailer_type:filters.retailerType||"all",p_supermarket:filters.supermarket||null,p_category:filters.category||null,p_limit:20});const candidates=Array.isArray(data?.candidates)?data.candidates:[];if(filters.brand)return{brand:filters.brand,candidates,method:"filter"};const strong=candidates[0];const formatOnly=/^(?:el|la|los|las|ese|esa|esos|esas|y|ahora|pero|tambien|también|de|en|del|con|sin|pack|unidad|individual|multipack|lata|latas|botella|botellas|caja|cajas|bolsa|bolsas|frasco|frascos|pote|potes|sachet|sachets|ml|cc|lt|litro|litros|\d+|x\d+|\s)+$/i.test(q.trim());if(previous&&followUp(q)&&(formatOnly||!strong||Number(strong.score)<.93))return{brand:previous,candidates,method:"conversation_context"};if(strong&&Number(strong.score)>=.97&&["exact","phrase","normalized_exact"].includes(strong.matchType))return{brand:strong.brand,candidates,method:"database_exact"};if(previous&&followUp(q))return{brand:previous,candidates,method:"conversation_context"};if(strong&&Number(strong.score)>=.72)return{brand:strong.brand,candidates,method:"database_fuzzy"};return{brand:null,candidates,method:"unresolved"};}
+async function currentContext(client:any,org:string,brand:string,q:string,filters:any){const s=segment(q),v=variant(q),days=Math.max(7,Math.min(90,Number(filters.period)||30));if(v.active)return await client.rpc("enterprise_brand_variant_context_v1",{p_organization_id:org,p_brand:brand,p_name_terms:v.include,p_exclude_terms:v.exclude,p_variant_label:v.label,p_exclude_composites:true,p_format:s.format,p_package_mode:s.packageMode,p_volume_ml:s.volumeMl,p_retailer_type:filters.retailerType||"all",p_supermarket:filters.supermarket||null,p_category:filters.category||null,p_stock:filters.stock||"all",p_days:days});if(s.active)return await client.rpc("enterprise_brand_segment_context_v1",{p_organization_id:org,p_brand:brand,p_format:s.format,p_package_mode:s.packageMode,p_volume_ml:s.volumeMl,p_retailer_type:filters.retailerType||"all",p_supermarket:filters.supermarket||null,p_category:filters.category||null,p_stock:filters.stock||"all"});return await client.rpc("enterprise_brand_intelligence_context_v5",{p_organization_id:org,p_brand:brand,p_retailer_type:filters.retailerType||"all",p_supermarket:filters.supermarket||null,p_category:filters.category||null,p_stock:filters.stock||"all",p_days:days});}
+async function pricePosition(client:any,org:string,brand:string,q:string,filters:any){const {data:pre,error}=await client.rpc("enterprise_price_map_preflight",{p_organization_id:org,p_brand:brand,p_question:q,p_retailer_type:filters.retailerType||"all",p_supermarket:filters.supermarket||null,p_category:filters.category||null,p_stock:filters.stock||"all"});if(error||!Array.isArray(pre?.clusters)||!pre.clusters.length)return{found:false};const c=pre.clusters[0];const {data,error:ce}=await client.rpc("enterprise_ai_price_map_context_v4",{p_organization_id:org,p_brand:brand,p_category:c.category,p_format:c.format??null,p_measure_type:c.measureType,p_size_bucket:c.sizeBucket??null,p_retailer_type:filters.retailerType||"all",p_supermarket:filters.supermarket||null,p_stock:filters.stock||"all"});if(ce||!data?.found)return{found:false};return{found:true,cluster:c,category:data.category,format:data.format,measureType:data.measureType,sizeBucket:data.sizeBucket,priceBasis:data.priceBasis,quality:data.quality,targetRetailers:data.targetRetailers,points:(data.points??[]).slice(0,16)};}
 async function trend(client:any,org:string,brand:string,filters:any,days:number){const {data,error}=await client.rpc("enterprise_contextual_pricing_trend",{p_organization_id:org,p_days:Math.max(7,Math.min(90,days||30)),p_retailer_type:filters.retailerType||"all",p_supermarket:filters.supermarket||null,p_category:filters.category||null,p_brand:brand,p_stock:filters.stock||"all"});return error?{error:error.message}:data;}
 async function matches(client:any,org:string,brand:string,filters:any,limit:number){const {data,error}=await client.rpc("enterprise_price_matches",{p_organization_id:org,p_page:1,p_page_size:Math.max(5,Math.min(30,limit||15)),p_query:null,p_category:filters.category||null,p_brand:brand,p_min_savings:0,p_coverage:"all",p_quality:"all",p_sort:"gap_desc"});return error?{error:error.message}:data;}
 async function compareBrand(client:any,org:string,brand:string,filters:any){const {data,error}=await client.rpc("enterprise_brand_intelligence_context_v5",{p_organization_id:org,p_brand:brand,p_retailer_type:filters.retailerType||"all",p_supermarket:filters.supermarket||null,p_category:filters.category||null,p_stock:filters.stock||"all",p_days:Math.max(7,Math.min(90,Number(filters.period)||30))});return error?{error:error.message}:data;}
 
-const tools=[
-{type:"function",name:"get_price_position",description:"Obtiene posicionamiento de precio comparable de la marca por cluster homogéneo. Úsala para caro/barato, brechas, pricing o comparación de precio.",strict:true,parameters:{type:"object",properties:{question:{type:"string"}},required:["question"],additionalProperties:false}},
-{type:"function",name:"get_trend",description:"Obtiene evolución histórica de precios de la marca para detectar tendencias o cambios.",strict:true,parameters:{type:"object",properties:{days:{type:"integer",minimum:7,maximum:90}},required:["days"],additionalProperties:false}},
-{type:"function",name:"get_price_matches",description:"Obtiene productos homologados y brechas de precio entre retailers para la marca.",strict:true,parameters:{type:"object",properties:{limit:{type:"integer",minimum:5,maximum:30}},required:["limit"],additionalProperties:false}},
-{type:"function",name:"compare_brand",description:"Obtiene el mismo contexto de otra marca para una comparación directa. Usa solo marcas mencionadas o claramente solicitadas por el usuario.",strict:true,parameters:{type:"object",properties:{brand:{type:"string"}},required:["brand"],additionalProperties:false}},
-{type:"function",name:"get_market_pulse",description:"Obtiene el pulso ponderado actual por cadena para contextualizar movimientos generales del mercado.",strict:true,parameters:{type:"object",properties:{},required:[],additionalProperties:false}}
-];
+const tools=[{type:"function",name:"get_price_position",description:"Obtiene posicionamiento de precio comparable de la marca por cluster homogéneo.",strict:true,parameters:{type:"object",properties:{question:{type:"string"}},required:["question"],additionalProperties:false}},{type:"function",name:"get_trend",description:"Obtiene evolución histórica de precios de la marca.",strict:true,parameters:{type:"object",properties:{days:{type:"integer",minimum:7,maximum:90}},required:["days"],additionalProperties:false}},{type:"function",name:"get_price_matches",description:"Obtiene productos homologados y brechas de precio entre retailers para la marca.",strict:true,parameters:{type:"object",properties:{limit:{type:"integer",minimum:5,maximum:30}},required:["limit"],additionalProperties:false}},{type:"function",name:"compare_brand",description:"Obtiene el mismo contexto de otra marca para una comparación directa.",strict:true,parameters:{type:"object",properties:{brand:{type:"string"}},required:["brand"],additionalProperties:false}},{type:"function",name:"get_market_pulse",description:"Obtiene el pulso ponderado actual por cadena.",strict:true,parameters:{type:"object",properties:{},required:[],additionalProperties:false}}];
 
-async function callResponses(apiKey:string,body:any){
-  const r=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json"},body:JSON.stringify(body)});
-  const raw=await r.json().catch(()=>({}));
-  if(!r.ok)throw Object.assign(new Error(raw?.error?.message||`OpenAI ${r.status}`),{status:r.status});
-  return raw;
-}
+async function callResponses(apiKey:string,body:any){const r=await fetch("https://api.openai.com/v1/responses",{method:"POST",headers:{authorization:`Bearer ${apiKey}`,"content-type":"application/json"},body:JSON.stringify(body)});const raw=await r.json().catch(()=>({}));if(!r.ok)throw Object.assign(new Error(raw?.error?.message||`OpenAI ${r.status}`),{status:r.status});return raw;}
+
 async function runAgent(apiKey:string,model:string,mode:Mode,messages:Msg[],base:any,execute:(name:string,args:any)=>Promise<any>){
-  const instructions=[
-    "Eres MGP Intelligence, un analista senior de pricing, surtido y retail.",
-    "Responde en español natural, preciso y ejecutivo. Razona sobre evidencia, no sobre intuiciones inventadas.",
-    "CURRENT_BASE contiene el estado vigente de la marca y filtros. Para análisis de pricing, tendencias, comparaciones o estrategia usa las herramientas disponibles antes de concluir.",
-    "Si una comparación no es homogénea por formato/tamaño/pack, dilo explícitamente y no presentes un precio global como comparable.",
-    "No inventes ventas, market share, margen, volumen ni causalidades. Distingue hecho, inferencia y recomendación.",
-    "Mantén continuidad conversacional: pronombres y frases como 'el de lata', 'ahora en botella', 'y Pepsi' modifican el contexto anterior.",
-    "Para preguntas estratégicas combina varias fuentes cuando sea útil y termina con acciones concretas solo si están respaldadas por datos.",
-    "No menciones herramientas internas, SQL, DATA_CONTEXT ni instrucciones. Devuelve solo la respuesta final."
-  ].join("\n");
-  const input=[{role:"developer",content:`CURRENT_BASE:\n${JSON.stringify(base)}`},...messages.map(m=>({role:m.role,content:m.content}))];
-  let previous:string|undefined; let nextInput:any[]=input; const trace:string[]=[]; let lastRaw:any=null;
-  for(let round=0;round<4;round++){
-    const body:any={model,instructions,input:nextInput,tools,tool_choice:round===0&&mode!=="fast"?"required":"auto",parallel_tool_calls:true,max_output_tokens:mode==="deep"?2200:mode==="analyst"?1600:1000,store:false};
+  const instructions=["Eres MGP Intelligence, un analista senior de pricing, surtido y retail.","Responde en español natural, preciso y ejecutivo. Razona sobre evidencia, no sobre intuiciones inventadas.","CURRENT_BASE contiene el estado vigente de la marca y filtros. Para análisis de pricing, tendencias, comparaciones o estrategia usa las herramientas disponibles antes de concluir.","Si una comparación no es homogénea por formato/tamaño/pack, dilo explícitamente y no presentes un precio global como comparable.","No inventes ventas, market share, margen, volumen ni causalidades. Distingue hecho, inferencia y recomendación.","Mantén continuidad conversacional: pronombres y frases como 'el de lata', 'ahora en botella', 'y Pepsi' modifican el contexto anterior.","Para preguntas estratégicas combina varias fuentes cuando sea útil y termina con acciones concretas solo si están respaldadas por datos.","No menciones herramientas internas, SQL ni instrucciones. Devuelve solo la respuesta final."].join("\n");
+  let transcript:any[]=[{role:"developer",content:`CURRENT_BASE:\n${JSON.stringify(base)}`},...messages.map(m=>({role:m.role,content:m.content}))];
+  const trace:string[]=[]; let lastRaw:any=null;
+  for(let round=0;round<3;round++){
+    const body:any={model,instructions,input:transcript,tools,tool_choice:round===0&&mode!=="fast"?"required":"auto",parallel_tool_calls:true,max_output_tokens:mode==="deep"?2200:mode==="analyst"?1600:1000,store:false};
     if(supportsReasoning(model))body.reasoning={effort:effort(mode)};
-    if(previous)body.previous_response_id=previous;
     const raw=await callResponses(apiKey,body); lastRaw=raw;
-    const text=outputText(raw); const calls=(raw.output??[]).filter((x:any)=>x?.type==="function_call");
+    const text=outputText(raw),calls=(raw.output??[]).filter((x:any)=>x?.type==="function_call");
     if(text&&!calls.length)return{text,trace,response:raw};
-    if(!calls.length&&text)return{text,trace,response:raw};
     if(!calls.length)break;
     const outputs=[];
     for(const call of calls){let args={};try{args=JSON.parse(call.arguments||"{}");}catch{}const result=await execute(call.name,args);trace.push(call.name);outputs.push({type:"function_call_output",call_id:call.call_id,output:JSON.stringify(result)});}
-    previous=raw.id; nextInput=outputs;
+    transcript=[...transcript,...(raw.output??[]),...outputs];
   }
-  if(previous){
-    const finalBody:any={model,instructions:instructions+"\nYa tienes toda la evidencia necesaria. No solicites más herramientas. Entrega ahora una respuesta final útil y concreta.",previous_response_id:previous,input:nextInput,max_output_tokens:mode==="deep"?2200:mode==="analyst"?1600:1000,store:false};
-    if(supportsReasoning(model))finalBody.reasoning={effort:"low"};
-    const finalRaw=await callResponses(apiKey,finalBody); const finalText=outputText(finalRaw);
-    if(finalText)return{text:finalText,trace,response:finalRaw}; lastRaw=finalRaw;
-  }
-  return{text:outputText(lastRaw),trace,response:lastRaw};
-}
-function deterministicFallback(brand:string,ctx:any,q:string){
-  const s=ctx?.current?.summary??{}; const skus=Number(s?.skus??0); const retailers=Number(s?.retailers??s?.chains??s?.supermarkets??0);
-  const min=Number(s?.minPrice??s?.min_price??0); const max=Number(s?.maxPrice??s?.max_price??0); const avg=Number(s?.avgPrice??s?.avg_price??0);
-  const parts=[`${brand}: encontré ${skus} SKU vigentes${retailers?` en ${retailers} cadenas`:""}.`];
-  if(avg>0)parts.push(`El precio promedio observado es $${Math.round(avg).toLocaleString("es-CL")}${min>0&&max>0?`, con un rango aproximado entre $${Math.round(min).toLocaleString("es-CL")} y $${Math.round(max).toLocaleString("es-CL")}`:""}.`);
-  const t=norm(q);
-  if(/como esta|situacion|estado|diagnost/.test(t))parts.push("La cobertura es suficiente para analizar posicionamiento, brechas por cadena y presentaciones; conviene comparar formatos equivalentes antes de concluir si la marca está cara o barata.");
-  else if(/precio|caro|barato|brecha|compar/.test(t))parts.push("Para evaluar precio correctamente hay que homologar formato, tamaño y pack; no conviene usar un promedio global de toda la marca como comparación directa.");
-  else parts.push("Puedo profundizar por cadena, presentación, disponibilidad, promociones o tendencia usando estos datos vigentes.");
-  return parts.join(" ");
+  const finalBody:any={model,instructions:instructions+"\nYa tienes toda la evidencia disponible. No solicites más herramientas. Entrega ahora una respuesta final útil, concreta y basada solo en los datos.",input:transcript,max_output_tokens:mode==="deep"?2200:mode==="analyst"?1600:1000,store:false};
+  if(supportsReasoning(model))finalBody.reasoning={effort:"low"};
+  const finalRaw=await callResponses(apiKey,finalBody),finalText=outputText(finalRaw);
+  return{text:finalText||outputText(lastRaw),trace,response:finalRaw};
 }
 
-Deno.serve(async(req:Request)=>{
-  if(req.method!=="POST")return new Response("Method not allowed",{status:405});
-  const auth=req.headers.get("authorization")??""; const url=Deno.env.get("SUPABASE_URL")!,anon=Deno.env.get("SUPABASE_ANON_KEY")!,service=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  try{
-    const body=await req.json().catch(()=>({})); const org=typeof body?.organizationId==="string"?body.organizationId:""; const messages=cleanMsgs(body?.messages); const q=[...messages].reverse().find(m=>m.role==="user")?.content??"";
-    if(!org||!q)return Response.json({error:"Falta la organización o la pregunta."},{status:400});
-    const user=createClient(url,anon,{global:{headers:{Authorization:auth}}}); const {data:u,error:ue}=await user.auth.getUser();
-    if(ue||!u.user)return Response.json({error:"No autorizado"},{status:401});
-    const svc=createClient(url,service); const {data:cfg}=await svc.rpc("get_ai_runtime_config_service"); const config=(cfg??{}) as Runtime; const filters=body?.filters??{};
-    const previousBrand=[...messages].slice(0,-1).reverse().find(m=>m.role==="assistant"&&m.brand)?.brand??null;
-    const resolution=await resolveBrand(user,org,q,filters,previousBrand);
-    if(!resolution.brand){
-      if(smallTalk(q))return Response.json({answer:"Hola. Puedes preguntarme por precios, promociones, disponibilidad, surtido, tendencias o comparar marcas y cadenas. También puedo hacer análisis más profundos y darte recomendaciones basadas en los datos monitoreados.",brand:null,ai:false,analysisMode:"fast"});
-      const suggestions=resolution.candidates.slice(0,3).map((c:any)=>c.brand);
-      return Response.json({answer:suggestions.length?`No estoy seguro de qué marca quieres analizar. ¿Te refieres a ${suggestions.join(", ")}?`:"¿Qué marca quieres que analice?",brand:null,candidates:resolution.candidates,ai:false});
-    }
-    const {data:ctx,error:ce}=await currentContext(user,org,resolution.brand,q,filters);
-    if(ce||!ctx?.found)return Response.json({answer:"Identifiqué la marca, pero no encontré observaciones vigentes con este alcance. Puedo ampliar los filtros o revisar otra presentación.",brand:resolution.brand,ai:false,warning:"no_current_observations",resolution});
-    const mode=modeFor(q);
-    const base={brand:resolution.brand,current:ctx.current,trend:ctx.trend,quality:ctx.quality,scope:ctx.scope,segment:ctx.segment??{...segment(q),variant:variant(q).label},resolution:{method:resolution.method}};
-    if(!config.enabled||!config.api_key)return Response.json({answer:deterministicFallback(resolution.brand,ctx,q),brand:resolution.brand,data:ctx,ai:false,analysisMode:mode});
+function deterministicFallback(brand:string,ctx:any,q:string){const s=ctx?.current?.summary??{},skus=Number(s?.skus??0),retailers=Number(s?.retailers??s?.chains??s?.supermarkets??0),min=Number(s?.minPrice??s?.min_price??0),max=Number(s?.maxPrice??s?.max_price??0),avg=Number(s?.avgPrice??s?.avg_price??0);const parts=[`${brand}: encontré ${skus} SKU vigentes${retailers?` en ${retailers} cadenas`:""}.`];if(avg>0)parts.push(`El precio promedio observado es $${Math.round(avg).toLocaleString("es-CL")}${min>0&&max>0?`, con un rango aproximado entre $${Math.round(min).toLocaleString("es-CL")} y $${Math.round(max).toLocaleString("es-CL")}`:""}.`);const t=norm(q);if(/como esta|situacion|estado|diagnost/.test(t))parts.push("La cobertura es suficiente para analizar posicionamiento, brechas por cadena y presentaciones; conviene comparar formatos equivalentes antes de concluir si la marca está cara o barata.");else if(/precio|caro|barato|brecha|compar/.test(t))parts.push("Para evaluar precio correctamente hay que homologar formato, tamaño y pack; no conviene usar un promedio global de toda la marca como comparación directa.");else parts.push("Puedo profundizar por cadena, presentación, disponibilidad, promociones o tendencia usando estos datos vigentes.");return parts.join(" ");}
 
-    const execute=async(name:string,args:any)=>{
-      if(name==="get_price_position")return await pricePosition(user,org,resolution.brand,String(args.question||q),filters);
-      if(name==="get_trend")return await trend(user,org,resolution.brand,filters,Number(args.days)||Number(filters.period)||30);
-      if(name==="get_price_matches")return await matches(user,org,resolution.brand,filters,Number(args.limit)||15);
-      if(name==="compare_brand")return await compareBrand(user,org,String(args.brand||""),filters);
-      if(name==="get_market_pulse"){const {data,error}=await user.rpc("enterprise_weighted_price_pulse",{p_organization_id:org});return error?{error:error.message}:data;}
-      return{error:"unknown_tool"};
-    };
-
-    const available=await availableModels(config.api_key);
-    const candidates=chooseModels(mode,available,config.model);
-    let last="";
-    for(const model of candidates){
-      try{
-        const result=await runAgent(config.api_key,model,mode,messages,base,execute);
-        if(result.text)return Response.json({answer:result.text,brand:resolution.brand,model,ai:true,assistant:"MGP Intelligence",responseStyle:"agentic",analysisMode:mode,reasoningEffort:supportsReasoning(model)?effort(mode):"none",toolsUsed:result.trace,data:ctx,resolution,modelSelection:{availableCount:available.length,auto:true}});
-        last="respuesta vacía";
-      }catch(e:any){
-        last=e?.message||String(e);
-        const status=Number(e?.status);
-        if(![400,403,404,408,409,429,500,502,503,504].includes(status))break;
-      }
-    }
-    return Response.json({answer:deterministicFallback(resolution.brand,ctx,q),brand:resolution.brand,data:ctx,ai:false,warning:"advanced_model_unavailable",analysisMode:mode,responseStyle:"deterministic_fallback",modelSelection:{availableCount:available.length,auto:true}});
-  }catch(e){console.error(e);return Response.json({error:"No pude completar el análisis avanzado."},{status:500});}
-});
+Deno.serve(async(req:Request)=>{if(req.method!=="POST")return new Response("Method not allowed",{status:405});const auth=req.headers.get("authorization")??"",url=Deno.env.get("SUPABASE_URL")!,anon=Deno.env.get("SUPABASE_ANON_KEY")!,service=Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;try{const body=await req.json().catch(()=>({})),org=typeof body?.organizationId==="string"?body.organizationId:"",messages=cleanMsgs(body?.messages),q=[...messages].reverse().find(m=>m.role==="user")?.content??"";if(!org||!q)return Response.json({error:"Falta la organización o la pregunta."},{status:400});const user=createClient(url,anon,{global:{headers:{Authorization:auth}}});const {data:u,error:ue}=await user.auth.getUser();if(ue||!u.user)return Response.json({error:"No autorizado"},{status:401});const svc=createClient(url,service),{data:cfg}=await svc.rpc("get_ai_runtime_config_service"),config=(cfg??{}) as Runtime,filters=body?.filters??{},previousBrand=[...messages].slice(0,-1).reverse().find(m=>m.role==="assistant"&&m.brand)?.brand??null,resolution=await resolveBrand(user,org,q,filters,previousBrand);if(!resolution.brand){if(smallTalk(q))return Response.json({answer:"Hola. Puedes preguntarme por precios, promociones, disponibilidad, surtido, tendencias o comparar marcas y cadenas.",brand:null,ai:false,analysisMode:"fast"});const suggestions=resolution.candidates.slice(0,3).map((c:any)=>c.brand);return Response.json({answer:suggestions.length?`No estoy seguro de qué marca quieres analizar. ¿Te refieres a ${suggestions.join(", ")}?`:"¿Qué marca quieres que analice?",brand:null,candidates:resolution.candidates,ai:false});}const {data:ctx,error:ce}=await currentContext(user,org,resolution.brand,q,filters);if(ce||!ctx?.found)return Response.json({answer:"Identifiqué la marca, pero no encontré observaciones vigentes con este alcance.",brand:resolution.brand,ai:false,warning:"no_current_observations",resolution});const mode=modeFor(q),base={brand:resolution.brand,current:ctx.current,trend:ctx.trend,quality:ctx.quality,scope:ctx.scope,segment:ctx.segment??{...segment(q),variant:variant(q).label},resolution:{method:resolution.method}};if(!config.enabled||!config.api_key)return Response.json({answer:deterministicFallback(resolution.brand,ctx,q),brand:resolution.brand,data:ctx,ai:false,analysisMode:mode});const execute=async(name:string,args:any)=>{if(name==="get_price_position")return await pricePosition(user,org,resolution.brand,String(args.question||q),filters);if(name==="get_trend")return await trend(user,org,resolution.brand,filters,Number(args.days)||Number(filters.period)||30);if(name==="get_price_matches")return await matches(user,org,resolution.brand,filters,Number(args.limit)||15);if(name==="compare_brand")return await compareBrand(user,org,String(args.brand||""),filters);if(name==="get_market_pulse"){const {data,error}=await user.rpc("enterprise_weighted_price_pulse",{p_organization_id:org});return error?{error:error.message}:data;}return{error:"unknown_tool"};};const available=await availableModels(config.api_key),candidates=chooseModels(mode,available,config.model);console.log("MGP model-selection",JSON.stringify({availableCount:available.length,candidates}));let last="";for(const model of candidates){try{const result=await runAgent(config.api_key,model,mode,messages,base,execute);if(result.text)return Response.json({answer:result.text,brand:resolution.brand,model,ai:true,assistant:"MGP Intelligence",responseStyle:"agentic",analysisMode:mode,reasoningEffort:supportsReasoning(model)?effort(mode):"none",toolsUsed:result.trace,data:ctx,resolution,modelSelection:{availableCount:available.length,auto:true,candidates:candidates.length}});last="respuesta vacía";}catch(e:any){last=e?.message||String(e);const status=Number(e?.status);console.warn("MGP model-failed",JSON.stringify({model,status,message:last.slice(0,240)}));if(![400,403,404,408,409,429,500,502,503,504].includes(status))break;}}return Response.json({answer:deterministicFallback(resolution.brand,ctx,q),brand:resolution.brand,data:ctx,ai:false,warning:"advanced_model_unavailable",analysisMode:mode,responseStyle:"deterministic_fallback",modelSelection:{availableCount:available.length,auto:true,candidates:candidates.length}});}catch(e){console.error(e);return Response.json({error:"No pude completar el análisis avanzado."},{status:500});}});
