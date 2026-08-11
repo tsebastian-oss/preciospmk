@@ -28,16 +28,9 @@ export type CommercialAccountPayload = {
 
 const VIEW_MODULE: Record<string, string | null> = {
   overview: "overview",
-  "price-image": "price-image",
-  "price-matching": "pricing",
   "brand-ai": "brand-intelligence",
   "price-map": "optimizer",
   promotions: "promotions",
-  assortment: "assortment-gaps",
-  movements: "price-movements",
-  products: "products",
-  categories: "products",
-  retailers: "products",
   downloads: "downloads",
   alerts: "alerts",
   scraping: "data-quality",
@@ -50,7 +43,7 @@ export function requiredModuleForView(view: string) {
 
 export function minimumPlanForView(view: string) {
   if (view === "scraping") return "Enterprise";
-  if (["brand-ai", "price-map", "assortment"].includes(view)) return "Business";
+  if (["brand-ai", "price-map"].includes(view)) return "Business";
   return "Starter";
 }
 
@@ -119,7 +112,7 @@ export function CommercialBanner({ account }: { account: CommercialAccountPayloa
 }
 
 const TRIAL_STEPS = [
-  { view: "products", title: "Explora tu catálogo", copy: "Busca productos y valida la cobertura de tus retailers." },
+  { view: "promotions", title: "Revisa promociones", copy: "Detecta ofertas vigentes dentro de tu alcance." },
   { view: "brand-ai", title: "Pregunta por una marca", copy: "Obtén un diagnóstico basado en datos reales." },
   { view: "price-map", title: "Construye un AI Price Map", copy: "Compara posicionamiento, cobertura y precio relativo." },
   { view: "downloads", title: "Exporta un análisis", copy: "Lleva los datos a Excel o CSV para tu equipo." },

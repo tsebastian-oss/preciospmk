@@ -33,7 +33,7 @@ const plans = [
     cta: "Probar Business 7 días",
     copy: "Para equipos que necesitan inteligencia completa, IA y análisis avanzado.",
     popular: true,
-    features: ["Hasta 10 usuarios", "Hasta 9 retailers", "Monitoreo avanzado", "AI Price Map", "Brand Intelligence AI", "Assortment Gaps y tendencias", "250 exportaciones / mes", "Soporte prioritario", "Onboarding incluido"],
+    features: ["Hasta 10 usuarios", "Hasta 9 retailers", "Monitoreo avanzado", "AI Price Map", "Brand Intelligence AI", "Promociones y alertas", "250 exportaciones / mes", "Soporte prioritario", "Onboarding incluido"],
   },
   {
     name: "Enterprise",
