@@ -28,7 +28,7 @@ export type CommercialAccountPayload = {
 
 const VIEW_MODULE: Record<string, string | null> = {
   overview: "overview",
-  "brand-ai": "brand-intelligence",
+  "category-intelligence": "brand-intelligence",
   "price-map": "optimizer",
   promotions: "promotions",
   downloads: "downloads",
@@ -43,7 +43,7 @@ export function requiredModuleForView(view: string) {
 
 export function minimumPlanForView(view: string) {
   if (view === "scraping") return "Enterprise";
-  if (["brand-ai", "price-map"].includes(view)) return "Business";
+  if (["category-intelligence", "price-map"].includes(view)) return "Business";
   return "Starter";
 }
 
@@ -113,7 +113,7 @@ export function CommercialBanner({ account }: { account: CommercialAccountPayloa
 
 const TRIAL_STEPS = [
   { view: "promotions", title: "Revisa promociones", copy: "Detecta ofertas vigentes dentro de tu alcance." },
-  { view: "brand-ai", title: "Pregunta por una marca", copy: "Obtén un diagnóstico basado en datos reales." },
+  { view: "category-intelligence", title: "Analiza una categoría", copy: "Compara precio, surtido y promociones usando ClickHouse." },
   { view: "price-map", title: "Construye un AI Price Map", copy: "Compara posicionamiento, cobertura y precio relativo." },
   { view: "downloads", title: "Exporta un análisis", copy: "Lleva los datos a Excel o CSV para tu equipo." },
 ] as const;
