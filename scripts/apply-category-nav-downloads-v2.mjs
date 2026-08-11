@@ -57,6 +57,12 @@ app = app.replace(/^\s*if \(view === "price-map"\) return <AIPriceMap[^\n]*\n/m,
 app = app.replace(/^\s*if \(view === "promotions"\) return renderProducts\(true\);\n/m, '');
 app = app.replaceAll('if (view !== "promotions") return;', 'return; // global Promotions module retired');
 
+// Earlier prebuilds may leave conditional branches tied to retired views. Make them unreachable.
+app = app.replaceAll('view === "promotions"', 'false');
+app = app.replaceAll('view !== "promotions"', 'true');
+app = app.replaceAll('view === "price-map"', 'false');
+app = app.replaceAll('view !== "price-map"', 'true');
+
 // Category Intelligence is now a first-class menu group, not a child of Pricing Intelligence.
 const pricingGroup = /  \{ label: "Pricing Intelligence", items: \[\n[\s\S]*?  \] \},\n/;
 if (pricingGroup.test(app)) {
