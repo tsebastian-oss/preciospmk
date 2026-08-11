@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 const DEFAULT_SUPABASE_URL = "https://yfpixszkiakwzrqdcfbw.supabase.co";
 const DEFAULT_PUBLISHABLE_KEY = "sb_publishable_4FrGlw8owGm5EtwMs9V5zQ_oBrH0c0-";
+const REFRESH_TIMEOUT_MS = 1500;
 const PRIVATE_API_PREFIXES = [
   "/api/dashboard",
   "/api/products",
@@ -50,24 +51,10 @@ function authConfig() {
   };
 }
 
-async function sessionState(request: NextRequest): Promise<SessionState> {
-  const accessToken = request.cookies.get("mgp_access_token")?.value;
-  const refreshToken = request.cookies.get("mgp_refresh_token")?.value;
+async function refreshSession(refreshToken: string): Promise<SessionState> {
   const { supabaseUrl, apiKey } = authConfig();
-
-  if (accessToken) {
-    try {
-      const userResponse = await fetch(`${supabaseUrl}/auth/v1/user`, {
-        headers: { apikey: apiKey, authorization: `Bearer ${accessToken}` },
-        cache: "no-store",
-      });
-      if (userResponse.ok) return { authenticated: true };
-    } catch {
-      // Continue to refresh-token flow.
-    }
-  }
-
-  if (!refreshToken) return { authenticated: false };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REFRESH_TIMEOUT_MS);
 
   try {
     const refreshResponse = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=refresh_token`, {
@@ -75,6 +62,7 @@ async function sessionState(request: NextRequest): Promise<SessionState> {
       headers: { apikey: apiKey, "content-type": "application/json" },
       body: JSON.stringify({ refresh_token: refreshToken }),
       cache: "no-store",
+      signal: controller.signal,
     });
     if (!refreshResponse.ok) return { authenticated: false };
     const payload = await refreshResponse.json() as {
@@ -90,8 +78,26 @@ async function sessionState(request: NextRequest): Promise<SessionState> {
       expiresIn: payload.expires_in,
     };
   } catch {
+    // Middleware must never wait on an unhealthy upstream until Vercel's hard timeout.
     return { authenticated: false };
+  } finally {
+    clearTimeout(timeout);
   }
+}
+
+async function sessionState(request: NextRequest): Promise<SessionState> {
+  const accessToken = request.cookies.get("mgp_access_token")?.value;
+  const refreshToken = request.cookies.get("mgp_refresh_token")?.value;
+
+  // Middleware is only a fast routing/session-presence guard. Real authorization
+  // is enforced again inside protected API routes (for example enterpriseAccess).
+  // Avoid a remote /auth/v1/user call on every page and API request: that call made
+  // the whole application dependent on Supabase latency before Vercel could route.
+  if (accessToken) return { authenticated: true };
+  if (!refreshToken) return { authenticated: false };
+
+  // Network is used only on the infrequent token-refresh path, with a strict cap.
+  return refreshSession(refreshToken);
 }
 
 function applyHeaders(response: NextResponse) {
