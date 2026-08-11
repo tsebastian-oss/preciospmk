@@ -50,9 +50,7 @@ export async function GET(request: NextRequest) {
     stock: { in: 0, out: 0 },
   }, {
     headers: {
-      "cache-control": "private, no-store, max-age=0, must-revalidate",
-      pragma: "no-cache",
-      expires: "0",
+      "cache-control": "private, max-age=60, stale-while-revalidate=300",
     },
   });
 }
