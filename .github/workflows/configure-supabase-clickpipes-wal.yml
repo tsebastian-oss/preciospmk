@@ -44,9 +44,8 @@ jobs:
 
       - name: Configure WAL retention for ClickPipes CDC
         run: |
-          supabase --experimental \
+          supabase --experimental postgres-config update \
             --project-ref "$SUPABASE_PROJECT_REF" \
-            postgres-config update \
             --config max_slot_wal_keep_size=100GB
 
       - name: Apply the Vault-stored password to clickpipes_user
@@ -88,6 +87,5 @@ jobs:
 
       - name: Show resulting Postgres config overrides
         run: |
-          supabase --experimental \
-            --project-ref "$SUPABASE_PROJECT_REF" \
-            postgres-config get
+          supabase --experimental postgres-config get \
+            --project-ref "$SUPABASE_PROJECT_REF"
