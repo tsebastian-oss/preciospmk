@@ -5,12 +5,15 @@ const app = readFileSync(appPath, "utf8");
 const map = readFileSync("src/app/AIPriceMap.tsx", "utf8");
 const pricing = readFileSync("src/app/landing/precios/page.tsx", "utf8");
 const landing = readFileSync("src/app/landing/page.tsx", "utf8");
+const category = readFileSync("src/app/CategoryIntelligence.tsx", "utf8");
+const categoryData = readFileSync("src/lib/clickhouse-category-intelligence.ts", "utf8");
 
 const requiredApp = [
   ['AI Price Map import', 'import AIPriceMap from "./AIPriceMap";'],
   ['AI Price Map renderer', 'if (view === "price-map") return <AIPriceMap filters={filters}/>;'],
-  ['Brand Intelligence import', 'import BrandIntelligenceChat from "./BrandIntelligenceChat";'],
-  ['Brand Intelligence renderer', 'if (view === "brand-ai") return <BrandIntelligenceChat filters={filters}/>;'],
+  ['Category Intelligence import', 'import CategoryIntelligence from "./CategoryIntelligence";'],
+  ['Category Intelligence renderer', 'if (view === "category-intelligence") return <CategoryIntelligence filters={{ supermarket: filters.supermarket, period: filters.period }}/>;'],
+  ['Category Intelligence nav', 'label: "Análisis de Categorías"'],
   ['Account menu import', 'import AccountMenu from "./AccountMenu";'],
   ['Account menu renderer', '<AccountMenu skuCount={number(summary?.total_products)} stockCoverage={stockCoverage}/>'],
   ['Persistent alert center import', 'import CustomerAlerts from "./CustomerAlerts";'],
@@ -32,6 +35,9 @@ const forbiddenApp = [
   'AI Price Optimizer',
   'Competitive AI',
   'Basket Simulator',
+  'BrandIntelligenceChat',
+  'view === "brand-ai"',
+  'view: "brand-ai"',
   'view === "optimizer"',
   'view === "competitive"',
   'view === "basket"',
@@ -68,6 +74,10 @@ for (const marker of forbiddenApp) {
 if (!map.includes('Detalle y trazabilidad del análisis')) failures.push('AI Price Map no muestra trazabilidad de fuentes');
 if (!map.includes('observedDate(p.lastObservedAt)')) failures.push('AI Price Map no muestra fecha del dato utilizado');
 if (!map.includes('p.sampleProducts?.slice(0,2)')) failures.push('AI Price Map no muestra muestra de productos analizados');
+if (!category.includes('100% ClickHouse')) failures.push('Category Intelligence no declara fuente ClickHouse');
+if (!category.includes('LineChart') || !category.includes('BrandDonut') || !category.includes('Heatmap')) failures.push('Category Intelligence no incluye el set visual esperado');
+if (!categoryData.includes('source: "clickhouse" as const')) failures.push('Category Intelligence no fija ClickHouse como fuente analítica');
+if (categoryData.toLowerCase().includes('supabase')) failures.push('Category Intelligence contiene dependencia analítica a Supabase');
 
 if (pricing.includes('Competitive AI')) failures.push('Pricing todavía publica Competitive AI');
 if (pricing.includes('AI Price Optimizer')) failures.push('Pricing todavía publica AI Price Optimizer');
@@ -81,4 +91,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("Prebuild integrity OK: IA, trazabilidad, permisos por plan, navegación, cargas por vista y cobertura de farmacias validados.");
+console.log("Prebuild integrity OK: Category Intelligence, IA, permisos, navegación, cargas por vista y cobertura validados.");
