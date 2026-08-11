@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - main
       - ops/clickpipes-cdc
     paths:
       - .github/workflows/configure-supabase-clickpipes-wal.yml
