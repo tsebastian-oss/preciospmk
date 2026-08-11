@@ -4,21 +4,16 @@ const componentPath = "src/app/BrandIntelligenceChat.tsx";
 const cssPath = "src/app/BrandIntelligenceChat.module.css";
 
 let source = fs.readFileSync(componentPath, "utf8");
-
 const start = source.indexOf("function inlineText(value: string) {");
 const end = source.indexOf("\nfunction SourceDetails(", start);
 if (start < 0 || end < 0) throw new Error("Brand Intelligence conversational renderer anchor not found");
 
 const renderer = String.raw`function inlineText(value: string) {
-  return value.split(/(\*\*[^*]+\*\*|` + "`" + String.raw`[^` + "`" + String.raw`]+` + "`" + String.raw`)/g).map((part, index) => {
-    if (part.startsWith("**") && part.endsWith("**")) {
-      return <strong key={part + "-" + index}>{part.slice(2, -2)}</strong>;
-    }
-    if (part.startsWith("` + "`" + String.raw`") && part.endsWith("` + "`" + String.raw`")) {
-      return <code key={part + "-" + index}>{part.slice(1, -1)}</code>;
-    }
-    return <Fragment key={part + "-" + index}>{part}</Fragment>;
-  });
+  return value.split(/(\*\*[^*]+\*\*)/g).map((part, index) =>
+    part.startsWith("**") && part.endsWith("**")
+      ? <strong key={part + "-" + index}>{part.slice(2, -2)}</strong>
+      : <Fragment key={part + "-" + index}>{part}</Fragment>,
+  );
 }
 
 function tableCells(line: string) {
@@ -131,7 +126,7 @@ fs.writeFileSync(componentPath, source);
 let css = fs.readFileSync(cssPath, "utf8");
 const marker = "/* intelligence-markdown-renderer-v1 */";
 if (!css.includes(marker)) {
-  css += `\n${marker}\n.answer h4{margin:10px 0 7px;color:#20324f;font-size:13px;line-height:1.4}.answer code{padding:2px 5px;border:1px solid #dce5f2;border-radius:5px;background:#eef3fa;color:#28466f;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:.9em}.answer blockquote{margin:10px 0;padding:9px 12px;border-left:3px solid #8bb1ff;border-radius:0 8px 8px 0;background:#f1f6ff;color:#4e607a}.markdownTableWrap{width:100%;max-width:100%;margin:10px 0 12px;overflow-x:auto;border:1px solid #dce5f0;border-radius:11px;background:#fff;box-shadow:0 2px 7px rgba(37,65,105,.035)}.markdownTable{width:100%;min-width:520px;border-collapse:separate;border-spacing:0;font-size:12px;line-height:1.45}.markdownTable th,.markdownTable td{padding:9px 11px;border-right:1px solid #e7edf5;border-bottom:1px solid #e7edf5;text-align:left;vertical-align:top;white-space:normal}.markdownTable th:last-child,.markdownTable td:last-child{border-right:0}.markdownTable tbody tr:last-child td{border-bottom:0}.markdownTable th{background:#f1f5fb;color:#4f617a;font-size:10px;font-weight:850;letter-spacing:.02em}.markdownTable td{color:#26364d}.markdownTable td strong{color:#14243b}.markdownTable tbody tr:nth-child(even) td{background:#fbfcfe}@media(max-width:760px){.markdownTable{min-width:440px}.markdownTable th,.markdownTable td{padding:8px 9px}.answer{font-size:12.5px}}\n`;
+  css += `\n${marker}\n.answer h4{margin:10px 0 7px;color:#20324f;font-size:13px;line-height:1.4}.answer blockquote{margin:10px 0;padding:9px 12px;border-left:3px solid #8bb1ff;border-radius:0 8px 8px 0;background:#f1f6ff;color:#4e607a}.markdownTableWrap{width:100%;max-width:100%;margin:10px 0 12px;overflow-x:auto;border:1px solid #dce5f0;border-radius:11px;background:#fff;box-shadow:0 2px 7px rgba(37,65,105,.035)}.markdownTable{width:100%;min-width:520px;border-collapse:separate;border-spacing:0;font-size:12px;line-height:1.45}.markdownTable th,.markdownTable td{padding:9px 11px;border-right:1px solid #e7edf5;border-bottom:1px solid #e7edf5;text-align:left;vertical-align:top;white-space:normal}.markdownTable th:last-child,.markdownTable td:last-child{border-right:0}.markdownTable tbody tr:last-child td{border-bottom:0}.markdownTable th{background:#f1f5fb;color:#4f617a;font-size:10px;font-weight:850;letter-spacing:.02em}.markdownTable td{color:#26364d}.markdownTable td strong{color:#14243b}.markdownTable tbody tr:nth-child(even) td{background:#fbfcfe}@media(max-width:760px){.markdownTable{min-width:440px}.markdownTable th,.markdownTable td{padding:8px 9px}.answer{font-size:12.5px}}\n`;
   fs.writeFileSync(cssPath, css);
 }
 
