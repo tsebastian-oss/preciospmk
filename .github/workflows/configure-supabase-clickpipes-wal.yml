@@ -1,4 +1,4 @@
-# Triggered after SUPABASE_ACCESS_TOKEN was configured
+# Internal observable run for ClickPipes CDC setup
 name: Configure Supabase ClickPipes CDC
 
 on:
