@@ -1,18 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
+import { clickHouseConfigured } from "@/lib/clickhouse";
+import {
+  contextualPricingTrendFromClickHouse,
+  type ContextualTrendPayload,
+} from "@/lib/clickhouse-pricing";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-type TrendPayload = {
-  series: unknown[];
-  currentDayObservations: number;
-  latestObservationAt: string | null;
-  scopeLabel?: string;
-  mode?: string;
-  autoSelected?: boolean;
-  error?: string;
-};
 
 const RETAILER_TYPES = new Set(["supermarket", "department_store", "pharmacy"]);
 
@@ -26,9 +21,20 @@ function days(value: string | null) {
   return parsed;
 }
 
+function response(payload: ContextualTrendPayload | Record<string, unknown>) {
+  return NextResponse.json(payload, {
+    headers: {
+      "cache-control": "private, no-store, max-age=0, must-revalidate",
+      pragma: "no-cache",
+      expires: "0",
+    },
+  });
+}
+
 export async function GET(request: NextRequest) {
   const authorization = await enterpriseAccess(request, "overview");
   if (authorization.response) return authorization.response;
+  const access = authorization.access!;
 
   const params = request.nextUrl.searchParams;
   const retailerTypeRaw = clean(params.get("retailerType"), 40);
@@ -40,8 +46,24 @@ export async function GET(request: NextRequest) {
   const stock = stockRaw === "in" || stockRaw === "out" ? stockRaw : "all";
   const requestedDays = days(params.get("days"));
 
-  const result = await enterpriseRpc<TrendPayload>(request, "enterprise_contextual_pricing_trend", {
-    p_organization_id: authorization.access?.organizationId,
+  if (clickHouseConfigured()) {
+    try {
+      const payload = await contextualPricingTrendFromClickHouse(access, {
+        days: requestedDays,
+        retailerType,
+        supermarket,
+        category,
+        brand,
+        stock,
+      });
+      return response(payload);
+    } catch {
+      console.warn("ClickHouse contextual pricing trend failed; falling back to Supabase.");
+    }
+  }
+
+  const result = await enterpriseRpc<ContextualTrendPayload>(request, "enterprise_contextual_pricing_trend", {
+    p_organization_id: access.organizationId,
     p_days: requestedDays,
     p_retailer_type: retailerType,
     p_supermarket: supermarket,
@@ -52,18 +74,17 @@ export async function GET(request: NextRequest) {
 
   if (result.response) return result.response;
 
-  return NextResponse.json(result.data ?? {
+  if (result.data) {
+    return response({ ...result.data, dataSource: "supabase" });
+  }
+
+  return response({
     series: [],
     currentDayObservations: 0,
     latestObservationAt: null,
     scopeLabel: "Sin datos para los filtros seleccionados",
     mode: "empty",
     autoSelected: true,
-  }, {
-    headers: {
-      "cache-control": "private, no-store, max-age=0, must-revalidate",
-      pragma: "no-cache",
-      expires: "0",
-    },
+    dataSource: "supabase",
   });
 }
