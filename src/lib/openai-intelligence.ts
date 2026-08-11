@@ -42,8 +42,16 @@ type OpenAIResponse = {
   id?: string;
   model?: string;
   output?: ResponseItem[];
-  error?: { message?: string } | null;
+  error?: { message?: string; code?: string; type?: string } | null;
   incomplete_details?: { reason?: string } | null;
+};
+
+type OpenAIProbe = {
+  ok: boolean;
+  status: number;
+  model: string | null;
+  category: string;
+  code?: string | null;
 };
 
 const TOOL_NAMES = new Set<IntelligenceToolName>([
@@ -55,6 +63,8 @@ const TOOL_NAMES = new Set<IntelligenceToolName>([
   "get_data_inventory",
 ]);
 
+const BRAND_HELP = "Marca real del catálogo, por ejemplo 'Coca-Cola'. No incluyas variantes como Zero/Light ni formatos/tamaños; déjalos en query. Usa null si no estás seguro.";
+
 const tools = [
   {
     type: "function",
@@ -64,8 +74,8 @@ const tools = [
     parameters: {
       type: "object",
       properties: {
-        query: { type: "string", description: "Texto del producto o presentación a buscar." },
-        brand: { type: ["string", "null"] },
+        query: { type: "string", description: "Texto del producto, variante, formato y tamaño a buscar." },
+        brand: { type: ["string", "null"], description: BRAND_HELP },
         category: { type: ["string", "null"] },
         retailerType: { type: ["string", "null"], enum: ["supermarket", "department_store", "pharmacy", "home_improvement", null] },
         supermarkets: { type: "array", items: { type: "string" }, maxItems: 12 },
@@ -84,8 +94,8 @@ const tools = [
     parameters: {
       type: "object",
       properties: {
-        query: { type: ["string", "null"], description: "Producto o presentación concreta; null si el análisis es solo por marca/categoría." },
-        brand: { type: ["string", "null"] },
+        query: { type: ["string", "null"], description: "Producto/variante/presentación concreta; null si el análisis es solo por marca o categoría." },
+        brand: { type: ["string", "null"], description: BRAND_HELP },
         category: { type: ["string", "null"] },
         retailerType: { type: ["string", "null"], enum: ["supermarket", "department_store", "pharmacy", "home_improvement", null] },
         supermarkets: { type: "array", items: { type: "string" }, maxItems: 12 },
@@ -104,7 +114,7 @@ const tools = [
       type: "object",
       properties: {
         query: { type: ["string", "null"] },
-        brand: { type: ["string", "null"] },
+        brand: { type: ["string", "null"], description: BRAND_HELP },
         category: { type: ["string", "null"] },
         retailerType: { type: ["string", "null"], enum: ["supermarket", "department_store", "pharmacy", "home_improvement", null] },
         supermarkets: { type: "array", items: { type: "string" }, maxItems: 12 },
@@ -121,7 +131,7 @@ const tools = [
     parameters: {
       type: "object",
       properties: {
-        brand: { type: "string" },
+        brand: { type: "string", description: "Marca real del catálogo, sin variante, formato ni tamaño." },
         category: { type: ["string", "null"] },
         retailerType: { type: ["string", "null"], enum: ["supermarket", "department_store", "pharmacy", "home_improvement", null] },
         supermarkets: { type: "array", items: { type: "string" }, maxItems: 12 },
@@ -139,7 +149,7 @@ const tools = [
       type: "object",
       properties: {
         query: { type: ["string", "null"] },
-        brand: { type: ["string", "null"] },
+        brand: { type: ["string", "null"], description: BRAND_HELP },
         category: { type: ["string", "null"] },
         retailerType: { type: ["string", "null"], enum: ["supermarket", "department_store", "pharmacy", "home_improvement", null] },
         supermarkets: { type: "array", items: { type: "string" }, maxItems: 12 },
@@ -205,11 +215,13 @@ REGLAS DE DATOS:
 - Toda afirmación cuantitativa sobre precios, stock, promociones, surtido o evolución debe estar respaldada por una herramienta de datos en esta misma respuesta. Nunca inventes valores.
 - Las herramientas consultan ClickHouse con datos capturados por MGP y ya aplican el alcance autorizado de la organización.
 - No tienes SQL libre. No pidas ni intentes obtener credenciales, tablas internas o consultas SQL.
+- Distingue marca de variante: en 'Coca-Cola Zero lata', la marca es 'Coca-Cola'; 'Zero' y 'lata' son parte de la query. Si no conoces con certeza la marca catalogada, pasa brand=null y conserva todos los términos del producto en query.
 - Si el usuario pregunta por un producto/presentación concreta (por ejemplo 'Coca-Cola Zero lata 350 ml'), usa search_products antes de sacar conclusiones históricas o comparar cadenas. Si aparecen tamaños o packs distintos, dilo y evita tratarlos como SKU equivalentes.
 - Para evolución usa get_price_history. Prefiere la mediana cuando la muestra puede mezclar productos heterogéneos.
 - Para 'dónde está más barato' usa compare_retailers y, si el producto es específico, valida antes con search_products.
 - Para una visión general de marca usa get_brand_snapshot; para ofertas usa get_promotions.
 - Si el período pedido parece no tener datos, usa get_data_inventory antes de concluir que no existe histórico.
+- Si una cadena sí tiene datos y otra no, dilo cadena por cadena. Nunca conviertas una ausencia parcial en 'no hay datos en ninguna'.
 - El día actual puede estar parcial mientras los crawlers siguen corriendo. Señálalo solo cuando afecte la interpretación.
 - Si no hay evidencia suficiente, dilo claramente y sugiere qué especificación falta (tamaño, pack, retailer, etc.).
 - En seguimientos, utiliza el contexto de la conversación; no obligues al usuario a repetir marca/producto si está claro.
@@ -266,36 +278,78 @@ function outputText(response: OpenAIResponse) {
     .trim();
 }
 
-async function createResponse(input: any[], access: EnterpriseAccessContext, filters: IntelligenceFilters) {
+function isReasoningModel(model: string) {
+  return /^gpt-5(?:\.|$)/i.test(model) || /^o\d/i.test(model);
+}
+
+function modelCandidates() {
+  return [...new Set([
+    OPENAI_MODEL,
+    "gpt-5.1",
+    "gpt-5-mini",
+    "gpt-4.1",
+  ].map((item) => item.trim()).filter(Boolean))].slice(0, 4);
+}
+
+function errorCategory(status: number, code?: string | null) {
+  const normalized = String(code || "").toLowerCase();
+  if (status === 401) return "authentication";
+  if (status === 403) return "permission_or_model_access";
+  if (status === 404) return "model_not_found";
+  if (status === 429 || normalized.includes("quota") || normalized.includes("rate")) return "quota_or_rate_limit";
+  if (status === 400) return "request_validation";
+  if (status >= 500) return "openai_unavailable";
+  return "unknown";
+}
+
+async function createResponse(
+  input: any[],
+  access: EnterpriseAccessContext,
+  filters: IntelligenceFilters,
+  model: string,
+  allowTools = true,
+) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 75_000);
+  const timeout = setTimeout(() => controller.abort(), 55_000);
   try {
+    const body: Record<string, unknown> = {
+      model,
+      instructions: allowTools
+        ? instructions(access, filters)
+        : `${instructions(access, filters)}\n\nYa tienes toda la evidencia disponible de las herramientas anteriores. No solicites más herramientas. Entrega ahora una respuesta final concreta, separando claramente lo observado por retailer y las limitaciones de cobertura.`,
+      input,
+      store: false,
+      max_output_tokens: isReasoningModel(model) ? 5_000 : 2_800,
+    };
+
+    if (allowTools) {
+      body.tools = tools;
+      body.tool_choice = "auto";
+      body.parallel_tool_calls = true;
+    }
+    if (isReasoningModel(model)) {
+      body.reasoning = { effort: "low" };
+      body.include = ["reasoning.encrypted_content"];
+    }
+
     const response = await fetch(OPENAI_URL, {
       method: "POST",
       headers: {
         authorization: `Bearer ${OPENAI_API_KEY}`,
         "content-type": "application/json",
       },
-      body: JSON.stringify({
-        model: OPENAI_MODEL,
-        instructions: instructions(access, filters),
-        input,
-        tools,
-        tool_choice: "auto",
-        store: false,
-        include: ["reasoning.encrypted_content"],
-        max_output_tokens: 2_200,
-      }),
+      body: JSON.stringify(body),
       cache: "no-store",
       signal: controller.signal,
     });
-    const body = await response.json().catch(() => ({})) as OpenAIResponse;
+    const responseBody = await response.json().catch(() => ({})) as OpenAIResponse;
     if (!response.ok) {
-      const error = new Error(body?.error?.message || `OpenAI Responses API failed (${response.status})`);
-      (error as Error & { status?: number }).status = response.status;
+      const error = new Error(responseBody?.error?.message || `OpenAI Responses API failed (${response.status})`);
+      (error as Error & { status?: number; code?: string }).status = response.status;
+      (error as Error & { status?: number; code?: string }).code = responseBody?.error?.code || responseBody?.error?.type || "";
       throw error;
     }
-    return body;
+    return responseBody;
   } finally {
     clearTimeout(timeout);
   }
@@ -315,18 +369,66 @@ export function openAiIntelligenceModel() {
   return OPENAI_MODEL;
 }
 
-export async function runOpenAiIntelligenceAgent(
+export async function probeOpenAiIntelligence(): Promise<OpenAIProbe> {
+  if (OPENAI_API_KEY.length <= 20) {
+    return { ok: false, status: 0, model: null, category: "not_configured" };
+  }
+
+  for (const model of modelCandidates()) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20_000);
+    try {
+      const body: Record<string, unknown> = {
+        model,
+        input: "Responde únicamente OK.",
+        store: false,
+        max_output_tokens: isReasoningModel(model) ? 128 : 32,
+      };
+      if (isReasoningModel(model)) body.reasoning = { effort: "low" };
+
+      const response = await fetch(OPENAI_URL, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${OPENAI_API_KEY}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      const responseBody = await response.json().catch(() => ({})) as OpenAIResponse;
+      if (response.ok) {
+        return { ok: true, status: response.status, model: responseBody.model || model, category: "ready" };
+      }
+
+      const code = responseBody?.error?.code || responseBody?.error?.type || null;
+      const category = errorCategory(response.status, code);
+      if (["model_not_found", "permission_or_model_access", "request_validation"].includes(category)) continue;
+      return { ok: false, status: response.status, model, category, code };
+    } catch (error) {
+      if ((error as Error)?.name === "AbortError") {
+        return { ok: false, status: 408, model, category: "timeout" };
+      }
+      return { ok: false, status: 0, model, category: "network_or_runtime" };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  return { ok: false, status: 404, model: null, category: "no_supported_model" };
+}
+
+async function runWithModel(
+  model: string,
   messages: IntelligenceChatMessage[],
   filters: IntelligenceFilters,
   access: EnterpriseAccessContext,
 ): Promise<IntelligenceAgentResult> {
-  if (!openAiIntelligenceConfigured()) throw new Error("OpenAI Intelligence is not configured");
-
   let input: any[] = cleanMessages(messages);
   const trace: string[] = [];
 
-  for (let round = 0; round < 5; round += 1) {
-    const response = await createResponse(input, access, filters);
+  for (let round = 0; round < 4; round += 1) {
+    const response = await createResponse(input, access, filters, model, true);
     const calls = (response.output ?? []).filter((item) => item?.type === "function_call").slice(0, 4);
 
     if (!calls.length) {
@@ -334,7 +436,7 @@ export async function runOpenAiIntelligenceAgent(
       if (!answer) throw new Error(response.incomplete_details?.reason || "OpenAI returned no answer");
       return {
         answer,
-        model: response.model || OPENAI_MODEL,
+        model: response.model || model,
         ai: true,
         assistant: "MGP Intelligence",
         responseStyle: "conversational_clickhouse_agent",
@@ -346,9 +448,11 @@ export async function runOpenAiIntelligenceAgent(
     }
 
     const outputs = [] as Array<{ type: "function_call_output"; call_id: string; output: string }>;
+    let failedTools = 0;
     for (const call of calls) {
       const name = String(call?.name || "") as IntelligenceToolName;
       if (!TOOL_NAMES.has(name)) {
+        failedTools += 1;
         outputs.push({ type: "function_call_output", call_id: String(call.call_id), output: JSON.stringify({ error: "tool_not_allowed" }) });
         continue;
       }
@@ -362,6 +466,7 @@ export async function runOpenAiIntelligenceAgent(
           output: compactToolOutput(result),
         });
       } catch {
+        failedTools += 1;
         outputs.push({
           type: "function_call_output",
           call_id: String(call.call_id),
@@ -370,8 +475,52 @@ export async function runOpenAiIntelligenceAgent(
       }
     }
 
+    if (failedTools === calls.length && calls.length > 0) {
+      const error = new Error("All ClickHouse intelligence tools failed");
+      (error as Error & { status?: number; code?: string }).status = 503;
+      (error as Error & { status?: number; code?: string }).code = "clickhouse_tools_failed";
+      throw error;
+    }
+
     input = [...input, ...(response.output ?? []), ...outputs];
   }
 
-  throw new Error("OpenAI Intelligence exceeded the tool-call limit");
+  const finalResponse = await createResponse(input, access, filters, model, false);
+  const answer = outputText(finalResponse);
+  if (!answer) throw new Error(finalResponse.incomplete_details?.reason || "OpenAI returned no final answer");
+
+  return {
+    answer,
+    model: finalResponse.model || model,
+    ai: true,
+    assistant: "MGP Intelligence",
+    responseStyle: "conversational_clickhouse_agent",
+    analysisMode: "clickhouse_tools",
+    toolsUsed: [...new Set(trace)],
+    dataSource: "clickhouse",
+    brand: likelyBrand(messages, filters),
+  };
+}
+
+export async function runOpenAiIntelligenceAgent(
+  messages: IntelligenceChatMessage[],
+  filters: IntelligenceFilters,
+  access: EnterpriseAccessContext,
+): Promise<IntelligenceAgentResult> {
+  if (!openAiIntelligenceConfigured()) throw new Error("OpenAI Intelligence is not configured");
+
+  let lastError: unknown = null;
+  for (const model of modelCandidates()) {
+    try {
+      return await runWithModel(model, messages, filters, access);
+    } catch (error) {
+      lastError = error;
+      const status = Number((error as { status?: number })?.status || 0);
+      const code = String((error as { code?: string })?.code || "").toLowerCase();
+      if (status === 401 || status === 429 || code.includes("quota") || code === "clickhouse_tools_failed") break;
+      if (![0, 400, 403, 404, 408, 409, 500, 502, 503, 504].includes(status)) break;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("OpenAI Intelligence failed");
 }
