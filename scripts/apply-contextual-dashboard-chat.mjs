@@ -131,12 +131,14 @@ if (!data.includes("query?: string | null;")) {
 
 function applyQuery(predicates: string[], params: ClickHouseParams, value: string, alias = "p") {
   for (const [index, token] of searchTokens(value).entries()) {
-    const placeholder = addString(params, `requested_query_${index}`, token);
-    predicates.push(`(
-      positionCaseInsensitiveUTF8(${alias}.name, ${placeholder}) > 0
-      OR positionCaseInsensitiveUTF8(ifNull(${alias}.brand, ''), ${placeholder}) > 0
-      OR positionCaseInsensitiveUTF8(ifNull(${smartCategory(alias)}, ''), ${placeholder}) > 0
-    )`);
+    const placeholder = addString(params, "requested_query_" + index, token);
+    predicates.push(
+      "(" +
+      "positionCaseInsensitiveUTF8(" + alias + ".name, " + placeholder + ") > 0" +
+      " OR positionCaseInsensitiveUTF8(ifNull(" + alias + ".brand, ''), " + placeholder + ") > 0" +
+      " OR positionCaseInsensitiveUTF8(ifNull(" + smartCategory(alias) + ", ''), " + placeholder + ") > 0" +
+      ")"
+    );
   }
 }
 
