@@ -1,40 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
+import { clickHouseConfigured } from "@/lib/clickhouse";
+import {
+  dailyPricingTrendFromClickHouse,
+  type DailyPricingPayload,
+} from "@/lib/clickhouse-daily-pricing";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-type DailyPricingPayload = {
-  series: Array<{
-    id: string;
-    label: string;
-    dimension: "category" | "brand";
-    kind: "group" | "smart" | "brand";
-    points: Array<{ date: string; price: number | null; skus: number | null }>;
-  }>;
-  selectedSeries: string[];
-  daysRequested: number;
-  availableDays: number;
-  firstDate: string | null;
-  lastDate: string | null;
-  refreshedAt: string | null;
-  latestObservationAt: string | null;
-  partialDay: boolean;
-  live: boolean;
-  pollingSeconds: number;
-  historicalDaysFrozen: boolean;
-  currentDayObservations: number;
-  previousDayObservations: number;
-  currentDayCoveragePct: number | null;
-  method: string;
-  trimLowerPct: number;
-  trimUpperPct: number;
-  minimumPresencePct: number;
-  currency: string;
-  maxSeries: number;
-  cacheHit?: boolean;
-  temporarilyUnavailable?: boolean;
-};
 
 function clampDays(value: string | null) {
   const parsed = Number(value ?? 30);
@@ -75,6 +48,7 @@ function fallbackPayload(days: number, series: string[]): DailyPricingPayload {
     maxSeries: 8,
     cacheHit: false,
     temporarilyUnavailable: true,
+    dataSource: "supabase",
   };
 }
 
@@ -91,11 +65,21 @@ function liveResponse(payload: DailyPricingPayload) {
 export async function GET(request: NextRequest) {
   const authorization = await enterpriseAccess(request, "overview");
   if (authorization.response) return authorization.response;
+  const access = authorization.access!;
 
   const days = clampDays(request.nextUrl.searchParams.get("days"));
   const series = selectedSeries(request);
+
+  if (clickHouseConfigured()) {
+    try {
+      return liveResponse(await dailyPricingTrendFromClickHouse(access, days, series));
+    } catch {
+      console.warn("ClickHouse daily pricing trend failed; falling back to Supabase.");
+    }
+  }
+
   const result = await enterpriseRpc<DailyPricingPayload>(request, "enterprise_daily_pricing_trend_cached", {
-    p_organization_id: authorization.access?.organizationId,
+    p_organization_id: access.organizationId,
     p_days: days,
     p_series: series.length ? series : null,
   });
@@ -104,5 +88,7 @@ export async function GET(request: NextRequest) {
     if (result.response.status >= 500) return liveResponse(fallbackPayload(days, series));
     return result.response;
   }
-  return liveResponse(result.data ?? fallbackPayload(days, series));
+  return liveResponse(result.data
+    ? { ...result.data, dataSource: "supabase" }
+    : fallbackPayload(days, series));
 }

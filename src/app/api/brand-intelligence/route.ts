@@ -1,30 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { enterpriseAccess, type EnterpriseAccessContext } from "@/lib/enterprise-auth";
 import { supabaseRest } from "@/lib/supabase";
+import { clickHouseConfigured } from "@/lib/clickhouse";
+import {
+  brandCategoryPoolFromClickHouse,
+  searchBrandProductsFromClickHouse,
+  type ClickHouseBrandProduct,
+} from "@/lib/clickhouse-brand";
 
 export const dynamic = "force-dynamic";
 
 const PRODUCT_SELECT = "id,supermarket,external_id,name,brand,category,url,image_url,regular_price,offer_price,unit,unit_price,in_stock,observed_at,savings,discount_pct";
 const DEFAULT_RETAILERS = ["Lider", "Jumbo", "Santa Isabel"];
 
-type Product = {
-  id: string;
-  supermarket: string;
-  external_id: string;
-  name: string;
-  brand: string | null;
-  category: string | null;
-  url: string;
-  image_url: string | null;
-  regular_price: number | string | null;
-  offer_price: number | string | null;
-  unit: string | null;
-  unit_price: number | string | null;
-  in_stock: boolean;
-  observed_at: string;
-  savings: number | string | null;
-  discount_pct: number | string | null;
-};
+type Product = ClickHouseBrandProduct;
+type ProductSource = "clickhouse" | "supabase";
+type ProductLoad = { rows: Product[]; source: ProductSource };
 
 type BrandAggregate = {
   brand: string;
@@ -110,20 +101,43 @@ function scopedQuery(
   return query;
 }
 
-async function searchProducts(term: string, access: EnterpriseAccessContext) {
-  return supabaseRest<Product[]>("dashboard_products", {
-    query: scopedQuery({
-      select: PRODUCT_SELECT,
-      or: `(brand.ilike.*${term}*,name.ilike.*${term}*)`,
-      order: "in_stock.desc,observed_at.desc",
-      limit: "1000",
-    }, access, true),
-  });
+async function searchProducts(term: string, access: EnterpriseAccessContext): Promise<ProductLoad> {
+  if (clickHouseConfigured()) {
+    try {
+      return { rows: await searchBrandProductsFromClickHouse(term, access), source: "clickhouse" };
+    } catch {
+      console.warn("ClickHouse Brand Intelligence search failed; falling back to Supabase.");
+    }
+  }
+
+  return {
+    rows: await supabaseRest<Product[]>("dashboard_products", {
+      query: scopedQuery({
+        select: PRODUCT_SELECT,
+        or: `(brand.ilike.*${term}*,name.ilike.*${term}*)`,
+        order: "in_stock.desc,observed_at.desc",
+        limit: "1000",
+      }, access, true),
+    }),
+    source: "supabase",
+  };
 }
 
-async function categoryPool(category: string | null, selectedBrand: string, access: EnterpriseAccessContext) {
+async function categoryPool(category: string | null, selectedBrand: string, access: EnterpriseAccessContext): Promise<ProductLoad> {
   const token = safeSearch(categoryToken(category));
-  if (!token) return [] as Product[];
+  if (!token) return { rows: [], source: clickHouseConfigured() ? "clickhouse" : "supabase" };
+
+  if (clickHouseConfigured()) {
+    try {
+      return {
+        rows: await brandCategoryPoolFromClickHouse(token, selectedBrand, access),
+        source: "clickhouse",
+      };
+    } catch {
+      console.warn("ClickHouse Brand Intelligence category pool failed; falling back to Supabase.");
+    }
+  }
+
   const query: Record<string, string> = {
     select: PRODUCT_SELECT,
     category: `ilike.*${token}*`,
@@ -134,7 +148,7 @@ async function categoryPool(category: string | null, selectedBrand: string, acce
   if (!access.isSaasAdmin && access.competitors.length > 0) {
     query.brand = inFilter([...new Set([selectedBrand, ...access.competitors])]);
   }
-  return supabaseRest<Product[]>("dashboard_products", { query });
+  return { rows: await supabaseRest<Product[]>("dashboard_products", { query }), source: "supabase" };
 }
 
 export async function GET(request: NextRequest) {
@@ -157,12 +171,14 @@ export async function GET(request: NextRequest) {
   const retailers = access.retailers.length > 0 ? access.retailers : DEFAULT_RETAILERS;
 
   try {
-    const searchResults = await searchProducts(term, access);
+    const searchLoad = await searchProducts(term, access);
+    const searchResults = searchLoad.rows;
     if (!searchResults.length) {
       return NextResponse.json({
         selectedBrand: null,
         suggestions: access.brands.map((brand) => ({ brand, products: 0 })),
         error: "No encontramos una marca o producto asociado a esa búsqueda dentro del alcance contratado.",
+        dataSource: searchLoad.source,
       }, { status: 404 });
     }
 
@@ -191,7 +207,13 @@ export async function GET(request: NextRequest) {
       categoryCounts.set(category, (categoryCounts.get(category) ?? 0) + 1);
     }
     const primaryCategory = [...categoryCounts.entries()].sort((left, right) => right[1] - left[1])[0]?.[0] ?? null;
-    const marketPool = await categoryPool(primaryCategory, selectedBrand, access);
+    const poolLoad = await categoryPool(primaryCategory, selectedBrand, access);
+    const marketPool = poolLoad.rows;
+    const dataSource = searchLoad.source === "clickhouse" && poolLoad.source === "clickhouse"
+      ? "clickhouse"
+      : searchLoad.source === "supabase" && poolLoad.source === "supabase"
+        ? "supabase"
+        : "hybrid";
 
     const brandPrices = usableProducts.map(price).filter((item) => item > 0);
     const marketPrices = marketPool.map(price).filter((item) => item > 0);
@@ -354,10 +376,11 @@ export async function GET(request: NextRequest) {
       risks: risks.slice(0, 5),
       organizationId: access.organizationId,
       generatedAt: new Date().toISOString(),
+      dataSource,
     });
-  } catch (error) {
+  } catch {
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : String(error) },
+      { error: "No fue posible construir Brand Intelligence en este momento." },
       { status: 500 },
     );
   }
