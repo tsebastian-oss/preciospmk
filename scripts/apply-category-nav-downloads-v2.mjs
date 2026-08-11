@@ -47,6 +47,21 @@ if (downloadStart >= 0 && alertsStart > downloadStart) {
   throw new Error("Downloads renderer could not be replaced");
 }
 
+// Downloads owns its own ClickHouse filters. Remove the global plan banner and global filter toolbar there.
+const bannerRaw = '      <CommercialBanner account={commercialAccount}/>\n';
+const bannerScoped = '      {view !== "downloads" && <CommercialBanner account={commercialAccount}/>}\n';
+if (app.includes(bannerRaw)) {
+  app = app.replace(bannerRaw, bannerScoped);
+  changed = true;
+}
+
+if (!app.includes('{view !== "downloads" && <section className={styles.filters}>')) {
+  const globalFilters = /      <section className=\{styles\.filters\}>([\s\S]*?)<\/section>\n      \{renderView\(\)\}/;
+  if (!globalFilters.test(app)) throw new Error("Global filters block not found for downloads cleanup");
+  app = app.replace(globalFilters, '      {view !== "downloads" && <section className={styles.filters}>$1</section>}\n      {renderView()}');
+  changed = true;
+}
+
 // Remove retired navigation modules from the generated app.
 app = app.replace(' | "price-map"', '');
 app = app.replace(' | "promotions"', '');
@@ -94,6 +109,12 @@ if (!app.includes('label: "Category Intelligence"') || !app.includes('view: "cat
   throw new Error("Category Intelligence did not become its own navigation group");
 }
 if (!app.includes('ClickHouseDownloads')) throw new Error("ClickHouse downloads are not wired");
+if (!app.includes('{view !== "downloads" && <CommercialBanner account={commercialAccount}/>}')) {
+  throw new Error("Downloads still renders the global commercial banner");
+}
+if (!app.includes('{view !== "downloads" && <section className={styles.filters}>')) {
+  throw new Error("Downloads still renders the global filter toolbar");
+}
 
 fs.writeFileSync(appPath, app);
-console.log(changed ? "Category navigation, retired modules and ClickHouse downloads applied" : "Category navigation/download patch already applied");
+console.log(changed ? "Category navigation, clean downloads shell and ClickHouse downloads applied" : "Category navigation/download patch already applied");
