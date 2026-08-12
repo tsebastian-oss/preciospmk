@@ -11,10 +11,13 @@ if (!app.includes(accountImport)) {
 }
 
 const oldAccount = '<div className={styles.account}><div><span>MG</span><div><strong>MGP Team</strong><small>Administrador</small></div></div><hr/><small>Plan Enterprise</small><p>{number(summary?.total_products)} SKU monitoreados</p><div><i style={{ width: `${Math.min(100, stockCoverage)}%` }}/></div><strong><em/> Pipeline operativo</strong></div>';
-const newAccount = '<AccountMenu skuCount={number(summary?.total_products)} stockCoverage={stockCoverage}/>';
+const legacyAccountMenu = '<AccountMenu skuCount={number(summary?.total_products)} stockCoverage={stockCoverage}/>';
+const newAccount = '<AccountMenu/>';
 
 if (app.includes(oldAccount)) {
   app = app.replace(oldAccount, newAccount);
+} else if (app.includes(legacyAccountMenu)) {
+  app = app.replace(legacyAccountMenu, newAccount);
 } else if (!app.includes(newAccount)) {
   throw new Error("Dashboard account block pattern not found");
 }
