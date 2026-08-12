@@ -42,6 +42,25 @@ async function rpc<T = unknown>(fn: string, body: Record<string, unknown>): Prom
   return (text ? JSON.parse(text) : null) as T;
 }
 
+function retryableDatabaseError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return /(55P03|40P01|57014|lock timeout|statement timeout|deadlock detected|could not serialize)/i.test(message);
+}
+
+async function rpcWithRetry<T = unknown>(fn: string, body: Record<string, unknown>, maxAttempts = 4): Promise<T> {
+  let lastError: unknown = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await rpc<T>(fn, body);
+    } catch (error) {
+      lastError = error;
+      if (!retryableDatabaseError(error) || attempt >= maxAttempts) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 250 * (2 ** (attempt - 1))));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
 function brandFromSlug(value: string) {
   const aliases: Record<string, string> = {
     jmc: "JMC", ram: "RAM", fiat: "Fiat", jeep: "Jeep", dongfeng: "Dongfeng", "dongfeng-adp": "Dongfeng ADP",
@@ -92,7 +111,7 @@ async function fetchHtml(url: string, delayMs: number) {
 }
 
 async function finish(task: Task, success: boolean, products = 0, error: string | null = null) {
-  return await rpc("finish_automotive_task_service", {
+  return await rpcWithRetry("finish_automotive_task_service", {
     p_task_id: task.id,
     p_success: success,
     p_products_found: products,
@@ -102,7 +121,7 @@ async function finish(task: Task, success: boolean, products = 0, error: string 
 
 async function ingest(task: Task, products: AutomotiveProduct[]) {
   return products.length
-    ? await rpc<number>("ingest_automotive_products_service", {
+    ? await rpcWithRetry<number>("ingest_automotive_products_service", {
         p_run_id: task.run_id,
         p_task_id: task.id,
         p_dealer: task.supermarket,
@@ -123,13 +142,14 @@ async function processTask(task: Task) {
   const marketProducts = parseMarketProducts(parser, html, url, sourceKey, task.supermarket);
   const rawProducts = marketProducts ?? parseProducts(parser, html, url, sourceKey, task.supermarket, task.kind);
   const products = enforceUrlIdentity(parser, url, sourceKey, rawProducts);
-  const ingested = await ingest(task, products);
+  const skipRootFallbackIngest = parser === "cartoni" && task.kind === "automotive_dealer_catalog" && stage === "root";
+  const ingested = skipRootFallbackIngest ? 0 : await ingest(task, products);
 
   if (task.kind === "automotive_dealer_catalog") {
     const marketItems = discoverMarket(parser, html, url, stage);
     const items = marketItems ?? discover(parser, html, url, stage);
     const enqueued = items.length
-      ? await rpc<number>("enqueue_automotive_tasks_service", { p_parent_task_id: task.id, p_items: items })
+      ? await rpcWithRetry<number>("enqueue_automotive_tasks_service", { p_parent_task_id: task.id, p_items: items })
       : 0;
     const state = await finish(task, true, Number(ingested || 0), null);
     return { id: task.id, dealer: task.supermarket, stage, parsed: products.length, ingested, discovered: items.length, enqueued, state };
@@ -140,9 +160,16 @@ async function processTask(task: Task) {
 }
 
 async function safeTask(task: Task) {
-  try { return await processTask(task); }
-  catch (error) {
+  try {
+    return await processTask(task);
+  } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (retryableDatabaseError(error)) {
+      // Keep the task running. claim_automotive_tasks_service will safely requeue stale work.
+      // This avoids converting a successful scrape/ingest into a false permanent failure when
+      // PostgreSQL is briefly contended while final task/run aggregates are being updated.
+      return { id: task.id, dealer: task.supermarket, error: message, retryable: true };
+    }
     try { await finish(task, false, 0, message); } catch { /* preserve original source error */ }
     return { id: task.id, dealer: task.supermarket, error: message };
   }
