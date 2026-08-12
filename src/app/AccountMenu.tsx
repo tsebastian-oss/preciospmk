@@ -23,7 +23,7 @@ function daysRemaining(value?: string | null) {
   return Math.max(0, Math.ceil((new Date(value).getTime() - Date.now()) / 86_400_000));
 }
 
-export default function AccountMenu({ skuCount, stockCoverage }: { skuCount: string; stockCoverage: number }) {
+export default function AccountMenu() {
   const [account, setAccount] = useState<AccountPayload | null>(null);
   const [open, setOpen] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -89,12 +89,11 @@ export default function AccountMenu({ skuCount, stockCoverage }: { skuCount: str
     </div>}
 
     <button className={styles.trigger} type="button" onClick={() => setOpen((current) => !current)} aria-haspopup="menu" aria-expanded={open}>
-      <div className={styles.identity}><span className={styles.avatar}>{avatar}</span><div><strong>{displayName}</strong><small>{organizationName}</small></div><i className={styles.chevron}>{open ? "⌃" : "⌄"}</i></div>
-      <div className={styles.divider}/>
-      <div className={styles.planRow}><small>{plan}</small><b>{account?.organization?.status === "trial" ? trialDays === null ? "TRIAL" : `${trialDays} DÍAS` : role}</b></div>
-      <p>{skuCount} SKU monitoreados</p>
-      <div className={styles.progress}><i style={{ width: `${Math.min(100, Math.max(0, stockCoverage))}%` }}/></div>
-      <strong className={styles.status}><em/> Pipeline operativo</strong>
+      <div className={styles.identity}>
+        <span className={styles.avatar}>{avatar}</span>
+        <div><strong>{displayName}</strong></div>
+        <i className={styles.chevron}>{open ? "⌃" : "⌄"}</i>
+      </div>
     </button>
   </div>;
 }
