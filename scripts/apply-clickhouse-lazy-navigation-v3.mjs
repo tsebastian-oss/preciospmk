@@ -12,7 +12,7 @@ if (!source.includes('import ClickHouseLanding from "./ClickHouseLanding";')) {
 
 const viewLine = source.match(/type View = ([^;]+);/);
 if (!viewLine) throw new Error("Lazy navigation: View type missing");
-const requiredViews = ["price-evolution","retailer-benchmark","market-coverage","price-gaps","price-alerts","data-status"];
+const requiredViews = ["price-evolution","retailer-benchmark","market-coverage","price-gaps","price-alerts","products","data-status"];
 let nextView = viewLine[0];
 for (const view of requiredViews) {
   if (!nextView.includes(`"${view}"`)) nextView = nextView.replace(";", ` | "${view}";`);
@@ -80,7 +80,6 @@ const mainNew = '{view === "overview" ? <ClickHouseLanding/> : isClickHouseInsig
 if (source.includes(mainOld)) source = source.replace(mainOld, mainNew);
 else if (!source.includes('<ClickHouseLanding/> : isClickHouseInsightView(view)')) throw new Error("Lazy navigation: main conditional missing");
 
-// Stop legacy bootstrap calls from running behind the new ClickHouse views.
 const initialEffect = /  useEffect\(\(\) => \{\n    const initial = window\.location\.hash\.replace\("#", ""\) as View;[\s\S]*?\n  \}, \[loadCore\]\);/;
 if (initialEffect.test(source)) {
   source = source.replace(initialEffect, `  useEffect(() => {
@@ -115,7 +114,7 @@ source = source.replace(
 const trendStart = '  useEffect(() => {\n    if (!activeSeries.length) return;\n    const controller = new AbortController();';
 if (source.includes(trendStart)) {
   source = source.replace(trendStart, '  useEffect(() => {\n    if (LAZY_VISIBLE_VIEWS.has(view) || !activeSeries.length) return;\n    const controller = new AbortController();');
-  source = source.replace('  }, [filters.period, seriesKey]);', '  }, [filters.period, seriesKey, view]);
+  source = source.replace('  }, [filters.period, seriesKey]);', '  }, [filters.period, seriesKey, view]);');
 }
 
 if (!source.includes('label: "Evolución de precios"') || !source.includes('label: "Estado de datos"')) throw new Error("Lazy navigation: compact menu not installed");
