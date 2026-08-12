@@ -183,7 +183,7 @@ export default function AutomotiveIntelligence() {
           ? "Modelo, versión y estructura de precio con una única fuente prioritaria por marca."
           : "Compara Entry Versions, Mid Grades y Topes de línea contra la semana anterior usando la misma versión y la misma fuente."}</p>
       </div>
-      <div className={styles.sourcePill}><i /> 1 fuente por marca · ClickHouse</div>
+      <div className={styles.sourcePill}><i /> 1 fuente por marca · Dealer-first · ClickHouse</div>
     </div>
 
     <nav className={styles.subnav} aria-label="Inteligencia automotriz">
