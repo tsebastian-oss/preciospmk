@@ -61,6 +61,24 @@ function scenarioPrice(rows: string[], start: number, end: number, label: RegExp
   return 0;
 }
 
+function absoluteUrl(value: string, base: string) {
+  try { return new URL(value, base).toString().split("#")[0]; } catch { return null; }
+}
+
+function hrefs(html: string, base: string) {
+  const found = new Set<string>();
+  for (const match of html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)) {
+    const url = absoluteUrl(match[1], base);
+    if (url) found.add(url);
+  }
+  return [...found];
+}
+
+function firstHeading(html: string) {
+  const match = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i) ?? html.match(/<h2\b[^>]*>([\s\S]*?)<\/h2>/i);
+  return match?.[1] ? cellText(match[1]) : "";
+}
+
 function parseSubaruChile(html: string, url: string, sourceKey: string, dealer: string): AutomotiveProduct[] {
   const products = new Map<string, AutomotiveProduct>();
   let currentModel = "";
@@ -113,15 +131,100 @@ function parseSubaruChile(html: string, url: string, sourceKey: string, dealer: 
   return [...products.values()];
 }
 
+function sinotrukDiscovery(html: string, base: string, stage: string): QueueItem[] {
+  if (stage !== "root") return [];
+  return hrefs(html, base)
+    .filter((value) => {
+      try {
+        const parsed = new URL(value);
+        return /(^|\.)sinotrukindumotora\.cl$/i.test(parsed.hostname) && /\/modelos\/[^/?#]+\.html$/i.test(parsed.pathname);
+      } catch { return false; }
+    })
+    .slice(0, 80)
+    .map((url) => ({ kind: "automotive_model_page" as const, stage: "model", url, task_key: `sinotruk-${slug(new URL(url).pathname)}` }));
+}
+
+function collectPrices(rows: string[], start: number, count: number) {
+  const values: number[] = [];
+  for (let index = start; index < rows.length && values.length < count; index++) {
+    const value = linePrice(rows[index]);
+    if (value) values.push(value);
+  }
+  return values;
+}
+
+function parseSinotrukIndumotora(html: string, url: string, sourceKey: string, dealer: string): AutomotiveProduct[] {
+  const rows = htmlLines(html);
+  const countLine = rows.findIndex((row) => /Tenemos\s+\d+\s+versiones disponibles/i.test(row));
+  if (countLine < 0) return [];
+  const count = Number(rows[countLine].match(/Tenemos\s+(\d+)\s+versiones disponibles/i)?.[1] ?? 0);
+  if (!Number.isFinite(count) || count <= 0 || count > 30) return [];
+
+  const listLabel = rows.findIndex((row, index) => index > countLine && /^Precio lista \(con IVA\)$/i.test(row));
+  if (listLabel < 0) return [];
+  const versions = rows.slice(countLine + 1, listLabel)
+    .filter((row) => !/^(Comparar|Elige una categor[ií]a|Anterior|Siguiente|Versi[oó]n)$/i.test(row) && !linePrice(row))
+    .slice(-count)
+    .map((row) => clean(row, 220));
+  if (versions.length !== count) return [];
+
+  const brandBonusLabel = rows.findIndex((row, index) => index > listLabel && /^Bono marca$/i.test(row));
+  const forumBonusLabel = rows.findIndex((row, index) => index > brandBonusLabel && /^Bono Forum$/i.test(row));
+  const finalVatLabel = rows.findIndex((row, index) => index > forumBonusLabel && /^Precio final \(con IVA\)$/i.test(row));
+  if (brandBonusLabel < 0 || forumBonusLabel < 0 || finalVatLabel < 0) return [];
+
+  const listPrices = collectPrices(rows, listLabel + 1, count);
+  const brandBonuses = collectPrices(rows, brandBonusLabel + 1, count);
+  const financeBonuses = collectPrices(rows, forumBonusLabel + 1, count);
+  const finalPrices = collectPrices(rows, finalVatLabel + 1, count);
+  if ([listPrices, brandBonuses, financeBonuses, finalPrices].some((values) => values.length !== count)) return [];
+
+  const heading = firstHeading(html);
+  const pathModel = new URL(url).pathname.split("/").filter(Boolean).at(-1)?.replace(/\.html$/i, "").replace(/[-_]+/g, " ") ?? "Sinotruk";
+  const model = clean(heading.replace(/^Sinotruk\s+/i, "").replace(/^Elige tu\s+Sinotruk\s+/i, ""), 180) || pathModel.split(/\s+/).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+  const products: AutomotiveProduct[] = [];
+
+  for (let index = 0; index < count; index++) {
+    const listPrice = listPrices[index];
+    const brandBonus = brandBonuses[index];
+    const financeBonus = financeBonuses[index];
+    const finalPrice = finalPrices[index];
+    const cashPrice = Math.max(finalPrice, listPrice - brandBonus);
+    const version = versions[index];
+    if (!version || !listPrice || !finalPrice) continue;
+    products.push({
+      external_id: `${sourceKey}:${slug(`${model}-${version}`)}`,
+      source_key: sourceKey,
+      brand: "Sinotruk",
+      model,
+      version,
+      name: `Sinotruk ${model} · ${version}`,
+      body_type: "Vehículo",
+      url,
+      list_price: listPrice,
+      cash_price: cashPrice,
+      final_price: finalPrice,
+      metadata: {
+        parser: sourceKey,
+        dealer,
+        source_type: "brand",
+        capture_scope: "version_pricing",
+        price_confidence: "official_indumotora_version_table",
+        identity_source: "official_sinotruk_version_table",
+        brand_bonus: brandBonus,
+        online_bonus: 0,
+        dealer_bonus: 0,
+        finance_bonus: financeBonus,
+      },
+    });
+  }
+  return products;
+}
+
 function salazarBrand(raw: string) {
   const key = slug(raw);
   const aliases: Record<string, string> = { dfsk: "DFSK", mg: "MG", kgm: "KGM", jmc: "JMC", ram: "RAM", gac: "GAC", citroen: "Citroën" };
   return aliases[key] ?? raw.replace(/[-_]+/g, " ").split(/\s+/).filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()).join(" ");
-}
-
-function firstHeading(html: string) {
-  const match = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i) ?? html.match(/<h2\b[^>]*>([\s\S]*?)<\/h2>/i);
-  return match?.[1] ? cellText(match[1]) : "";
 }
 
 function isSalazarDetail(url: string) {
@@ -218,6 +321,7 @@ function isSalazarBrandCatalog(url: string) {
 
 export function discoverMarket(parser: string, html: string, url: string, stage: string): QueueItem[] | null {
   if (parser === "subaru_chile") return [];
+  if (parser === "indumotora_sinotruk") return sinotrukDiscovery(html, url, stage);
   return baseDiscoverMarket(parser, html, url, stage);
 }
 
@@ -229,6 +333,7 @@ export function parseMarketProducts(
   dealer: string,
 ): AutomotiveProduct[] | null {
   if (parser === "subaru_chile") return parseSubaruChile(html, url, sourceKey, dealer);
+  if (parser === "indumotora_sinotruk") return parseSinotrukIndumotora(html, url, sourceKey, dealer);
 
   if (parser === "salazar_israel") {
     if (isSalazarBrandCatalog(url)) return [];
