@@ -34,25 +34,53 @@ jobs:
       - name: Apply Monday Friday scraping schedule
         shell: bash
         run: |
+          set -euo pipefail
           SQL=$(cat ops/scraping-monday-friday.sql)
-          HTTP_STATUS=$(curl -sS \
-            -o /tmp/schedule-response.json \
-            -w "%{http_code}" \
-            -X POST "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query" \
-            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg query "$SQL" '{query:$query, read_only:false}')")
 
-          cat /tmp/schedule-response.json | jq . || cat /tmp/schedule-response.json
+          post_sql() {
+            local query="$1"
+            local read_only="$2"
+            local output="$3"
+            local status="000"
+            local attempt
 
-          if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
-            echo "::error::Could not configure Monday/Friday scraping schedule (HTTP ${HTTP_STATUS})"
-            exit 1
-          fi
+            for attempt in 1 2 3 4 5 6; do
+              echo "Supabase SQL attempt ${attempt}/6..."
+              status=$(curl -sS \
+                --connect-timeout 15 \
+                --max-time 90 \
+                -o "$output" \
+                -w "%{http_code}" \
+                -X POST "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query" \
+                -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d "$(jq -n --arg query "$query" --argjson read_only "$read_only" '{query:$query, read_only:$read_only}')") || status="000"
+
+              if [ "$status" -ge 200 ] 2>/dev/null && [ "$status" -lt 300 ] 2>/dev/null; then
+                cat "$output" | jq . || cat "$output"
+                return 0
+              fi
+
+              echo "Supabase returned HTTP ${status}. Response:"
+              cat "$output" 2>/dev/null | jq . || cat "$output" 2>/dev/null || true
+
+              if [ "$attempt" -lt 6 ]; then
+                sleep_seconds=$((attempt * 15))
+                echo "Transient database saturation suspected; retrying in ${sleep_seconds}s..."
+                sleep "$sleep_seconds"
+              fi
+            done
+
+            echo "::error::Supabase SQL failed after 6 attempts (last HTTP ${status})"
+            return 1
+          }
+
+          post_sql "$SQL" false /tmp/schedule-response.json
 
       - name: Verify production cron configuration
         shell: bash
         run: |
+          set -euo pipefail
           VERIFY_SQL=$(cat <<'SQL'
           select jobname, schedule, active
           from cron.job
@@ -61,23 +89,56 @@ jobs:
             'daily-non-supermarket-crawls',
             'daily-catalog-crawl-window-closer',
             'scraping-pro-dispatcher-every-minute',
-            'capacity-aware-scraper-dispatcher'
+            'capacity-aware-scraper-dispatcher',
+            'department-store-full-crawl-weekly',
+            'daily-pharmacy-crawl',
+            'falabella-listing-daily-seed',
+            'home-improvement-daily-start',
+            'rebuild-paris-refresh-queue'
           )
-          order by jobname;
+          order by jobname, jobid;
+
+          select id, status, vertical, started_at, tasks_total, tasks_completed, tasks_failed, products_found
+          from public.catalog_crawl_runs
+          where status='running'
+          order by started_at desc
+          limit 10;
           SQL
           )
 
-          HTTP_STATUS=$(curl -sS \
-            -o /tmp/verify-response.json \
-            -w "%{http_code}" \
-            -X POST "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query" \
-            -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d "$(jq -n --arg query "$VERIFY_SQL" '{query:$query, read_only:true}')")
+          post_sql() {
+            local query="$1"
+            local output="$2"
+            local status="000"
+            local attempt
 
-          cat /tmp/verify-response.json | jq . || cat /tmp/verify-response.json
+            for attempt in 1 2 3 4 5 6; do
+              echo "Verification attempt ${attempt}/6..."
+              status=$(curl -sS \
+                --connect-timeout 15 \
+                --max-time 90 \
+                -o "$output" \
+                -w "%{http_code}" \
+                -X POST "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query" \
+                -H "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d "$(jq -n --arg query "$query" '{query:$query, read_only:true}')") || status="000"
 
-          if [ "$HTTP_STATUS" -lt 200 ] || [ "$HTTP_STATUS" -ge 300 ]; then
-            echo "::error::Could not verify production scraping schedule (HTTP ${HTTP_STATUS})"
-            exit 1
-          fi
+              if [ "$status" -ge 200 ] 2>/dev/null && [ "$status" -lt 300 ] 2>/dev/null; then
+                cat "$output" | jq . || cat "$output"
+                return 0
+              fi
+
+              echo "Verification returned HTTP ${status}."
+              cat "$output" 2>/dev/null | jq . || cat "$output" 2>/dev/null || true
+              if [ "$attempt" -lt 6 ]; then
+                sleep_seconds=$((attempt * 10))
+                sleep "$sleep_seconds"
+              fi
+            done
+
+            echo "::error::Could not verify production scraping schedule after retries"
+            return 1
+          }
+
+          post_sql "$VERIFY_SQL" /tmp/verify-response.json
