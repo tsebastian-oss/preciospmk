@@ -59,7 +59,11 @@ function metadataNumber(key: string) {
 }
 
 function autoPredicates(access: ScopedAccess, params: ClickHouseParams) {
-  const predicates = ["p.retailer_type = 'automotive'", "p.industry_slug = 'automotive'"];
+  const predicates = [
+    "p.retailer_type = 'automotive'",
+    "p.industry_slug = 'automotive'",
+    `${metadataString("capture_status")} != 'invalid_identity'`,
+  ];
   const allowedBrands = [...new Set((access.brands ?? []).map((item) => item.trim()).filter(Boolean))].slice(0, 100);
   if (allowedBrands.length) {
     const placeholders = allowedBrands.map((brand, index) => addString(params, `scope_brand_${index}`, brand));
