@@ -13,6 +13,21 @@ function slug(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
+function titleCase(value: string) {
+  return value.toLocaleLowerCase("es").split(/\s+/).filter(Boolean).map((part) => part.charAt(0).toLocaleUpperCase("es") + part.slice(1)).join(" ");
+}
+
+function canonicalBrand(rawBrand: string) {
+  const key = slug(rawBrand);
+  const aliases: Record<string, string> = { mg: "MG", ram: "RAM", citroen: "Citroën" };
+  return aliases[key] ?? titleCase(rawBrand);
+}
+
+function canonicalModel(rawModel: string, brand: string) {
+  if (brand === "MG") return rawModel.toLocaleUpperCase("es");
+  return titleCase(rawModel);
+}
+
 function positiveNumber(value: unknown) {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
@@ -151,12 +166,8 @@ export function parsePortilloFlightVersions(
     if (identity?.brandSlug && actualBrandSlug && identity.brandSlug !== actualBrandSlug) continue;
     if (identity?.modelSlug && actualModelSlug && !modelMatches(identity.modelSlug, actualModelSlug)) continue;
 
-    // Keep structured identity for matching, but reuse the existing canonical display casing
-    // so Portillo does not create duplicate filters such as Toyota/TOYOTA or Rav4/RAV4.
-    const fallbackBrandSlug = fallback?.brand ? slug(fallback.brand) : "";
-    const fallbackModelSlug = fallback?.model ? slug(fallback.model) : "";
-    const brand = fallback?.brand && fallbackBrandSlug === actualBrandSlug ? fallback.brand : rawBrand;
-    const model = fallback?.model && modelMatches(fallbackModelSlug, actualModelSlug) ? fallback.model : rawModel;
+    const brand = canonicalBrand(rawBrand);
+    const model = canonicalModel(rawModel, brand);
 
     const prices = pricingRows(vehicle.prices, records).filter((row) => !row.currency || clean(row.currency, 20).toUpperCase() === "CLP");
     if (!prices.length) continue;
