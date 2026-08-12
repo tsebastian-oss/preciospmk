@@ -20,19 +20,26 @@ export async function GET(request: NextRequest) {
   const authorization = await enterpriseAccess(request, null);
   if (authorization.response) return authorization.response;
   const access = authorization.access!;
+  const includeRetailers = request.nextUrl.searchParams.get("includeRetailers") === "1";
 
-  const industries = await enterpriseRest<Industry[]>(request, "industries", {
-    query: {
-      select: "slug,name,description,retailer_types,display_order",
-      active: "eq.true",
-      order: "display_order.asc,name.asc",
-    },
-  });
-  if (industries.response) return industries.response;
+  // The root IndustryGate only needs the user's resolved industry state. Avoid a
+  // second Supabase REST round-trip unless the onboarding screen explicitly asks
+  // for the industry catalog and retailer choices.
+  let industries: Industry[] = [];
+  if (includeRetailers) {
+    const industryResult = await enterpriseRest<Industry[]>(request, "industries", {
+      query: {
+        select: "slug,name,description,retailer_types,display_order",
+        active: "eq.true",
+        order: "display_order.asc,name.asc",
+      },
+    });
+    if (industryResult.response) return industryResult.response;
+    industries = industryResult.data ?? [];
+  }
 
   const trialScopeConfigured = access.status !== "trial"
     || Boolean((access.limits as unknown as Record<string, unknown> | null)?.trial_scope_configured);
-  const includeRetailers = request.nextUrl.searchParams.get("includeRetailers") === "1";
 
   let channels: RetailerChannel[] = [];
   if (access.status === "trial" && includeRetailers) {
@@ -46,7 +53,7 @@ export async function GET(request: NextRequest) {
   const onboardingConfigured = Boolean(access.industryConfigured) && trialScopeConfigured;
 
   return NextResponse.json({
-    industries: industries.data ?? [],
+    industries,
     organizationId: access.organizationId,
     organizationName: access.organizationName,
     organizationStatus: access.status,
@@ -56,7 +63,7 @@ export async function GET(request: NextRequest) {
     trialScopeConfigured,
     retailers: access.retailers ?? [],
     channels,
-  }, { headers: { "cache-control": "private, no-store" } });
+  }, { headers: { "cache-control": includeRetailers ? "private, no-store" : "private, max-age=30, stale-while-revalidate=120" } });
 }
 
 export async function POST(request: NextRequest) {
@@ -74,7 +81,7 @@ export async function POST(request: NextRequest) {
       ? body.retailers.filter((value): value is string => typeof value === "string").map((value) => value.trim()).filter(Boolean)
       : [];
     if (retailers.length < 1 || retailers.length > 3) {
-      return NextResponse.json({ error: "Selecciona entre 1 y 3 retailers para tu trial." }, { status: 400 });
+      return NextResponse.json({ error: "Selecciona entre 1 y 3 retailers para comenzar el trial." }, { status: 400 });
     }
     const result = await enterpriseRpc<Selection>(request, "enterprise_configure_trial_onboarding", {
       p_organization_id: access.organizationId,
