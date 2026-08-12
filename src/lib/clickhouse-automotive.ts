@@ -35,6 +35,7 @@ type AutomotiveSummaryRow = {
 };
 
 type ScopedAccess = EnterpriseAccessContext & { brands?: string[] };
+type AutomotiveFilters = { brand?: string | null; model?: string | null; dealer?: string | null };
 
 function number(value: Numeric | null | undefined) {
   const parsed = Number(value ?? 0);
@@ -58,6 +59,10 @@ function metadataNumber(key: string) {
   return `toFloat64OrZero(toString(JSONExtractRaw(toString(p.source_metadata), '${key}')))`;
 }
 
+function automotiveModelExpression() {
+  return `coalesce(nullIf(${metadataString("model")}, ''), nullIf(p.parent_external_id, ''), p.name)`;
+}
+
 function autoPredicates(access: ScopedAccess, params: ClickHouseParams) {
   const predicates = [
     "p.retailer_type = 'automotive'",
@@ -72,6 +77,15 @@ function autoPredicates(access: ScopedAccess, params: ClickHouseParams) {
   return predicates;
 }
 
+function addCatalogFilters(predicates: string[], params: ClickHouseParams, filters: AutomotiveFilters) {
+  const brand = clean(filters.brand);
+  const model = clean(filters.model, 220);
+  const dealer = clean(filters.dealer);
+  if (brand) predicates.push(`p.brand = ${addString(params, "requested_brand", brand)}`);
+  if (model) predicates.push(`${automotiveModelExpression()} = ${addString(params, "requested_model", model)}`);
+  if (dealer) predicates.push(`p.supermarket = ${addString(params, "requested_dealer", dealer)}`);
+}
+
 export async function clickHouseAutomotiveOptions(accessInput: EnterpriseAccessContext) {
   const access = accessInput as ScopedAccess;
   const params: ClickHouseParams = {};
@@ -79,7 +93,7 @@ export async function clickHouseAutomotiveOptions(accessInput: EnterpriseAccessC
   const rows = await clickHouseQuery<AutomotiveOptionRow>(`
     SELECT
       ifNull(p.brand, '') AS brand,
-      coalesce(nullIf(${metadataString("model")}, ''), nullIf(p.parent_external_id, ''), p.name) AS model,
+      ${automotiveModelExpression()} AS model,
       p.supermarket AS dealer,
       uniqExact(p.id) AS versions
     FROM products AS p FINAL
@@ -100,23 +114,18 @@ export async function clickHouseAutomotiveOptions(accessInput: EnterpriseAccessC
 
 export async function clickHouseAutomotiveCatalog(
   accessInput: EnterpriseAccessContext,
-  filters: { brand?: string | null; model?: string | null; dealer?: string | null },
+  filters: AutomotiveFilters,
 ) {
   const access = accessInput as ScopedAccess;
   const params: ClickHouseParams = {};
   const predicates = autoPredicates(access, params);
-  const brand = clean(filters.brand);
-  const model = clean(filters.model, 220);
-  const dealer = clean(filters.dealer);
-  if (brand) predicates.push(`p.brand = ${addString(params, "requested_brand", brand)}`);
-  if (model) predicates.push(`coalesce(nullIf(${metadataString("model")}, ''), p.parent_external_id, p.name) = ${addString(params, "requested_model", model)}`);
-  if (dealer) predicates.push(`p.supermarket = ${addString(params, "requested_dealer", dealer)}`);
+  addCatalogFilters(predicates, params, filters);
 
   const rows = await clickHouseQuery<AutomotiveVehicleRow>(`
     SELECT
       toString(p.id) AS id,
       ifNull(p.brand, '') AS brand,
-      coalesce(nullIf(${metadataString("model")}, ''), nullIf(p.parent_external_id, ''), p.name) AS model,
+      ${automotiveModelExpression()} AS model,
       coalesce(nullIf(p.variant, ''), nullIf(${metadataString("version")}, ''), 'Versión no informada') AS version,
       p.supermarket AS dealer,
       if(${metadataNumber("list_price")} > 0, ${metadataNumber("list_price")}, toFloat64(ifNull(s.regular_price, 0))) AS list_price,
@@ -136,10 +145,11 @@ export async function clickHouseAutomotiveCatalog(
 
   const summaryParams: ClickHouseParams = {};
   const summaryPredicates = autoPredicates(access, summaryParams);
+  addCatalogFilters(summaryPredicates, summaryParams, filters);
   const summaryRows = await clickHouseQuery<AutomotiveSummaryRow>(`
     SELECT
       uniqExact(p.brand) AS brands,
-      uniqExact(coalesce(nullIf(${metadataString("model")}, ''), p.parent_external_id, p.name)) AS models,
+      uniqExact(${automotiveModelExpression()}) AS models,
       uniqExact(p.id) AS versions,
       uniqExact(p.supermarket) AS dealers,
       toString(max(s.observed_at)) AS last_observed_at
