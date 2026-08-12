@@ -1,9 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { clean, discover, parseProducts, slug, type AutomotiveProduct } from "./parsers.ts";
+import { discoverMarket, parseMarketProducts } from "./market-parsers.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-const UA = "MGP-AutomotiveBot/1.2 (+public-dealer-catalog-research; rate-limited)";
+const UA = "MGP-AutomotiveBot/1.3 (+public-dealer-catalog-research; rate-limited)";
 const MAX_CONCURRENCY = 2;
 
 type Task = {
@@ -119,12 +120,14 @@ async function processTask(task: Task) {
   if (!url) throw new Error("automotive_url_missing");
 
   const html = await fetchHtml(url, Number.isFinite(delayMs) ? delayMs : 800);
-  const rawProducts = parseProducts(parser, html, url, sourceKey, task.supermarket, task.kind);
+  const marketProducts = parseMarketProducts(parser, html, url, sourceKey, task.supermarket);
+  const rawProducts = marketProducts ?? parseProducts(parser, html, url, sourceKey, task.supermarket, task.kind);
   const products = enforceUrlIdentity(parser, url, sourceKey, rawProducts);
   const ingested = await ingest(task, products);
 
   if (task.kind === "automotive_dealer_catalog") {
-    const items = discover(parser, html, url, stage);
+    const marketItems = discoverMarket(parser, html, url, stage);
+    const items = marketItems ?? discover(parser, html, url, stage);
     const enqueued = items.length
       ? await rpc<number>("enqueue_automotive_tasks_service", { p_parent_task_id: task.id, p_items: items })
       : 0;
