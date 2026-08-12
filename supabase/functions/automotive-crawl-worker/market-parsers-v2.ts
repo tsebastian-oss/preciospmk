@@ -48,6 +48,22 @@ function price(value: string | null | undefined) {
   return Number.isFinite(parsed) && parsed >= 1_000_000 ? parsed : null;
 }
 
+function embeddedPrice(value: string | null | undefined) {
+  if (!value) return null;
+  const matches = [...value.matchAll(/(?:\$|CLP\s*)?\s*(\d{1,3}(?:[.\s]\d{3}){2,3})\b/gi)];
+  for (const match of matches.reverse()) {
+    const parsed = Number((match[1] ?? "").replace(/[^0-9]/g, ""));
+    if (Number.isFinite(parsed) && parsed >= 1_000_000) return parsed;
+  }
+  return null;
+}
+
+function stripEmbeddedPrice(value: string) {
+  return clean(value
+    .replace(/(?:US\s*)?(?:\$|CLP\s*)?\s*\d{1,3}(?:[.\s]\d{3}){2,3}\s*$/i, "")
+    .replace(/^[*•·\-]+\s*/, ""), 240);
+}
+
 const BRAND_NAMES: Record<string, string> = {
   toyota: "Toyota",
   geely: "Geely",
@@ -126,6 +142,13 @@ function pathIdentity(url: string) {
   return { brandSlug: parts[1] ?? "", modelSlug: parts[2] ?? "" };
 }
 
+function cartoniBrandListingIdentity(url: string) {
+  const parts = new URL(url).pathname.split("/").filter(Boolean);
+  if (parts[0] === "m" && parts[1] === "nuevos" && parts[2] && parts.length === 3) return parts[2];
+  if (parts[0] === "nuevos" && parts[1] && parts.length === 2) return parts[1];
+  return "";
+}
+
 function pageModel(list: string[], modelSlug: string) {
   const versionsIndex = list.findIndex((line) => /^VERSIONES$/i.test(line));
   if (versionsIndex >= 0) {
@@ -140,17 +163,27 @@ function pageModel(list: string[], modelSlug: string) {
 }
 
 function versionBeforeSummaryPrice(list: string[], listPriceIndex: number, model: string) {
-  for (let cursor = listPriceIndex - 1; cursor >= Math.max(0, listPriceIndex - 22); cursor--) {
-    if (!price(list[cursor])) continue;
-    for (let versionIndex = cursor - 1; versionIndex >= Math.max(0, cursor - 3); versionIndex--) {
+  for (let cursor = listPriceIndex - 1; cursor >= Math.max(0, listPriceIndex - 24); cursor--) {
+    if (!price(list[cursor]) && !embeddedPrice(list[cursor])) continue;
+    for (let versionIndex = cursor - 1; versionIndex >= Math.max(0, cursor - 4); versionIndex--) {
       const candidate = clean(list[versionIndex], 220);
       if (!candidate || candidate.localeCompare(model, "es", { sensitivity: "base" }) === 0) continue;
-      if (/^(VERSIONES|Motor|Combustible|Transmisi[oó]n|Tracci[oó]n|Precio|Precio desde)$/i.test(candidate)) continue;
+      if (/^(VERSIONES|Motor|Combustible|Transmisi[oó]n|Tracci[oó]n|Precio|Precio desde|COTIZAR|AHORA)$/i.test(candidate)) continue;
       if (/^(4X2|4X4|Autom[aá]tica|Mec[aá]nica|Gasolina|Di[eé]sel|El[eé]ctrico|H[ií]brido)$/i.test(candidate)) continue;
       if (price(candidate)) continue;
-      return candidate.replace(/\s+i$/i, "").trim();
+      const normalized = stripEmbeddedPrice(candidate).replace(/\s+i$/i, "").trim();
+      if (normalized) return normalized;
     }
     break;
+  }
+
+  for (let cursor = listPriceIndex - 1; cursor >= Math.max(0, listPriceIndex - 16); cursor--) {
+    const candidate = clean(list[cursor], 220);
+    if (!candidate || candidate.localeCompare(model, "es", { sensitivity: "base" }) === 0) continue;
+    if (/^(VERSIONES|Motor|Combustible|Transmisi[oó]n|Tracci[oó]n|Precio|Precio desde|COTIZAR|AHORA|Bono)/i.test(candidate)) continue;
+    if (price(candidate) || embeddedPrice(candidate)) continue;
+    const normalized = candidate.replace(/\s+i$/i, "").trim();
+    if (normalized) return normalized;
   }
   return "Precio desde";
 }
@@ -184,28 +217,142 @@ function makeProduct(sourceKey: string, dealer: string, brand: string, model: st
   };
 }
 
+function makeListingFallbackProduct(sourceKey: string, dealer: string, brand: string, model: string, version: string, url: string, finalPrice: number): AutomotiveProduct {
+  const product = makeProduct(sourceKey, dealer, brand, model, version, url, finalPrice, 0, 0, finalPrice);
+  return {
+    ...product,
+    metadata: {
+      ...product.metadata,
+      capture_scope: "version_listing_fallback",
+      identity_source: "cartoni_brand_listing",
+      price_confidence: "brand_listing_final_price",
+      list_price_unknown: true,
+    },
+  };
+}
+
+function preserveDistinctSameLabelOffers(products: AutomotiveProduct[]) {
+  const seen = new Map<string, AutomotiveProduct[]>();
+  const output: AutomotiveProduct[] = [];
+
+  for (const product of products) {
+    const baseId = product.external_id;
+    const prior = seen.get(baseId) ?? [];
+    const exactDuplicate = prior.some((item) =>
+      item.version === product.version
+      && item.list_price === product.list_price
+      && item.cash_price === product.cash_price
+      && item.final_price === product.final_price
+    );
+    if (exactDuplicate) continue;
+
+    const offerIndex = prior.length + 1;
+    const next = offerIndex === 1 ? product : {
+      ...product,
+      external_id: `${baseId}-offer-${offerIndex}`,
+      metadata: {
+        ...product.metadata,
+        identity_source: "cartoni_same_label_offer_order",
+        same_label_offer: true,
+        offer_index: offerIndex,
+      },
+    };
+    prior.push(next);
+    seen.set(baseId, prior);
+    output.push(next);
+  }
+  return output;
+}
+
+function listingModelBeforeVer(list: string[], verIndex: number) {
+  let includeIndex = -1;
+  for (let cursor = verIndex - 1; cursor >= Math.max(0, verIndex - 18); cursor--) {
+    if (/^INCLUYE$/i.test(list[cursor])) {
+      includeIndex = cursor;
+      break;
+    }
+  }
+  if (includeIndex < 0) return "";
+  for (let cursor = includeIndex - 1; cursor >= Math.max(0, includeIndex - 5); cursor--) {
+    const candidate = stripEmbeddedPrice(list[cursor]);
+    if (!candidate || /^(Todos|Automoviles|SUVs|Camionetas|El[eé]ctricos|H[ií]bridos|Gazoo Racing)$/i.test(candidate)) continue;
+    return candidate;
+  }
+  return "";
+}
+
+function parseCartoniBrandListing(html: string, url: string, sourceKey: string, dealer: string, brandSlug: string) {
+  const list = rows(html);
+  const brand = BRAND_NAMES[brandSlug.toLowerCase()] ?? humanizeModel(brandSlug);
+  const verIndexes = list.map((line, index) => /^VER\s*\+$/i.test(line) ? index : -1).filter((index) => index >= 0);
+  const products: AutomotiveProduct[] = [];
+
+  for (const verIndex of verIndexes) {
+    const model = listingModelBeforeVer(list, verIndex);
+    if (!model) continue;
+    let nextInclude = list.length;
+    for (let cursor = verIndex + 1; cursor < Math.min(list.length, verIndex + 50); cursor++) {
+      if (/^INCLUYE$/i.test(list[cursor])) {
+        nextInclude = cursor;
+        break;
+      }
+      if (/^(Los precios de venta|FORMULARIO|CALLBACK|CONTACTO)$/i.test(list[cursor])) {
+        nextInclude = cursor;
+        break;
+      }
+    }
+    const end = Math.max(verIndex + 1, nextInclude - 1);
+
+    for (let cursor = verIndex + 1; cursor < end; cursor++) {
+      const current = clean(list[cursor], 320);
+      if (!current || /^VER\s*\+$/i.test(current)) continue;
+      const currentPrice = embeddedPrice(current);
+      const nextLinePrice = !currentPrice && cursor + 1 < end ? embeddedPrice(list[cursor + 1]) : null;
+      const finalPrice = currentPrice ?? nextLinePrice;
+      if (!finalPrice) continue;
+
+      const version = currentPrice ? stripEmbeddedPrice(current) : stripEmbeddedPrice(current);
+      if (!version || version.localeCompare(model, "es", { sensitivity: "base" }) === 0) continue;
+      if (/^(BONO|INCLUYE|Precio|Ahora|Desde|Cotizar|Reservar)/i.test(version)) continue;
+
+      products.push(makeListingFallbackProduct(sourceKey, dealer, brand, clean(model, 180), clean(version, 240), url, finalPrice));
+      if (!currentPrice && nextLinePrice) cursor += 1;
+    }
+  }
+
+  return preserveDistinctSameLabelOffers(products);
+}
+
 function parseCartoniV2(html: string, url: string, sourceKey: string, dealer: string) {
+  const brandListingSlug = cartoniBrandListingIdentity(url);
+  if (brandListingSlug) return parseCartoniBrandListing(html, url, sourceKey, dealer, brandListingSlug);
+
   const list = rows(html);
   const { brandSlug, modelSlug } = pathIdentity(url);
   const brand = BRAND_NAMES[brandSlug.toLowerCase()] ?? brandSlug.toUpperCase();
   const model = pageModel(list, modelSlug);
   const products: AutomotiveProduct[] = [];
+  const listPriceIndexes = list
+    .map((line, index) => /^Precio(?: de)? lista/i.test(line) ? index : -1)
+    .filter((index) => index >= 0);
 
-  for (let index = 0; index < list.length; index++) {
-    if (!/^Precio de lista/i.test(list[index])) continue;
-    const listPrice = price(list[index]) ?? price(list[index + 1]);
+  for (let position = 0; position < listPriceIndexes.length; position++) {
+    const index = listPriceIndexes[position];
+    const listPrice = price(list[index]) ?? embeddedPrice(list[index]) ?? price(list[index + 1]) ?? embeddedPrice(list[index + 1]);
     if (!listPrice) continue;
 
     const version = versionBeforeSummaryPrice(list, index, model);
-    const block = list.slice(index, Math.min(list.length, index + 16));
+    const nextPriceIndex = position + 1 < listPriceIndexes.length ? listPriceIndexes[position + 1] : list.length;
+    const blockEnd = Math.min(list.length, nextPriceIndex, index + 26);
+    const block = list.slice(index, blockEnd);
     let dealerBonus = 0;
     let financeBonus = 0;
     let finalPrice: number | null = null;
 
     for (let cursor = 0; cursor < block.length; cursor++) {
-      if (/^Bono del mes/i.test(block[cursor])) dealerBonus = price(block[cursor]) ?? price(block[cursor + 1]) ?? 0;
-      if (/^Bono cr[eé]dito/i.test(block[cursor])) financeBonus = price(block[cursor]) ?? price(block[cursor + 1]) ?? 0;
-      if (/^Ahora/i.test(block[cursor])) finalPrice = price(block[cursor]) ?? price(block[cursor + 1]);
+      if (/^Bono del mes/i.test(block[cursor])) dealerBonus = price(block[cursor]) ?? embeddedPrice(block[cursor]) ?? price(block[cursor + 1]) ?? embeddedPrice(block[cursor + 1]) ?? 0;
+      if (/^Bono cr[eé]dito/i.test(block[cursor])) financeBonus = price(block[cursor]) ?? embeddedPrice(block[cursor]) ?? price(block[cursor + 1]) ?? embeddedPrice(block[cursor + 1]) ?? 0;
+      if (/^Ahora/i.test(block[cursor])) finalPrice = price(block[cursor]) ?? embeddedPrice(block[cursor]) ?? price(block[cursor + 1]) ?? embeddedPrice(block[cursor + 1]);
     }
 
     finalPrice = finalPrice ?? Math.max(0, listPrice - dealerBonus - financeBonus);
@@ -213,7 +360,7 @@ function parseCartoniV2(html: string, url: string, sourceKey: string, dealer: st
     products.push(makeProduct(sourceKey, dealer, brand, model, version, url, listPrice, dealerBonus, financeBonus, finalPrice));
   }
 
-  return [...new Map(products.map((item) => [item.external_id, item])).values()];
+  return preserveDistinctSameLabelOffers(products);
 }
 
 export function discoverMarket(parser: string, html: string, url: string, stage: string): QueueItem[] | null {
