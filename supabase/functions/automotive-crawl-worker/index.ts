@@ -41,6 +41,44 @@ async function rpc<T = unknown>(fn: string, body: Record<string, unknown>): Prom
   return (text ? JSON.parse(text) : null) as T;
 }
 
+function brandFromSlug(value: string) {
+  const aliases: Record<string, string> = {
+    jmc: "JMC", ram: "RAM", fiat: "Fiat", jeep: "Jeep", dongfeng: "Dongfeng", "dongfeng-adp": "Dongfeng ADP",
+    citroen: "Citroën", peugeot: "Peugeot", kgm: "KGM", foton: "Foton", chery: "Chery", mitsubishi: "Mitsubishi",
+    jetour: "Jetour", landking: "Landking", opel: "Opel", sinotruk: "Sinotruk", soueast: "Soueast", leapmotor: "Leapmotor",
+  };
+  return aliases[value] ?? value.split("-").filter(Boolean).map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+}
+
+function modelFromSlug(value: string) {
+  return value.split("-").filter(Boolean).map((part) => part.length <= 3 && /\d/.test(part) ? part.toUpperCase() : part.charAt(0).toUpperCase() + part.slice(1)).join(" ");
+}
+
+function enforceUrlIdentity(parser: string, url: string, sourceKey: string, products: AutomotiveProduct[]) {
+  if (parser !== "rosselot") return products;
+  try {
+    const parts = new URL(url).pathname.split("/").filter(Boolean);
+    if (parts[0] !== "nuevos" || !parts[1] || !parts[2]) return products;
+    const expectedBrandSlug = parts[1];
+    if (products.every((product) => slug(product.brand) === expectedBrandSlug)) return products;
+    const brand = brandFromSlug(expectedBrandSlug);
+    const model = modelFromSlug(parts[2]);
+    return products.map((product) => {
+      if (slug(product.brand) === expectedBrandSlug) return product;
+      return {
+        ...product,
+        external_id: `${sourceKey}:${slug(`${brand}-${model}-${product.version}`)}`,
+        brand,
+        model,
+        name: `${brand} ${model} · ${product.version}`,
+        metadata: { ...product.metadata, identity_source: "dealer_url" },
+      };
+    });
+  } catch {
+    return products;
+  }
+}
+
 async function fetchHtml(url: string, delayMs: number) {
   const response = await fetch(url, {
     headers: { "user-agent": UA, accept: "text/html,*/*", "accept-language": "es-CL,es;q=0.9" },
@@ -81,7 +119,8 @@ async function processTask(task: Task) {
   if (!url) throw new Error("automotive_url_missing");
 
   const html = await fetchHtml(url, Number.isFinite(delayMs) ? delayMs : 800);
-  const products = parseProducts(parser, html, url, sourceKey, task.supermarket, task.kind);
+  const rawProducts = parseProducts(parser, html, url, sourceKey, task.supermarket, task.kind);
+  const products = enforceUrlIdentity(parser, url, sourceKey, rawProducts);
   const ingested = await ingest(task, products);
 
   if (task.kind === "automotive_dealer_catalog") {
