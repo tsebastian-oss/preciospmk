@@ -142,8 +142,11 @@ async function processTask(task: Task) {
   const marketProducts = parseMarketProducts(parser, html, url, sourceKey, task.supermarket);
   const rawProducts = marketProducts ?? parseProducts(parser, html, url, sourceKey, task.supermarket, task.kind);
   const products = enforceUrlIdentity(parser, url, sourceKey, rawProducts);
-  const skipRootFallbackIngest = parser === "cartoni" && task.kind === "automotive_dealer_catalog" && stage === "root";
-  const ingested = skipRootFallbackIngest ? 0 : await ingest(task, products);
+  // Cartoni catalog/brand pages are discovery and audit surfaces only. Product pricing is
+  // written exclusively from the model detail page so naming differences in listing cards
+  // cannot create duplicate models or overwrite richer list/bonus data.
+  const skipCartoniCatalogIngest = parser === "cartoni" && task.kind === "automotive_dealer_catalog";
+  const ingested = skipCartoniCatalogIngest ? 0 : await ingest(task, products);
 
   if (task.kind === "automotive_dealer_catalog") {
     const marketItems = discoverMarket(parser, html, url, stage);
