@@ -216,23 +216,30 @@ function portilloEmbeddedDiscovery(html: string, baseUrl: string): QueueItem[] {
     return [];
   }
 
-  const found = new Set<string>();
+  const occurrences = new Map<string, number>();
   for (const match of html.matchAll(/\/marcas\/[a-z0-9-]+\/nuevo\/[a-z0-9-]+/gi)) {
     try {
       const candidate = new URL(match[0], base);
       if (!/(^|\.)portillo\.cl$/i.test(candidate.hostname)) continue;
-      found.add(candidate.toString());
+      const normalized = candidate.toString();
+      occurrences.set(normalized, (occurrences.get(normalized) ?? 0) + 1);
     } catch {
       // Ignore malformed embedded paths.
     }
   }
 
-  return [...found].slice(0, 400).map((url) => ({
-    kind: "automotive_model_page" as const,
-    stage: "model",
-    url,
-    task_key: slug(new URL(url).pathname),
-  }));
+  // Next Flight can split a URL across script chunks. Real model routes are repeated in
+  // the page payload/render tree; one-off fragments (for example `/nuevo/niss`) are not.
+  return [...occurrences.entries()]
+    .filter(([, count]) => count >= 2)
+    .map(([url]) => url)
+    .slice(0, 400)
+    .map((url) => ({
+      kind: "automotive_model_page" as const,
+      stage: "model",
+      url,
+      task_key: slug(new URL(url).pathname),
+    }));
 }
 
 export function discoverMarket(parser: string, html: string, url: string, stage: string): QueueItem[] | null {
