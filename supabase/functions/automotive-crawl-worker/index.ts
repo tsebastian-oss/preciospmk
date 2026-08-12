@@ -99,6 +99,48 @@ function enforceUrlIdentity(parser: string, url: string, sourceKey: string, prod
   }
 }
 
+function absoluteUrl(value: string, base: string) {
+  try { return new URL(value, base).toString(); } catch { return null; }
+}
+
+function cartoniModelKey(value: string) {
+  try {
+    const parts = new URL(value).pathname.split("/").filter(Boolean);
+    const normalized = parts[0] === "m" ? parts.slice(1) : parts;
+    if (normalized[0] !== "nuevo" || !normalized[1] || !normalized[2]) return "";
+    return `${normalized[1].toLowerCase()}/${normalized[2].toLowerCase()}`;
+  } catch {
+    return "";
+  }
+}
+
+function withCartoniExpectedProducts<T extends { kind: string; url: string }>(html: string, pageUrl: string, items: T[]) {
+  const versionsByModel = new Map<string, Set<string>>();
+  for (const match of html.matchAll(/href\s*=\s*["']([^"']+)["']/gi)) {
+    const target = absoluteUrl(match[1], pageUrl);
+    if (!target) continue;
+    try {
+      const parts = new URL(target).pathname.split("/").filter(Boolean);
+      const normalized = parts[0] === "m" ? parts.slice(1) : parts;
+      if (normalized[0] !== "nuevo" || !normalized[1] || !normalized[2] || !normalized[3]) continue;
+      if (normalized.length !== 4 || !/^\d+$/.test(normalized[3])) continue;
+      const key = `${normalized[1].toLowerCase()}/${normalized[2].toLowerCase()}`;
+      const set = versionsByModel.get(key) ?? new Set<string>();
+      set.add(`${key}/${normalized[3]}`);
+      versionsByModel.set(key, set);
+    } catch {
+      // Ignore malformed third-party links.
+    }
+  }
+
+  return items.map((item) => {
+    if (item.kind !== "automotive_model_page") return item;
+    const key = cartoniModelKey(item.url);
+    const expected = key ? versionsByModel.get(key)?.size ?? 0 : 0;
+    return expected > 0 ? { ...item, expected_products: expected } : item;
+  });
+}
+
 async function fetchHtml(url: string, delayMs: number) {
   const response = await fetch(url, {
     headers: { "user-agent": UA, accept: "text/html,*/*", "accept-language": "es-CL,es;q=0.9" },
@@ -142,6 +184,18 @@ async function processTask(task: Task) {
   const marketProducts = parseMarketProducts(parser, html, url, sourceKey, task.supermarket);
   const rawProducts = marketProducts ?? parseProducts(parser, html, url, sourceKey, task.supermarket, task.kind);
   const products = enforceUrlIdentity(parser, url, sourceKey, rawProducts);
+
+  const expectedProducts = Number(task.payload?.expected_products ?? 0);
+  if (
+    parser === "cartoni"
+    && task.kind === "automotive_model_page"
+    && Number.isFinite(expectedProducts)
+    && expectedProducts > 0
+    && products.length !== expectedProducts
+  ) {
+    throw new Error(`cartoni_completeness_mismatch_expected_${expectedProducts}_parsed_${products.length}`);
+  }
+
   // Cartoni catalog/brand pages are discovery and audit surfaces only. Product pricing is
   // written exclusively from the model detail page so naming differences in listing cards
   // cannot create duplicate models or overwrite richer list/bonus data.
@@ -150,7 +204,10 @@ async function processTask(task: Task) {
 
   if (task.kind === "automotive_dealer_catalog") {
     const marketItems = discoverMarket(parser, html, url, stage);
-    const items = marketItems ?? discover(parser, html, url, stage);
+    const discoveredItems = marketItems ?? discover(parser, html, url, stage);
+    const items = parser === "cartoni" && stage === "brand"
+      ? withCartoniExpectedProducts(html, url, discoveredItems)
+      : discoveredItems;
     const enqueued = items.length
       ? await rpcWithRetry<number>("enqueue_automotive_tasks_service", { p_parent_task_id: task.id, p_items: items })
       : 0;
@@ -159,7 +216,7 @@ async function processTask(task: Task) {
   }
 
   const state = await finish(task, true, Number(ingested || 0), null);
-  return { id: task.id, dealer: task.supermarket, parsed: products.length, ingested, state };
+  return { id: task.id, dealer: task.supermarket, parsed: products.length, expected: expectedProducts || null, ingested, state };
 }
 
 async function safeTask(task: Task) {
