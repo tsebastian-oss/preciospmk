@@ -1,10 +1,10 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { clean, discover, parseProducts, slug, type AutomotiveProduct } from "./parsers.ts";
-import { discoverMarket, parseMarketProducts } from "./market-parsers.ts";
+import { discoverMarket, parseMarketProducts } from "./market-parsers-v2.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-const UA = "MGP-AutomotiveBot/1.3 (+public-dealer-catalog-research; rate-limited)";
+const UA = "MGP-AutomotiveBot/1.4 (+public-dealer-catalog-research; rate-limited)";
 const MAX_CONCURRENCY = 2;
 
 type Task = {
