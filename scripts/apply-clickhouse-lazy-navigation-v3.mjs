@@ -53,6 +53,7 @@ const copyEntries = `  "price-evolution": { title: "Evolución de precios", desc
   "market-coverage": { title: "Cobertura de mercado", description: "Profundidad y disponibilidad del catálogo monitoreado." },
   "price-gaps": { title: "Brechas de precio", description: "Diferencias de precio entre retailers sobre universos comparables." },
   "price-alerts": { title: "Movimientos y alertas", description: "Alzas y bajas diarias detectadas en ClickHouse." },
+  products: { title: "Productos", description: "Explora precios actuales por marca y producto directamente desde ClickHouse." },
   "data-status": { title: "Estado de datos", description: "Freshness y actividad de las fuentes monitoreadas." },
 `;
 if (!source.includes('"price-evolution": { title:')) source = source.replace(copyAnchor, copyAnchor + copyEntries);
@@ -118,6 +119,7 @@ if (source.includes(trendStart)) {
 }
 
 if (!source.includes('label: "Evolución de precios"') || !source.includes('label: "Estado de datos"')) throw new Error("Lazy navigation: compact menu not installed");
+if (!source.includes('products: { title: "Productos"')) throw new Error("Lazy navigation: Products copy missing");
 if (!source.includes('if (LAZY_VISIBLE_VIEWS.has(view)) return;')) throw new Error("Lazy navigation: legacy prefetch guard missing");
 if (!source.includes('<ClickHouseLanding/>')) throw new Error("Lazy navigation: lightweight landing missing");
 fs.writeFileSync(appPath, source);
