@@ -9,6 +9,9 @@ const downloads = readFileSync("src/app/ClickHouseDownloads.tsx", "utf8");
 const exportRoute = readFileSync("src/app/api/clickhouse-export/route.ts", "utf8");
 const insight = readFileSync("src/app/ClickHouseInsightView.tsx", "utf8");
 const insightData = readFileSync("src/lib/clickhouse-insights.ts", "utf8");
+const automotive = readFileSync("src/app/AutomotiveIntelligence.tsx", "utf8");
+const automotiveData = readFileSync("src/lib/clickhouse-automotive.ts", "utf8");
+const automotiveRoute = readFileSync("src/app/api/automotive/route.ts", "utf8");
 
 const requiredApp = [
   ['Category Intelligence import', 'import CategoryIntelligence from "./CategoryIntelligence";'],
@@ -19,6 +22,10 @@ const requiredApp = [
   ['Retailer benchmark nav', 'label: "Benchmark retailers"'],
   ['Price gaps nav', 'label: "Brechas de precio"'],
   ['Data status nav', 'label: "Estado de datos"'],
+  ['Automotive import', 'import AutomotiveIntelligence from "./AutomotiveIntelligence";'],
+  ['Automotive group', 'label: "Automotriz"'],
+  ['Automotive nav', 'label: "Mercado automotriz"'],
+  ['Automotive renderer', 'view === "automotive" ? <AutomotiveIntelligence/>'],
   ['ClickHouse landing import', 'import ClickHouseLanding from "./ClickHouseLanding";'],
   ['ClickHouse insight import', 'import ClickHouseInsightView, { type ClickHouseInsightMode } from "./ClickHouseInsightView";'],
   ['ClickHouse insight renderer', 'isClickHouseInsightView(view) ? <ClickHouseInsightView mode={view}/>'],
@@ -73,6 +80,12 @@ if (!insight.includes('Marca') || !insight.includes('Producto') || !insight.incl
 if (!insight.includes('/api/clickhouse-insight?')) failures.push('Las vistas lazy no consultan el endpoint ClickHouse dedicado');
 if (!insightData.includes('clickHouseInsight') || insightData.toLowerCase().includes('supabase')) failures.push('La analítica lazy no está aislada en ClickHouse');
 
+if (!automotive.includes('Dealer-first · ClickHouse')) failures.push('Automotriz no declara sourcing concesionario + ClickHouse');
+if (!automotive.includes('Precio lista') || !automotive.includes('Bono financiamiento') || !automotive.includes('Precio final')) failures.push('Automotriz no muestra el set de precios requerido');
+if (!automotive.includes('/api/automotive?')) failures.push('Automotriz no usa su endpoint dedicado');
+if (!automotiveData.includes("p.retailer_type = 'automotive'") || automotiveData.toLowerCase().includes('supabase')) failures.push('Automotriz no está aislado analíticamente en ClickHouse');
+if (!automotiveRoute.includes('clickHouseAutomotiveCatalog')) failures.push('Endpoint automotriz no resuelve catálogo ClickHouse');
+
 if (!downloads.includes('/api/clickhouse-export?mode=meta')) failures.push('Descargas no consulta metadata de ClickHouse');
 if (!downloads.includes('Descargar CSV para Excel')) failures.push('Descargas no ofrece formato amigable para Excel');
 if (!exportRoute.includes('FORMAT CSVWithNames')) failures.push('Export route no genera CSV desde ClickHouse');
@@ -91,4 +104,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("Prebuild integrity OK: lazy ClickHouse navigation, category analytics, downloads and permissions validated.");
+console.log("Prebuild integrity OK: lazy ClickHouse navigation, automotive, category analytics, downloads and permissions validated.");
