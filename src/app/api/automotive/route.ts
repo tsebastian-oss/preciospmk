@@ -7,6 +7,8 @@ import { clickHouseAutomotiveBrandVariations, type AutomotiveBrandComparison } f
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+const LIVE_DATA_HEADERS = { "cache-control": "private, no-store, max-age=0" };
+
 export async function GET(request: NextRequest) {
   const authorization = await enterpriseAccess(request, "overview");
   if (authorization.response) return authorization.response;
@@ -18,7 +20,7 @@ export async function GET(request: NextRequest) {
     if (params.get("options") === "1") {
       const options = await clickHouseAutomotiveOptions(authorization.access);
       return NextResponse.json({ source: "clickhouse", ...options }, {
-        headers: { "cache-control": "private, max-age=300, stale-while-revalidate=900" },
+        headers: { "cache-control": "private, max-age=60, must-revalidate" },
       });
     }
 
@@ -30,9 +32,7 @@ export async function GET(request: NextRequest) {
 
     if (params.get("mode") === "variations") {
       const payload = await clickHouseAutomotiveVariations(authorization.access, filters);
-      return NextResponse.json(payload, {
-        headers: { "cache-control": "private, max-age=60, stale-while-revalidate=300" },
-      });
+      return NextResponse.json(payload, { headers: LIVE_DATA_HEADERS });
     }
 
     if (params.get("mode") === "brand_variations") {
@@ -40,15 +40,11 @@ export async function GET(request: NextRequest) {
         ? "previous_month"
         : "previous_week";
       const payload = await clickHouseAutomotiveBrandVariations(authorization.access, filters, comparison);
-      return NextResponse.json(payload, {
-        headers: { "cache-control": "private, max-age=60, stale-while-revalidate=300" },
-      });
+      return NextResponse.json(payload, { headers: LIVE_DATA_HEADERS });
     }
 
     const payload = await clickHouseAutomotiveCatalog(authorization.access, filters);
-    return NextResponse.json(payload, {
-      headers: { "cache-control": "private, max-age=60, stale-while-revalidate=300" },
-    });
+    return NextResponse.json(payload, { headers: LIVE_DATA_HEADERS });
   } catch {
     return NextResponse.json({ error: "No fue posible cargar la inteligencia automotriz desde ClickHouse.", source: "clickhouse" }, { status: 503 });
   }
