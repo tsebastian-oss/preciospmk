@@ -16,7 +16,7 @@ type Result = {
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
-const MAX_CONCURRENCY = 4;
+const MAX_CONCURRENCY = 2;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -87,22 +87,20 @@ Deno.serve(async (request: Request) => {
   const minute = new Date().getUTCMinutes();
   const targets: Target[] = [
     { slug: "catalog-crawl-worker", retailer: "Jumbo/Santa Isabel", timeoutMs: 55_000 },
-    { slug: "catalog-crawl-worker", retailer: "Jumbo/Santa Isabel", timeoutMs: 55_000 },
-    { slug: "lider-crawl-worker", retailer: "Lider", timeoutMs: 55_000 },
     { slug: "lider-crawl-worker", retailer: "Lider", timeoutMs: 55_000 },
     { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
     { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
     { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
-    { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
+    { slug: "falabella-listing-worker", retailer: "Falabella", timeoutMs: 125_000 },
     { slug: "falabella-listing-worker", retailer: "Falabella", timeoutMs: 125_000 },
     { slug: "falabella-listing-worker", retailer: "Falabella", timeoutMs: 125_000 },
     { slug: "pharmacy-crawl-worker", retailer: "Salcobrand/Cruz Verde/Ahumada", timeoutMs: 125_000 },
+    { slug: "home-improvement-crawl-worker", retailer: "Easy/Sodimac", timeoutMs: 125_000 },
+    { slug: "home-improvement-crawl-worker", retailer: "Easy/Sodimac", timeoutMs: 125_000 },
   ];
 
-  if (minute % 3 === 0) {
-    targets.push({ slug: "lider-discovery-worker", retailer: "Lider discovery", timeoutMs: 55_000 });
-  }
   if (minute % 5 === 0) {
+    targets.push({ slug: "lider-discovery-worker", retailer: "Lider discovery", timeoutMs: 55_000 });
     targets.push({ slug: "jumbo-price-refresh-worker", retailer: "Jumbo price refresh", timeoutMs: 55_000 });
   }
 
@@ -115,6 +113,7 @@ Deno.serve(async (request: Request) => {
     succeeded: results.length - failures.length,
     failed: failures.length,
     durationMs: Date.now() - started,
+    concurrency: MAX_CONCURRENCY,
     results,
   }, failures.length === results.length ? 502 : 200);
 });
