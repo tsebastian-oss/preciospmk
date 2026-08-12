@@ -81,9 +81,11 @@ if (!insight.includes('/api/clickhouse-insight?')) failures.push('Las vistas laz
 if (!insightData.includes('clickHouseInsight') || insightData.toLowerCase().includes('supabase')) failures.push('La analítica lazy no está aislada en ClickHouse');
 
 if (!automotive.includes('Dealer-first · ClickHouse')) failures.push('Automotriz no declara sourcing concesionario + ClickHouse');
-if (!automotive.includes('Precio lista') || !automotive.includes('Bono financiamiento') || !automotive.includes('Precio final')) failures.push('Automotriz no muestra el set de precios requerido');
+if (!automotive.includes('<table') || !automotive.includes('Precio lista') || !automotive.includes('Bono financiamiento') || !automotive.includes('Precio final')) failures.push('Automotriz no muestra la tabla de precios requerida');
+if (automotive.includes('<img') || automotive.includes('imageUrl') || automotive.includes('technicalSheetUrl') || automotive.includes('Ver oferta')) failures.push('Automotriz volvió a exponer fotos, fichas o enlaces en vez de la tabla simple');
 if (!automotive.includes('/api/automotive?')) failures.push('Automotriz no usa su endpoint dedicado');
 if (!automotiveData.includes("p.retailer_type = 'automotive'") || automotiveData.toLowerCase().includes('supabase')) failures.push('Automotriz no está aislado analíticamente en ClickHouse');
+if (automotiveData.includes('image_url') || automotiveData.includes('technical_sheet_url') || automotiveData.includes('fuel_type')) failures.push('Payload automotriz todavía carga media/ficha en lugar de precios');
 if (!automotiveRoute.includes('clickHouseAutomotiveCatalog')) failures.push('Endpoint automotriz no resuelve catálogo ClickHouse');
 
 if (!downloads.includes('/api/clickhouse-export?mode=meta')) failures.push('Descargas no consulta metadata de ClickHouse');
@@ -104,4 +106,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("Prebuild integrity OK: lazy ClickHouse navigation, automotive, category analytics, downloads and permissions validated.");
+console.log("Prebuild integrity OK: lazy ClickHouse navigation, pricing-only automotive, category analytics, downloads and permissions validated.");
