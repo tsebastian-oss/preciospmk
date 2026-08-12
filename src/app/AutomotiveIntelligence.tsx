@@ -16,9 +16,6 @@ type AutomotiveVehicle = {
   model: string;
   version: string;
   dealer: string;
-  bodyType: string;
-  imageUrl: string | null;
-  url: string;
   listPrice: number;
   brandBonus: number;
   onlineBonus: number;
@@ -26,8 +23,6 @@ type AutomotiveVehicle = {
   cashPrice: number;
   financeBonus: number;
   finalPrice: number;
-  fuelType: string | null;
-  technicalSheetUrl: string | null;
   observedAt: string | null;
 };
 
@@ -50,9 +45,8 @@ function formatPrice(value: number) {
   return value > 0 ? money.format(value) : "—";
 }
 
-function bonusLabel(label: string, value: number) {
-  if (!value) return null;
-  return <span className={styles.bonus}>{label}: -{money.format(value)}</span>;
+function formatBonus(value: number) {
+  return value > 0 ? `-${money.format(value)}` : "—";
 }
 
 export default function AutomotiveIntelligence() {
@@ -114,7 +108,7 @@ export default function AutomotiveIntelligence() {
       <div className={styles.heroCopy}>
         <span>AUTOMOTIVE INTELLIGENCE · CHILE</span>
         <h1>Mercado automotriz</h1>
-        <p>Catálogo de marcas, modelos y versiones construido desde concesionarios. Compara precio lista, bonos y precio final sin depender únicamente de las páginas corporativas de cada marca.</p>
+        <p>Modelo, versión, concesionario y estructura de precio observada directamente en concesionarios chilenos.</p>
       </div>
       <div className={styles.sourcePill}><i /> Dealer-first · ClickHouse</div>
     </div>
@@ -145,7 +139,7 @@ export default function AutomotiveIntelligence() {
       <div className={styles.metric}><span>Marcas</span><strong>{integer.format(summary?.brands ?? 0)}</strong><small>con precio observado</small></div>
       <div className={styles.metric}><span>Modelos</span><strong>{integer.format(summary?.models ?? 0)}</strong><small>normalizados</small></div>
       <div className={styles.metric}><span>Versiones / ofertas</span><strong>{integer.format(summary?.versions ?? 0)}</strong><small>por concesionario</small></div>
-      <div className={styles.metric}><span>Concesionarios</span><strong>{integer.format(summary?.dealers ?? 0)}</strong><small>fuentes activas</small></div>
+      <div className={styles.metric}><span>Concesionarios</span><strong>{integer.format(summary?.dealers ?? 0)}</strong><small>fuentes con datos</small></div>
       <div className={styles.metric}><span>Última captura</span><strong>{summary?.lastObservedAt ? new Date(summary.lastObservedAt).toLocaleDateString("es-CL", { day: "2-digit", month: "short" }) : "—"}</strong><small>lunes / viernes</small></div>
     </div>
 
@@ -157,37 +151,38 @@ export default function AutomotiveIntelligence() {
     {loading ? <div className={styles.loading}>Cargando catálogo desde ClickHouse…</div> : null}
     {!loading && error ? <div className={styles.error}>{error}</div> : null}
     {!loading && !error && vehicles.length === 0 ? <div className={styles.empty}>
-      <strong>La vertical Automotriz está lista para recibir catálogo.</strong>
-      <p>Las primeras fuentes son concesionarios multimarca. A medida que los scrapers completen sus rondas de lunes y viernes aparecerán aquí marcas, modelos, versiones, bonos, imágenes y fichas técnicas.</p>
+      <strong>No hay precios para esta combinación.</strong>
+      <p>El crawler automotriz amplía cobertura por concesionario y actualiza el histórico los lunes y viernes.</p>
     </div> : null}
 
-    {!loading && !error && vehicles.length > 0 ? <div className={styles.grid}>{vehicles.map((vehicle) => <article key={vehicle.id} className={styles.card}>
-      <div className={styles.image}>
-        {vehicle.imageUrl ? <img src={vehicle.imageUrl} alt={`${vehicle.brand} ${vehicle.model}`} loading="lazy" /> : <span className={styles.placeholder}>Imagen no disponible</span>}
-        <span className={styles.dealer}>{vehicle.dealer}</span>
-      </div>
-      <div className={styles.content}>
-        <div className={styles.identity}>
-          <span>{vehicle.brand}</span>
-          <h3>{vehicle.model}</h3>
-          <p>{vehicle.version}{vehicle.fuelType ? ` · ${vehicle.fuelType}` : ""}{vehicle.bodyType ? ` · ${vehicle.bodyType}` : ""}</p>
-        </div>
-        <div className={styles.prices}>
-          <div className={styles.price}><span>Precio lista</span><strong>{formatPrice(vehicle.listPrice)}</strong></div>
-          <div className={styles.price}><span>Precio contado</span><strong>{formatPrice(vehicle.cashPrice)}</strong></div>
-          <div className={styles.price}><span>Bono financiamiento</span><strong>{vehicle.financeBonus ? `-${money.format(vehicle.financeBonus)}` : "—"}</strong></div>
-          <div className={`${styles.price} ${styles.final}`}><span>Precio final</span><strong>{formatPrice(vehicle.finalPrice)}</strong></div>
-        </div>
-        <div className={styles.bonuses}>
-          {bonusLabel("Bono marca", vehicle.brandBonus)}
-          {bonusLabel("Bono online", vehicle.onlineBonus)}
-          {bonusLabel("Bono concesionario", vehicle.dealerBonus)}
-        </div>
-        <div className={styles.actions}>
-          {vehicle.url ? <a href={vehicle.url} target="_blank" rel="noreferrer">Ver oferta</a> : null}
-          {vehicle.technicalSheetUrl ? <a href={vehicle.technicalSheetUrl} target="_blank" rel="noreferrer">Ficha técnica</a> : null}
-        </div>
-      </div>
-    </article>)}</div> : null}
+    {!loading && !error && vehicles.length > 0 ? <div className={styles.tableShell}>
+      <table className={styles.table}>
+        <thead><tr>
+          <th>Modelo</th>
+          <th>Versión</th>
+          <th>Concesionario</th>
+          <th>Precio lista</th>
+          <th>Bono marca</th>
+          <th>Bonos adicionales</th>
+          <th>Precio contado</th>
+          <th>Bono financiamiento</th>
+          <th>Precio final</th>
+        </tr></thead>
+        <tbody>{vehicles.map((vehicle) => {
+          const extraBonus = vehicle.onlineBonus + vehicle.dealerBonus;
+          return <tr key={vehicle.id}>
+            <td className={styles.modelCell}><small>{vehicle.brand}</small><strong>{vehicle.model}</strong></td>
+            <td className={styles.versionCell}>{vehicle.version}</td>
+            <td><span className={styles.dealer}>{vehicle.dealer}</span></td>
+            <td>{formatPrice(vehicle.listPrice)}</td>
+            <td className={styles.bonusCell}>{formatBonus(vehicle.brandBonus)}</td>
+            <td className={styles.bonusCell}>{formatBonus(extraBonus)}</td>
+            <td>{formatPrice(vehicle.cashPrice)}</td>
+            <td className={styles.bonusCell}>{formatBonus(vehicle.financeBonus)}</td>
+            <td className={styles.finalCell}>{formatPrice(vehicle.finalPrice)}</td>
+          </tr>;
+        })}</tbody>
+      </table>
+    </div> : null}
   </section>;
 }

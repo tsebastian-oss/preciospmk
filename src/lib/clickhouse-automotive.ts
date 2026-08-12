@@ -16,9 +16,6 @@ type AutomotiveVehicleRow = {
   model: string;
   version: string;
   dealer: string;
-  body_type: string;
-  image_url: string | null;
-  url: string;
   list_price: Numeric;
   brand_bonus: Numeric;
   online_bonus: Numeric;
@@ -26,8 +23,6 @@ type AutomotiveVehicleRow = {
   cash_price: Numeric;
   finance_bonus: Numeric;
   final_price: Numeric;
-  fuel_type: string;
-  technical_sheet_url: string;
   observed_at: string | null;
 };
 
@@ -120,9 +115,6 @@ export async function clickHouseAutomotiveCatalog(
       coalesce(nullIf(${metadataString("model")}, ''), nullIf(p.parent_external_id, ''), p.name) AS model,
       coalesce(nullIf(p.variant, ''), nullIf(${metadataString("version")}, ''), 'Versión no informada') AS version,
       p.supermarket AS dealer,
-      coalesce(nullIf(p.smart_category, ''), nullIf(p.category, ''), 'Vehículo') AS body_type,
-      p.image_url AS image_url,
-      p.url AS url,
       if(${metadataNumber("list_price")} > 0, ${metadataNumber("list_price")}, toFloat64(ifNull(s.regular_price, 0))) AS list_price,
       ${metadataNumber("brand_bonus")} AS brand_bonus,
       ${metadataNumber("online_bonus")} AS online_bonus,
@@ -130,8 +122,6 @@ export async function clickHouseAutomotiveCatalog(
       if(${metadataNumber("cash_price")} > 0, ${metadataNumber("cash_price")}, toFloat64(ifNull(s.regular_price, 0))) AS cash_price,
       ${metadataNumber("finance_bonus")} AS finance_bonus,
       if(toFloat64(ifNull(s.offer_price, 0)) > 0, toFloat64(s.offer_price), ${metadataNumber("final_price")}) AS final_price,
-      ${metadataString("fuel_type")} AS fuel_type,
-      ${metadataString("technical_sheet_url")} AS technical_sheet_url,
       toString(s.observed_at) AS observed_at
     FROM products AS p FINAL
     INNER JOIN product_latest_price_state AS s FINAL ON s.product_id = p.id
@@ -170,9 +160,6 @@ export async function clickHouseAutomotiveCatalog(
       model: row.model,
       version: row.version,
       dealer: row.dealer,
-      bodyType: row.body_type,
-      imageUrl: row.image_url,
-      url: row.url,
       listPrice: number(row.list_price),
       brandBonus: number(row.brand_bonus),
       onlineBonus: number(row.online_bonus),
@@ -180,8 +167,6 @@ export async function clickHouseAutomotiveCatalog(
       cashPrice: number(row.cash_price),
       financeBonus: number(row.finance_bonus),
       finalPrice: number(row.final_price),
-      fuelType: row.fuel_type || null,
-      technicalSheetUrl: row.technical_sheet_url || null,
       observedAt: row.observed_at,
     })),
   };
