@@ -15,6 +15,10 @@ type Result = {
   body: unknown;
 };
 
+type DispatchRequest = {
+  only?: "automotive";
+};
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const MAX_CONCURRENCY = 2;
@@ -85,11 +89,19 @@ async function runPool(targets: Target[]): Promise<Result[]> {
 
 Deno.serve(async (request: Request) => {
   if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
-  const body = await request.text();
-  if (body && body !== "{}") return json({ error: "request_body_not_accepted" }, 400);
 
+  let input: DispatchRequest = {};
+  try {
+    const raw = await request.text();
+    if (raw.trim()) input = JSON.parse(raw) as DispatchRequest;
+  } catch {
+    return json({ error: "invalid_request_body" }, 400);
+  }
+  if (input.only && input.only !== "automotive") return json({ error: "unsupported_dispatch_target" }, 400);
+
+  const automotiveTarget: Target = { slug: "automotive-crawl-worker", retailer: "Automotriz", timeoutMs: 125_000 };
   const minute = new Date().getUTCMinutes();
-  const targets: Target[] = [
+  const targets: Target[] = input.only === "automotive" ? [automotiveTarget] : [
     { slug: "catalog-crawl-worker", retailer: "Jumbo/Santa Isabel", timeoutMs: 55_000 },
     { slug: "lider-crawl-worker", retailer: "Lider", timeoutMs: 55_000 },
     { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
@@ -101,10 +113,10 @@ Deno.serve(async (request: Request) => {
     { slug: "pharmacy-crawl-worker", retailer: "Salcobrand/Cruz Verde/Ahumada", timeoutMs: 125_000 },
     { slug: "home-improvement-crawl-worker", retailer: "Easy/Sodimac", timeoutMs: 125_000 },
     { slug: "home-improvement-crawl-worker", retailer: "Easy/Sodimac", timeoutMs: 125_000 },
-    { slug: "automotive-crawl-worker", retailer: "Automotriz", timeoutMs: 125_000 },
+    automotiveTarget,
   ];
 
-  if (minute % 5 === 0) {
+  if (!input.only && minute % 5 === 0) {
     targets.push({ slug: "lider-discovery-worker", retailer: "Lider discovery", timeoutMs: 55_000 });
     targets.push({ slug: "jumbo-price-refresh-worker", retailer: "Jumbo price refresh", timeoutMs: 55_000 });
   }
@@ -114,6 +126,7 @@ Deno.serve(async (request: Request) => {
   const failures = results.filter((item) => !item.ok);
   return json({
     ok: failures.length === 0,
+    scope: input.only ?? "all",
     dispatched: targets.length,
     succeeded: results.length - failures.length,
     failed: failures.length,
