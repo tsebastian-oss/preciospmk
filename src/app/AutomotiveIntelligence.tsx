@@ -171,7 +171,7 @@ export default function AutomotiveIntelligence() {
         <tbody>{vehicles.map((vehicle) => {
           const extraBonus = vehicle.onlineBonus + vehicle.dealerBonus;
           return <tr key={vehicle.id}>
-            <td className={styles.modelCell}><small>{vehicle.brand}</small><strong>{vehicle.model}</strong></td>
+            <td className={styles.modelCell}><strong>{vehicle.model}</strong></td>
             <td className={styles.versionCell}>{vehicle.version}</td>
             <td><span className={styles.dealer}>{vehicle.dealer}</span></td>
             <td>{formatPrice(vehicle.listPrice)}</td>
