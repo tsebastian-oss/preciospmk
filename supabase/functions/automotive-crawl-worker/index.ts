@@ -1,6 +1,6 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { clean, discover, parseProducts, slug, type AutomotiveProduct } from "./parsers.ts";
-import { discoverMarket, parseMarketProducts } from "./market-parsers-v3.ts";
+import { discoverMarket, parseMarketProducts } from "./market-parsers-v4.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
