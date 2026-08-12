@@ -140,6 +140,8 @@ export async function clickHouseAutomotiveCatalog(
     LIMIT 1000
   `, params, 8_000);
 
+  const summaryParams: ClickHouseParams = {};
+  const summaryPredicates = autoPredicates(access, summaryParams);
   const summaryRows = await clickHouseQuery<AutomotiveSummaryRow>(`
     SELECT
       uniqExact(p.brand) AS brands,
@@ -149,8 +151,8 @@ export async function clickHouseAutomotiveCatalog(
       toString(max(s.observed_at)) AS last_observed_at
     FROM products AS p FINAL
     INNER JOIN product_latest_price_state AS s FINAL ON s.product_id = p.id
-    WHERE ${autoPredicates(access, {}).join(" AND ")}
-  `, {}, 6_000).catch(() => [] as AutomotiveSummaryRow[]);
+    WHERE ${summaryPredicates.join(" AND ")}
+  `, summaryParams, 6_000).catch(() => [] as AutomotiveSummaryRow[]);
 
   const summary = summaryRows[0] ?? { brands: 0, models: 0, versions: 0, dealers: 0, last_observed_at: null };
   return {
