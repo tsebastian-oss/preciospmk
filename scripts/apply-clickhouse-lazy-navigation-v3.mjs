@@ -77,7 +77,7 @@ source = source.replace(/view === "overview" \? styles\.clickHouseMode : ""/g, '
 source = source.replace(/view === "overview" \? styles\.clickHouseMain : ""/g, 'DARK_VISIBLE_VIEWS.has(view) ? styles.clickHouseMain : ""');
 
 const mainOld = '{view === "overview" ? <ClickHouseOverview onNavigate={(target) => navigate(target as View)}/> : <>';
-const mainNew = '{view === "overview" ? <ClickHouseLanding/> : isClickHouseInsightView(view) ? <ClickHouseInsightView mode={view}/> : view === "category-intelligence" ? <CategoryIntelligence/> : view === "downloads" ? <ClickHouseDownloads filters={{ supermarket: "", category: "", brand: "" }}/> : <>';
+const mainNew = '{view === "overview" ? <ClickHouseLanding/> : isClickHouseInsightView(view) ? <ClickHouseInsightView mode={view}/> : view === "category-intelligence" ? <CategoryIntelligence/> : <>';
 if (source.includes(mainOld)) source = source.replace(mainOld, mainNew);
 else if (!source.includes('<ClickHouseLanding/> : isClickHouseInsightView(view)')) throw new Error("Lazy navigation: main conditional missing");
 
