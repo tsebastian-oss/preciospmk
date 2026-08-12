@@ -142,14 +142,21 @@ export function parsePortilloFlightVersions(
 
     const brandRecord = resolveObject(vehicle.carBrandType, records);
     const modelRecord = resolveObject(vehicle.carModelType, records);
-    const brand = clean(brandRecord?.value, 120) || fallback?.brand || "";
-    const model = clean(modelRecord?.value, 180) || clean(vehicle.model, 180) || fallback?.model || "";
-    if (!brand || !model) continue;
+    const rawBrand = clean(brandRecord?.value, 120) || fallback?.brand || "";
+    const rawModel = clean(modelRecord?.value, 180) || clean(vehicle.model, 180) || fallback?.model || "";
+    if (!rawBrand || !rawModel) continue;
 
-    const actualBrandSlug = clean(brandRecord?.slug, 120).toLowerCase() || slug(brand);
-    const actualModelSlug = clean(modelRecord?.slug, 160).toLowerCase() || slug(model);
+    const actualBrandSlug = clean(brandRecord?.slug, 120).toLowerCase() || slug(rawBrand);
+    const actualModelSlug = clean(modelRecord?.slug, 160).toLowerCase() || slug(rawModel);
     if (identity?.brandSlug && actualBrandSlug && identity.brandSlug !== actualBrandSlug) continue;
     if (identity?.modelSlug && actualModelSlug && !modelMatches(identity.modelSlug, actualModelSlug)) continue;
+
+    // Keep structured identity for matching, but reuse the existing canonical display casing
+    // so Portillo does not create duplicate filters such as Toyota/TOYOTA or Rav4/RAV4.
+    const fallbackBrandSlug = fallback?.brand ? slug(fallback.brand) : "";
+    const fallbackModelSlug = fallback?.model ? slug(fallback.model) : "";
+    const brand = fallback?.brand && fallbackBrandSlug === actualBrandSlug ? fallback.brand : rawBrand;
+    const model = fallback?.model && modelMatches(fallbackModelSlug, actualModelSlug) ? fallback.model : rawModel;
 
     const prices = pricingRows(vehicle.prices, records).filter((row) => !row.currency || clean(row.currency, 20).toUpperCase() === "CLP");
     if (!prices.length) continue;
