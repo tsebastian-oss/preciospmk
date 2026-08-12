@@ -16,6 +16,7 @@ type Result = {
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
+const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const MAX_CONCURRENCY = 2;
 
 function json(body: unknown, status = 200) {
@@ -34,7 +35,10 @@ async function invoke(target: Target): Promise<Result> {
   try {
     const response = await fetch(`${SUPABASE_URL}/functions/v1/${target.slug}`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...(SERVICE_ROLE ? { apikey: SERVICE_ROLE, Authorization: `Bearer ${SERVICE_ROLE}` } : {}),
+      },
       body: "{}",
       signal: AbortSignal.timeout(target.timeoutMs),
     });
@@ -97,6 +101,7 @@ Deno.serve(async (request: Request) => {
     { slug: "pharmacy-crawl-worker", retailer: "Salcobrand/Cruz Verde/Ahumada", timeoutMs: 125_000 },
     { slug: "home-improvement-crawl-worker", retailer: "Easy/Sodimac", timeoutMs: 125_000 },
     { slug: "home-improvement-crawl-worker", retailer: "Easy/Sodimac", timeoutMs: 125_000 },
+    { slug: "automotive-crawl-worker", retailer: "Automotriz", timeoutMs: 125_000 },
   ];
 
   if (minute % 5 === 0) {
