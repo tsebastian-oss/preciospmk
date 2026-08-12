@@ -208,10 +208,38 @@ function parseDercocenterFlight(html: string, url: string, sourceKey: string, de
   return [...new Map(products.map((product) => [product.external_id, product])).values()];
 }
 
+function portilloEmbeddedDiscovery(html: string, baseUrl: string): QueueItem[] {
+  let base: URL;
+  try {
+    base = new URL(baseUrl);
+  } catch {
+    return [];
+  }
+
+  const found = new Set<string>();
+  for (const match of html.matchAll(/\/marcas\/[a-z0-9-]+\/nuevo\/[a-z0-9-]+/gi)) {
+    try {
+      const candidate = new URL(match[0], base);
+      if (!/(^|\.)portillo\.cl$/i.test(candidate.hostname)) continue;
+      found.add(candidate.toString());
+    } catch {
+      // Ignore malformed embedded paths.
+    }
+  }
+
+  return [...found].slice(0, 400).map((url) => ({
+    kind: "automotive_model_page" as const,
+    stage: "model",
+    url,
+    task_key: slug(new URL(url).pathname),
+  }));
+}
+
 export function discoverMarket(parser: string, html: string, url: string, stage: string): QueueItem[] | null {
   // Dercocenter's filter links are client-side state; their server HTML repeats the same first cards.
   // The full catalog is instead parsed from the structured Next Flight payload on the root page.
   if (parser === "dercocenter") return [];
+  if (parser === "portillo" && stage === "root") return portilloEmbeddedDiscovery(html, url);
   return baseDiscoverMarket(parser, html, url, stage);
 }
 
