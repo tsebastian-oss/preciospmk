@@ -1,4 +1,4 @@
--- Expand Automotive Intelligence coverage with dealer-first sources and one brand-operated dealer fallback.
+-- Expand Automotive Intelligence coverage while keeping blocked sources safely disabled.
 -- Images are intentionally excluded from the automotive data contract.
 
 update public.products
@@ -7,13 +7,13 @@ set image_url = null,
 where retailer_type = 'automotive'
   and (image_url is not null or source_metadata ?| array['images','image','image_url']);
 
+-- Salfa Automotriz and Kaufmann are useful coverage targets but their sites currently return HTTP 403
+-- to the Supabase Edge runtime. Keep the parsers available in code, but do not enable broken sources.
 update public.automotive_sources
-set enabled=true, parser_key='salfa_automotriz', catalog_url='https://www.salfaautomotriz.cl/web/guest/nuevos/-/busqueda/asc/6', updated_at=now()
-where source_key='salfa_automotriz';
-
-update public.automotive_sources
-set enabled=true, parser_key='kaufmann', catalog_url='https://www.kaufmann.cl/automoviles/mercedes-benz', updated_at=now()
-where source_key='kaufmann';
+set enabled=false,
+    metadata=coalesce(metadata,'{}'::jsonb) || jsonb_build_object('adapter_status','blocked_http_403','next_action','alternative_public_integration'),
+    updated_at=now()
+where source_key in ('salfa_automotriz','kaufmann');
 
 insert into public.automotive_sources(source_key,dealer,source_type,parser_key,base_url,catalog_url,enabled,priority,crawl_delay_ms,metadata)
 values (
@@ -26,7 +26,7 @@ values (
   true,
   85,
   900,
-  jsonb_build_object('source_policy','brand_operated_dealer_fallback','brands',jsonb_build_array('BMW'),'capture_scope','pricing_only')
+  jsonb_build_object('source_policy','brand_operated_dealer_fallback','brands',jsonb_build_array('BMW'),'capture_scope','pricing_only','adapter_status','ready_for_validation')
 )
 on conflict(source_key) do update set
   dealer=excluded.dealer,
@@ -40,4 +40,4 @@ on conflict(source_key) do update set
   metadata=excluded.metadata,
   updated_at=now();
 
--- Bruno Fritsch and Difor remain registered but disabled until their parsers pass validation.
+-- Bruno Fritsch, Difor and Guillermo Morales remain registered but disabled until a public data endpoint/parser passes validation.
