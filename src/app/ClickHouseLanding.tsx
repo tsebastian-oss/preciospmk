@@ -17,10 +17,10 @@ export default function ClickHouseLanding() {
         <span>ANÁLISIS BAJO DEMANDA</span>
         <h2>El dashboard ya no precarga todo</h2>
         <p>Selecciona en el menú izquierdo solo el análisis que necesitas. Cada vista ejecuta su propia consulta en ClickHouse.</p>
-        <div><b>01</b><strong>Evolución de precios</strong><small>Series históricas por retailer.</small></div>
-        <div><b>02</b><strong>Benchmark retailers</strong><small>Medianas y rangos de precio.</small></div>
-        <div><b>03</b><strong>Cobertura y brechas</strong><small>Profundidad, disponibilidad y dispersión.</small></div>
-        <div><b>04</b><strong>Movimientos y alertas</strong><small>Cambios diarios accionables.</small></div>
+        <div><b>01</b><strong>Evolución de precios</strong><small>Histórico real por marca, producto y retailer.</small></div>
+        <div><b>02</b><strong>Brechas de precio</strong><small>Principal brecha comparable para cada marca.</small></div>
+        <div><b>03</b><strong>Movimientos y alertas</strong><small>Movimientos relevantes entre las últimas observaciones reales.</small></div>
+        <div><b>04</b><strong>Análisis de categorías</strong><small>Mix de productos, precios y surtido entre verticales.</small></div>
       </aside>
     </div>
     <footer>Supabase se mantiene para autenticación y permisos. La analítica visible se resuelve desde ClickHouse.</footer>
