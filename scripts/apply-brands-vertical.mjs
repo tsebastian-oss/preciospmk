@@ -1,65 +1,56 @@
 import fs from "node:fs";
 
-const file = "src/app/UnifiedPlatformApp.tsx";
-let source = fs.readFileSync(file, "utf8");
+const appPath = "src/app/UnifiedPlatformApp.tsx";
+const commercialPath = "src/app/CommercialExperience.tsx";
+let source = fs.readFileSync(appPath, "utf8");
 
-function replaceOnce(from, to, label) {
-  if (source.includes(to)) return;
-  if (!source.includes(from)) throw new Error(`Brands patch failed: ${label}`);
-  source = source.replace(from, to);
-}
-
+const automotiveImport = 'import AutomotiveIntelligence from "./AutomotiveIntelligence";';
 if (!source.includes('import BrandsVertical from "./BrandsVertical";')) {
-  const anchor = 'import AutomotiveIntelligence from "./AutomotiveIntelligence";';
-  if (source.includes(anchor)) source = source.replace(anchor, `${anchor}\nimport BrandsVertical from "./BrandsVertical";`);
-  else {
-    const importAnchor = 'import';
-    const firstNl = source.indexOf("\n");
-    if (firstNl < 0 || !source.startsWith(importAnchor)) throw new Error("Brands patch failed: import anchor");
-    source = `${source.slice(0, firstNl + 1)}import BrandsVertical from \"./BrandsVertical\";\n${source.slice(firstNl + 1)}`;
-  }
+  if (!source.includes(automotiveImport)) throw new Error("Brands vertical: automotive import anchor missing");
+  source = source.replace(automotiveImport, `${automotiveImport}\nimport BrandsVertical from "./BrandsVertical";`);
 }
 
-if (!source.includes('| "brands"')) {
-  if (source.includes('| "automotive"')) source = source.replace('| "automotive"', '| "automotive"\n  | "brands"');
-  else throw new Error("Brands patch failed: View type");
-}
+const viewMatch = source.match(/type View = ([^;]+);/);
+if (!viewMatch) throw new Error("Brands vertical: View type missing");
+if (!viewMatch[0].includes('"brands"')) source = source.replace(viewMatch[0], viewMatch[0].replace(";", ' | "brands";'));
 
 if (!source.includes('label: "Brands"')) {
-  const automotiveGroup = /\{\s*label:\s*"Automotriz",\s*items:\s*\[\{\s*view:\s*"automotive"[^\]]*\]\s*\},?/m;
-  const match = source.match(automotiveGroup);
-  if (!match) throw new Error("Brands patch failed: navigation group");
-  source = source.replace(match[0], `${match[0]}\n  { label: "Brands", items: [{ view: "brands", label: "Marcas", icon: "◆" }] },`);
+  const dataGroup = `  { label: "Datos y operación", items: [`;
+  if (!source.includes(dataGroup)) throw new Error("Brands vertical: menu anchor missing");
+  source = source.replace(dataGroup, `  { label: "Brands", items: [\n    { view: "brands", label: "Marcas", icon: "◆" },\n  ] },\n${dataGroup}`);
 }
 
-if (!source.includes('brands: {')) {
-  const copyAnchor = 'automotive: {';
-  const idx = source.indexOf(copyAnchor);
-  if (idx < 0) throw new Error("Brands patch failed: copy anchor");
-  const next = source.indexOf("\n  },", idx);
-  if (next < 0) throw new Error("Brands patch failed: copy block");
-  const insertAt = next + 5;
-  const block = '\n  brands: { eyebrow: "Brands", title: "Brand & Retail Intelligence", description: "Descubre dónde se vende una marca, monitorea su catálogo, precios, sellers y presencia digital." },';
-  source = source.slice(0, insertAt) + block + source.slice(insertAt);
+const copyAnchor = 'const COPY: Record<View, { title: string; description: string }> = {\n';
+if (!source.includes('brands: { title: "Brand & Retail Intelligence"')) {
+  if (!source.includes(copyAnchor)) throw new Error("Brands vertical: COPY anchor missing");
+  source = source.replace(copyAnchor, `${copyAnchor}  brands: { title: "Brand & Retail Intelligence", description: "Descubre dónde se vende una marca y monitorea catálogo, precios, sellers y presencia digital." },\n`);
 }
 
-for (const setName of ["LAZY_VIEWS", "DARK_VIEWS"]) {
-  const rx = new RegExp(`const ${setName} = new Set<View>\\(\\[([^\\]]*)\\]\\)`);
-  const match = source.match(rx);
-  if (match && !match[1].includes('"brands"')) source = source.replace(match[0], match[0].replace("])", ', "brands"])'));
+source = source.replace(
+  /const LAZY_VISIBLE_VIEWS = new Set<View>\(\[([^\]]*)\]\);/,
+  (full, values) => values.includes('"brands"') ? full : `const LAZY_VISIBLE_VIEWS = new Set<View>([${values},"brands"]);`,
+);
+source = source.replace(
+  /const DARK_VISIBLE_VIEWS = new Set<View>\(\[([^\]]*)\]\);/,
+  (full, values) => values.includes('"brands"') ? full : `const DARK_VISIBLE_VIEWS = new Set<View>([${values},"brands"]);`,
+);
+
+const rendererOld = 'view === "automotive" ? <AutomotiveIntelligence/> : <>';
+const rendererNew = 'view === "automotive" ? <AutomotiveIntelligence/> : view === "brands" ? <BrandsVertical/> : <>';
+if (source.includes(rendererOld)) source = source.replace(rendererOld, rendererNew);
+else if (!source.includes('view === "brands" ? <BrandsVertical/>')) throw new Error("Brands vertical: renderer anchor missing");
+
+if (!source.includes('import BrandsVertical from "./BrandsVertical";')) throw new Error("Brands vertical import missing");
+if (!source.includes('label: "Brands"')) throw new Error("Brands nav missing");
+if (!source.includes('view === "brands" ? <BrandsVertical/>')) throw new Error("Brands renderer missing");
+fs.writeFileSync(appPath, source);
+
+let commercial = fs.readFileSync(commercialPath, "utf8");
+if (!commercial.includes('if (view === "brands") return "Enterprise";')) {
+  const anchor = '  if (view === "automotive") return "Enterprise";';
+  if (!commercial.includes(anchor)) throw new Error("Brands vertical: minimum plan anchor missing");
+  commercial = commercial.replace(anchor, `${anchor}\n  if (view === "brands") return "Enterprise";`);
+  fs.writeFileSync(commercialPath, commercial);
 }
 
-if (!source.includes('view === "brands" ? <BrandsVertical')) {
-  const automotiveRender = 'view === "automotive" ? <AutomotiveIntelligence /> :';
-  if (source.includes(automotiveRender)) source = source.replace(automotiveRender, `${automotiveRender}\n                  view === "brands" ? <BrandsVertical /> :`);
-  else {
-    const fallback = '<AutomotiveIntelligence />';
-    const idx = source.lastIndexOf(fallback);
-    if (idx < 0) throw new Error("Brands patch failed: render anchor");
-    const end = idx + fallback.length;
-    source = source.slice(0,end) + ' :\n                  view === "brands" ? <BrandsVertical />' + source.slice(end);
-  }
-}
-
-fs.writeFileSync(file, source);
 console.log("Brands vertical applied");
