@@ -45,4 +45,15 @@ let lib=fs.readFileSync(categoryLib,"utf8");
 lib=lib.replace('    LIMIT 80\n  `, params, 8_000);','    LIMIT 300\n  `, params, 8_000);');
 fs.writeFileSync(categoryLib,lib);
 
+// 5) Align the existing integrity gate with the requested navigation and V2 analytics.
+const verifyPath="scripts/verify-prebuild-integrity.mjs";
+let verify=fs.readFileSync(verifyPath,"utf8");
+verify=verify.replace('const insight = readFileSync("src/app/ClickHouseInsightView.tsx", "utf8");','const insight = readFileSync("src/app/ClickHouseInsightViewV2.tsx", "utf8");');
+verify=verify.replace('const insightData = readFileSync("src/lib/clickhouse-insights.ts", "utf8");','const insightData = readFileSync("src/lib/clickhouse-insights-v2.ts", "utf8");');
+verify=verify.replace("  ['Retailer benchmark nav', 'label: \"Benchmark retailers\"'],\n",'');
+verify=verify.replace("  ['ClickHouse insight import', 'import ClickHouseInsightView, { type ClickHouseInsightMode } from \"./ClickHouseInsightView\";'],","  ['ClickHouse insight import', 'import ClickHouseInsightView, { type ClickHouseInsightMode } from \"./ClickHouseInsightViewV2\";'],");
+verify=verify.replace("if (!insight.includes('/api/clickhouse-insight?')) failures.push('Las vistas lazy no consultan el endpoint ClickHouse dedicado');","if (!insight.includes('/api/clickhouse-insight-v2?')) failures.push('Las vistas lazy no consultan el endpoint ClickHouse V2 dedicado');");
+verify=verify.replace("if (!insightData.includes('clickHouseInsight') || insightData.toLowerCase().includes('supabase')) failures.push('La analítica lazy no está aislada en ClickHouse');","if (!insightData.includes('clickHouseInsightV2') || insightData.toLowerCase().includes('supabase')) failures.push('La analítica lazy V2 no está aislada en ClickHouse');");
+fs.writeFileSync(verifyPath,verify);
+
 console.log("Requested platform fixes applied: evolution/products/gaps/alerts/nav/category mix/Brands prices");
