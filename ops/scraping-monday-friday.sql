@@ -1,14 +1,12 @@
--- Launch new scraping rounds only on Mondays and Fridays.
--- Worker/dispatcher jobs intentionally remain active so an already-started
--- round can continue draining its queue on the days in between.
--- pg_cron day-of-week: 1 = Monday, 5 = Friday.
+-- Daily scraping schedule for the pricing platform.
+-- Discovery and daily price monitoring are separate responsibilities; workers
+-- stay active continuously while the centralized starters create one round per day.
 
 do $block$
 declare
   v_job_id bigint;
 begin
-  -- Supermarkets: keep the existing local 00:05-00:15 America/Santiago
-  -- start window enforced inside start_daily_catalog_crawl_if_due_service().
+  -- Supermarkets: service function enforces the 00:05-00:20 America/Santiago window.
   select jobid into v_job_id
   from cron.job
   where jobname = 'daily-catalog-crawl-starter'
@@ -18,19 +16,19 @@ begin
   if v_job_id is null then
     perform cron.schedule(
       'daily-catalog-crawl-starter',
-      '*/5 * * * 1,5',
+      '*/5 * * * *',
       'select public.start_daily_catalog_crawl_if_due_service();'
     );
   else
     perform cron.alter_job(
       job_id := v_job_id,
-      schedule := '*/5 * * * 1,5',
+      schedule := '*/5 * * * *',
       active := true
     );
   end if;
 
-  -- Department stores + pharmacies + home improvement: keep the existing
-  -- local 00:20-01:20 America/Santiago window enforced by the service function.
+  -- Department stores + pharmacies + Home Improvement: service function
+  -- enforces the 00:20-01:20 America/Santiago start window.
   select jobid into v_job_id
   from cron.job
   where jobname = 'daily-non-supermarket-crawls'
@@ -40,19 +38,18 @@ begin
   if v_job_id is null then
     perform cron.schedule(
       'daily-non-supermarket-crawls',
-      '*/10 * * * 1,5',
+      '*/10 * * * *',
       'select public.start_daily_non_supermarket_crawls_if_due_service();'
     );
   else
     perform cron.alter_job(
       job_id := v_job_id,
-      schedule := '*/10 * * * 1,5',
+      schedule := '*/10 * * * *',
       active := true
     );
   end if;
 
-  -- Keep workers alive between launch days, but reduce dispatcher pressure on
-  -- Postgres compared with the former 30-second cadence.
+  -- Queue dispatcher remains active every minute so each daily round can drain.
   select jobid into v_job_id
   from cron.job
   where jobname = 'scraping-pro-dispatcher-every-minute'
@@ -67,8 +64,7 @@ begin
     );
   end if;
 
-  -- Retire legacy launchers so they cannot create an extra Tuesday/Sunday/etc.
-  -- round outside the two centralized Monday/Friday starters.
+  -- Legacy launchers stay retired; centralized daily starters own scheduling.
   for v_job_id in
     select jobid
     from cron.job
@@ -85,26 +81,24 @@ begin
 end
 $block$;
 
--- Fail the deployment if the two central launchers did not end up exactly on
--- Monday/Friday or if a retired launcher is still active.
 do $verify$
 begin
   if not exists (
     select 1 from cron.job
     where jobname = 'daily-catalog-crawl-starter'
       and active
-      and schedule = '*/5 * * * 1,5'
+      and schedule = '*/5 * * * *'
   ) then
-    raise exception 'Monday/Friday supermarket starter was not configured';
+    raise exception 'Daily supermarket starter was not configured';
   end if;
 
   if not exists (
     select 1 from cron.job
     where jobname = 'daily-non-supermarket-crawls'
       and active
-      and schedule = '*/10 * * * 1,5'
+      and schedule = '*/10 * * * *'
   ) then
-    raise exception 'Monday/Friday non-supermarket starter was not configured';
+    raise exception 'Daily non-supermarket starter was not configured';
   end if;
 
   if not exists (
