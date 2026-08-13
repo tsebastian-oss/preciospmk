@@ -73,7 +73,8 @@ async function rpc<T>(name: string, body: unknown): Promise<T> {
   const request = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
     method: "POST",
     headers: { apikey: SERVICE_ROLE_KEY, authorization: `Bearer ${SERVICE_ROLE_KEY}`, "content-type": "application/json" },
-    body: JSON.stringify(body), cache: "no-store",
+    body: JSON.stringify(body),
+    cache: "no-store",
   });
   if (!request.ok) throw new Error(`RPC ${name} ${request.status}: ${await request.text()}`);
   return request.json() as Promise<T>;
@@ -82,8 +83,14 @@ async function fetchPage(rawUrl: string, page: number) {
   const url = allowedUrl(rawUrl);
   if (page > 1) url.searchParams.set("page", String(page));
   const request = await fetch(url, {
-    headers: { "user-agent": USER_AGENT, accept: "text/html,application/xhtml+xml", "accept-language": "es-CL,es;q=0.9", "cache-control": "no-cache" },
-    redirect: "follow", signal: AbortSignal.timeout(55_000),
+    headers: {
+      "user-agent": USER_AGENT,
+      accept: "text/html,application/xhtml+xml",
+      "accept-language": "es-CL,es;q=0.9",
+      "cache-control": "no-cache",
+    },
+    redirect: "follow",
+    signal: AbortSignal.timeout(55_000),
   });
   if (!request.ok) throw new Error(`HTTP ${request.status} for ${url.toString()}`);
   return { html: await request.text(), url: url.toString() };
@@ -106,7 +113,7 @@ function prices(raw: unknown) {
   if (!Array.isArray(raw)) return [] as Array<{ type: string; price: number; crossed: boolean }>;
   return raw.flatMap((entry, index) => {
     const item = record(entry);
-    const values = Array.isArray(item?.price) ? item?.price : [item?.price];
+    const values = Array.isArray(item?.price) ? item.price : [item?.price];
     const price = numberValue(values[0]);
     if (price === null || price <= 0) return [];
     return [{ type: stringValue(item?.type) ?? `price_${index + 1}`, price, crossed: Boolean(item?.crossed) }];
@@ -146,20 +153,45 @@ function productsFromResult(raw: unknown, categoryName: string, sourceUrl: strin
     const chosen = effective(levels);
     if (!externalId || chosen.offer <= 0) return;
     output.set(externalId, {
-      supermarket: "Falabella", external_id: externalId, parent_external_id: externalId === baseSku ? null : productId,
-      name: variant ? `${name} · ${variant}` : name, brand, category: categoryName || null, seller, seller_id: sellerId,
-      variant, url: variantUrl, image_url: variantImage ?? image, regular_price: chosen.regular, offer_price: chosen.offer,
-      unit: null, unit_price: null, in_stock: inStock, observed_at: observedAt,
+      supermarket: "Falabella",
+      external_id: externalId,
+      parent_external_id: externalId === baseSku ? null : productId,
+      name: variant ? `${name} · ${variant}` : name,
+      brand,
+      category: categoryName || null,
+      seller,
+      seller_id: sellerId,
+      variant,
+      url: variantUrl,
+      image_url: variantImage ?? image,
+      regular_price: chosen.regular,
+      offer_price: chosen.offer,
+      unit: null,
+      unit_price: null,
+      in_stock: inStock,
+      observed_at: observedAt,
       source_metadata: {
-        parser: "falabella_next_data", productId, baseSku, merchantCategoryId: item.merchantCategoryId,
-        GSCCategoryId: item.GSCCategoryId, offeringId: item.offeringId, sourceListing: sourceUrl,
-        detectedPrices: levels, ...metadata,
+        parser: "falabella_next_data",
+        productId,
+        baseSku,
+        merchantCategoryId: item.merchantCategoryId,
+        GSCCategoryId: item.GSCCategoryId,
+        offeringId: item.offeringId,
+        sourceListing: sourceUrl,
+        detectedPrices: levels,
+        ...metadata,
       },
     });
-    for (const level of levels) levelRows.push({
-      external_id: externalId, price_type: level.type, price: level.price, currency: "CLP", observed_at: observedAt,
-      metadata: { crossed: level.crossed, sellerId, productId, variant },
-    });
+    for (const level of levels) {
+      levelRows.push({
+        external_id: externalId,
+        price_type: level.type,
+        price: level.price,
+        currency: "CLP",
+        observed_at: observedAt,
+        metadata: { crossed: level.crossed, sellerId, productId, variant },
+      });
+    }
   }
 
   add(baseSku, null, url, image, item.prices, true, { level: "base" });
@@ -180,12 +212,21 @@ function productsFromResult(raw: unknown, categoryName: string, sourceUrl: strin
           if (!size) continue;
           const sizeLabel = stringValue(size.value);
           const externalId = String(size.variant ?? size.offeringId ?? "").trim();
-          add(externalId, [optionLabel, sizeLabel].filter(Boolean).join(" / ") || null, optionUrl, firstImage(size.mediaUrls) ?? optionImage,
-            size.prices, size.available !== false, { color: optionLabel, size: sizeLabel, offeringId: size.offeringId });
+          add(
+            externalId,
+            [optionLabel, sizeLabel].filter(Boolean).join(" / ") || null,
+            optionUrl,
+            firstImage(size.mediaUrls) ?? optionImage,
+            size.prices,
+            size.available !== false,
+            { color: optionLabel, size: sizeLabel, offeringId: size.offeringId },
+          );
         }
       } else {
         const externalId = String(option.extraInfo ?? option.mediaId ?? "").trim();
-        if (externalId && externalId !== baseSku) add(externalId, optionLabel, optionUrl, optionImage, option.prices ?? item.prices, true, { optionType: group.type });
+        if (externalId && externalId !== baseSku) {
+          add(externalId, optionLabel, optionUrl, optionImage, option.prices ?? item.prices, true, { optionType: group.type });
+        }
       }
     }
   }
@@ -205,7 +246,9 @@ function categoryTasks(props: Json, depth: number) {
       if (!id || !title || count <= 0) continue;
       const url = `https://www.falabella.com/falabella-cl/category/${encodeURIComponent(id)}/${slug(title)}`;
       tasks.set(`falabella-listing:${id}:1`, {
-        task_key: `falabella-listing:${id}:1`, supermarket: "Falabella", kind: "falabella_listing_page",
+        task_key: `falabella-listing:${id}:1`,
+        supermarket: "Falabella",
+        kind: "falabella_listing_page",
         payload: { url, page: 1, depth: depth + 1, category_name: title, discover_categories: true },
       });
     }
@@ -222,10 +265,14 @@ function paginationTasks(props: Json, canonicalUrl: string, categoryName: string
   base.searchParams.delete("page");
   const keyBase = hash(base.toString());
   const tasks: QueueTask[] = [];
-  for (let page = 2; page <= total; page += 1) tasks.push({
-    task_key: `falabella-page:${keyBase}:${page}`, supermarket: "Falabella", kind: "falabella_listing_page",
-    payload: { url: base.toString(), page, depth, category_name: categoryName, discover_categories: false },
-  });
+  for (let page = 2; page <= total; page += 1) {
+    tasks.push({
+      task_key: `falabella-page:${keyBase}:${page}`,
+      supermarket: "Falabella",
+      kind: "falabella_listing_page",
+      payload: { url: base.toString(), page, depth, category_name: categoryName, discover_categories: false },
+    });
+  }
   return tasks;
 }
 async function enqueue(runId: number, tasks: QueueTask[]) {
@@ -242,6 +289,7 @@ async function handle(task: Task) {
     const categoryName = stringValue(task.payload.category_name) ?? "Catálogo Falabella";
     const rawUrl = stringValue(task.payload.url);
     if (!rawUrl) throw new Error("Falabella listing URL is missing");
+    const monitorOnly = task.payload.monitor_only === true || stringValue(task.payload.mode) === "daily_price_monitor";
     const fetched = await fetchPage(rawUrl, page);
     const props = pageProps(nextData(fetched.html));
     const observedAt = new Date().toISOString();
@@ -254,14 +302,14 @@ async function handle(task: Task) {
     }
     if (!products.length) throw new Error(`Falabella listing returned no priced products: ${fetched.url}`);
     const canonical = stringValue(props.canonicalUrl) ?? rawUrl;
-    const tasks = [
+    const tasks = monitorOnly ? [] : [
       ...paginationTasks(props, canonical, categoryName, depth, page),
       ...(page === 1 && task.payload.discover_categories !== false ? categoryTasks(props, depth) : []),
     ];
     const tasksInserted = await enqueue(task.run_id, tasks);
     const completion = await rpc<Json>("complete_department_store_task_service", { p_task_id: task.id, p_products: products, p_error: null });
     const pricesInserted = await rpc<number>("record_retail_price_levels_service", { p_run_id: task.run_id, p_retailer: "Falabella", p_rows: priceLevels });
-    return { taskId: task.id, page, products: products.length, pricesInserted, tasksInserted, completion };
+    return { taskId: task.id, page, mode: monitorOnly ? "monitor" : "discovery", products: products.length, pricesInserted, tasksInserted, completion };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const completion = await rpc<Json>("complete_department_store_task_service", { p_task_id: task.id, p_products: [], p_error: message });
@@ -277,7 +325,7 @@ Deno.serve(async (request: Request) => {
   const body = await request.text();
   if (body && body !== "{}") return reply({ error: "request_body_not_accepted" }, 400);
   try {
-    const tasks = await rpc<Task[]>("claim_falabella_listing_tasks_service", { p_limit: 2 });
+    const tasks = await rpc<Task[]>("claim_falabella_listing_tasks_service", { p_limit: 6 });
     if (!tasks.length) return reply({ ok: true, claimed: 0 });
     const results = await Promise.all(tasks.map(handle));
     return reply({ ok: true, claimed: tasks.length, results });
