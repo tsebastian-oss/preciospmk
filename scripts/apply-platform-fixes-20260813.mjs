@@ -6,9 +6,11 @@ let app=fs.readFileSync(appPath,"utf8");
 app=app.replace('from "./ClickHouseInsightView";','from "./ClickHouseInsightViewV2";');
 app=app.replace('    { view: "retailer-benchmark", label: "Benchmark retailers", icon: "▥" },\n','');
 app=app.replace('    { view: "market-coverage", label: "Cobertura de mercado", icon: "◫" },\n','');
+app=app.replace('isClickHouseInsightView(view) ? <ClickHouseInsightView mode={view}/>','isClickHouseInsightView(view) ? <ClickHouseInsightView key={view} mode={view}/>');
 if(app.includes('label: "Benchmark retailers"'))throw new Error("Benchmark still visible in sidebar");
 if(app.includes('label: "Cobertura de mercado"'))throw new Error("Market coverage still visible in sidebar");
 if(!app.includes('from "./ClickHouseInsightViewV2";'))throw new Error("Insight V2 import not active");
+if(!app.includes('<ClickHouseInsightView key={view} mode={view}/>'))throw new Error("Insight module reset key missing");
 fs.writeFileSync(appPath,app);
 
 // 2) Show a true all-retailer product mix in Category Intelligence.
@@ -52,6 +54,7 @@ verify=verify.replace('const insight = readFileSync("src/app/ClickHouseInsightVi
 verify=verify.replace('const insightData = readFileSync("src/lib/clickhouse-insights.ts", "utf8");','const insightData = readFileSync("src/lib/clickhouse-insights-v2.ts", "utf8");');
 verify=verify.replace("  ['Retailer benchmark nav', 'label: \"Benchmark retailers\"'],\n",'');
 verify=verify.replace("  ['ClickHouse insight import', 'import ClickHouseInsightView, { type ClickHouseInsightMode } from \"./ClickHouseInsightView\";'],","  ['ClickHouse insight import', 'import ClickHouseInsightView, { type ClickHouseInsightMode } from \"./ClickHouseInsightViewV2\";'],");
+verify=verify.replace("  ['ClickHouse insight renderer', 'isClickHouseInsightView(view) ? <ClickHouseInsightView mode={view}/>'],","  ['ClickHouse insight renderer', 'isClickHouseInsightView(view) ? <ClickHouseInsightView key={view} mode={view}/>'],");
 verify=verify.replace("if (!insight.includes('/api/clickhouse-insight?')) failures.push('Las vistas lazy no consultan el endpoint ClickHouse dedicado');","if (!insight.includes('/api/clickhouse-insight-v2?')) failures.push('Las vistas lazy no consultan el endpoint ClickHouse V2 dedicado');");
 verify=verify.replace("if (!insightData.includes('clickHouseInsight') || insightData.toLowerCase().includes('supabase')) failures.push('La analítica lazy no está aislada en ClickHouse');","if (!insightData.includes('clickHouseInsightV2') || insightData.toLowerCase().includes('supabase')) failures.push('La analítica lazy V2 no está aislada en ClickHouse');");
 fs.writeFileSync(verifyPath,verify);
