@@ -37,6 +37,15 @@ function outputText(response: OpenAIResponse) {
     .trim();
 }
 
+function formatExecutiveAnswer(value: string) {
+  return value
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*]\s+/gm, "• ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function modelCandidates() {
   return [...new Set([
     AUTOMOTIVE_MODEL,
@@ -62,7 +71,7 @@ export async function generateAutomotiveBrandSummary(input: AutomotiveBrandSumma
   if (!comparable.length) {
     return {
       answer: input.comparison === "previous_month"
-        ? "Todavía no existe suficiente histórico comparable de aproximadamente un mes para construir una lectura de mercado confiable."
+        ? "Todavía no existe suficiente histórico comparable del mes anterior para construir una lectura de mercado confiable."
         : "Todavía no existe suficiente histórico semanal comparable para construir una lectura de mercado confiable.",
       model: AUTOMOTIVE_MODEL,
       ai: true as const,
@@ -84,12 +93,20 @@ export async function generateAutomotiveBrandSummary(input: AutomotiveBrandSumma
   }));
 
   const instructions = `Eres un analista senior del mercado automotriz chileno para MGP Pricing Intelligence.
-Redacta un resumen ejecutivo breve, natural y accionable sobre movimientos de precios por marca.
+Redacta una lectura ejecutiva breve, natural y accionable sobre los movimientos de precios por marca.
 Trabaja exclusivamente con los datos entregados. No inventes causas comerciales, campañas, lanzamientos ni explicaciones externas que no estén en la evidencia.
 La comparación es contra ${period} y usa las mismas versiones y la misma fuente por marca.
 Prioriza: dirección general del mercado, mayores alzas, mayores caídas, marcas estables y si el movimiento parece amplio o concentrado.
 Cuando sea útil, menciona cuántas versiones comparables sostienen una conclusión para evitar sobreinterpretar muestras pequeñas.
-Formato: un párrafo ejecutivo inicial de 2 a 4 frases y luego entre 3 y 6 bullets cortos. Español de Chile, tono profesional. No uses tablas.`;
+
+FORMATO OBLIGATORIO:
+1. Comienza directamente con un párrafo ejecutivo de 2 a 3 frases. No pongas un título dentro de la respuesta.
+2. Deja una línea en blanco.
+3. Luego escribe entre 3 y 5 bullets, cada uno en una sola línea y comenzando exactamente con el carácter “•”.
+4. Cada bullet debe comenzar con una etiqueta breve seguida de dos puntos, por ejemplo: “• Ford: ...”, “• Estabilidad: ...”, “• Lectura ejecutiva: ...”.
+5. No uses Markdown. No uses asteriscos, negritas, encabezados con #, tablas ni guiones como bullets.
+6. Evita repetir la misma conclusión en el párrafo y en todos los bullets. Hazlo escaneable y ejecutivo.
+7. Español de Chile, tono profesional, claro y sobrio.`;
 
   const inputText = `Datos de variación por marca:\n${JSON.stringify(evidence)}`;
   let lastError: unknown = null;
@@ -110,7 +127,7 @@ Formato: un párrafo ejecutivo inicial de 2 a 4 frases y luego entre 3 y 6 bulle
           input: inputText,
           store: false,
           reasoning: { effort: "low" },
-          max_output_tokens: 1_200,
+          max_output_tokens: 1_000,
         }),
         cache: "no-store",
         signal: controller.signal,
@@ -123,7 +140,7 @@ Formato: un párrafo ejecutivo inicial de 2 a 4 frases y luego entre 3 y 6 bulle
         if (isRetryableModelError(response.status)) continue;
         throw error;
       }
-      const answer = outputText(body);
+      const answer = formatExecutiveAnswer(outputText(body));
       if (!answer) throw new Error("OpenAI returned no automotive summary");
       return { answer, model: body.model || model, ai: true as const };
     } catch (error) {
