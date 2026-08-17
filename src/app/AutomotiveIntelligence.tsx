@@ -282,6 +282,7 @@ export default function AutomotiveIntelligence() {
   const comparableBrandRows = brandRows.filter((row) => row.percentageChange !== null);
   const brandSummary = brandVariations?.summary;
   const viewCopy = VIEW_COPY[view];
+  const previousPeriodLabel = comparison === "previous_month" ? "Mes anterior" : "Semana anterior";
   const chartMax = Math.max(1, ...comparableBrandRows.map((row) => Math.abs(row.percentageChange ?? 0)));
   const chartWidth = Math.max(760, comparableBrandRows.length * 76 + 90);
   const chartBaseline = 145;
@@ -431,7 +432,7 @@ export default function AutomotiveIntelligence() {
       <div className={styles.sectionHeader}>
         <div>
           <h2>Movimiento promedio por marca</h2>
-          <p>Mismas versiones y misma fuente. Comparación contra {comparison === "previous_month" ? "aprox. 30 días atrás" : "la semana anterior"}.</p>
+          <p>Mismas versiones y misma fuente. Comparación contra {comparison === "previous_month" ? "el mes calendario anterior" : "la semana calendario anterior"}.</p>
         </div>
         <b>{integer.format(comparableBrandRows.length)} marcas comparables</b>
       </div>
@@ -440,7 +441,7 @@ export default function AutomotiveIntelligence() {
       {!loading && error ? <div className={styles.error}>{error}</div> : null}
       {!loading && !error && comparableBrandRows.length === 0 ? <div className={styles.empty}>
         <strong>No hay suficiente histórico comparable para este período.</strong>
-        <p>Prueba con semana pasada o deja acumular capturas antes de usar la comparación mensual.</p>
+        <p>{comparison === "previous_month" ? "Aún no hay capturas suficientes dentro del mes calendario anterior." : "No encontramos capturas de las mismas versiones dentro de la semana calendario anterior."}</p>
       </div> : null}
 
       {!loading && !error && comparableBrandRows.length > 0 ? <div className={styles.chartShell}>
@@ -488,7 +489,7 @@ export default function AutomotiveIntelligence() {
         </div>
         <div className={styles.tableShell}>
           <table className={`${styles.table} ${styles.brandVariationTable}`}>
-            <thead><tr><th>Marca</th><th>Fuente</th><th>Precio promedio hoy</th><th>Período anterior</th><th>Variación</th><th>Variación %</th><th>Versiones comparables</th><th>Suben / Bajan / Estables</th></tr></thead>
+            <thead><tr><th>Marca</th><th>Fuente</th><th>Precio promedio hoy</th><th>{previousPeriodLabel}</th><th>Variación</th><th>Variación %</th><th>Versiones comparables</th><th>Suben / Bajan / Estables</th></tr></thead>
             <tbody>{brandRows.map((row) => <tr key={`${row.brand}:${row.dealer}`}>
               <td><strong>{row.brand}</strong></td>
               <td><span className={styles.dealer}>{row.dealer}</span></td>
