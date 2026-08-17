@@ -10,25 +10,25 @@ import styles from "../marketing.module.css";
 
 export const metadata = {
   title: "Soluciones | MGP Super Precios",
-  description: "Soluciones de inteligencia de precios para supermercados, farmacias, multitiendas, marcas y equipos comerciales.",
+  description: "Soluciones actuales para análisis de precios, categorías, productos, marcas, automotriz y operación de datos.",
 };
 
 const solutions = [
-  ["Supermercados", "Más competitividad en precios, promociones y surtido para cada categoría.", ["Monitoreo de precios", "Análisis de promociones", "Surtido y disponibilidad", "Benchmark competitivo"], "▣", "blue"],
-  ["Farmacias", "Control de precios, disponibilidad y actividad promocional del canal farma.", ["Monitoreo de precios", "Disponibilidad de productos", "Gestión de promociones", "Competencia y mercado"], "✚", "green"],
-  ["Multitiendas", "Visibilidad de catálogos online para categorías, marcas y retailers monitoreados.", ["Precios por retailer", "Promociones centralizadas", "Cobertura de catálogo", "Estandarización y control"], "▤", "purple"],
-  ["Brand Intelligence", "Entiende cómo se posiciona tu marca y dónde aparecen oportunidades competitivas.", ["Cobertura de marca", "Monitoreo de competidores", "Categorías y tendencias", "Análisis con IA"], "◇", "purple"],
-  ["Pricing Intelligence", "Ajusta tu estrategia con evidencia de mercado y comparables normalizados cuando las unidades son equivalentes.", ["Índices de precio", "Brechas competitivas", "Mapas de posicionamiento", "Alertas de oportunidad"], "$", "green"],
-  ["Reportes Ejecutivos", "Dashboards y exportaciones que convierten datos operativos en señales para la dirección.", ["KPIs actualizados automáticamente", "Dashboards ejecutivos", "Exportaciones Excel y CSV", "Entregables a medida"], "↗", "orange"],
+  ["Análisis de precios", "Sigue el comportamiento del precio observado y prioriza movimientos relevantes.", ["Evolución de precios", "Brechas de precio", "Movimientos y alertas", "Filtros por marca, producto y período"], "⌁", "blue"],
+  ["Análisis de categorías", "Entiende la composición y evolución de las categorías disponibles en tu alcance.", ["Evolución de categoría", "Mix de marcas", "Mix de productos por retailer", "Lectura visual con gráficos y heatmaps"], "◒", "green"],
+  ["Productos", "Consulta el mercado a nivel producto con precios actuales y filtros.", ["Precio observado", "Marca y producto", "Retailer", "Período cuando aplica"], "□", "purple"],
+  ["Brands", "Monitorea una marca desde una vertical dedicada.", ["Overview", "Competencia", "Precios", "Productos, retailers y listings"], "◆", "purple"],
+  ["Mercado automotriz", "Analiza estructura de precio y variaciones desde concesionarios chilenos.", ["Marca, modelo y versión", "Precio lista y bonos", "Precio final", "Variación semanal y por marca"], "◇", "green"],
+  ["Datos y operación", "Accede a la información y revisa su estado antes de tomar decisiones.", ["Descarga CSV para Excel", "Estado de datos", "Freshness de fuentes", "Configuración por organización"], "↓", "orange"],
 ] as const;
 
 const menu = [
-  ["Supermercados", "Optimiza precios, promociones y surtido para cada categoría.", "▣"],
-  ["Farmacias", "Monitorea precio, stock y actividad promocional en el canal farma.", "✚"],
-  ["Multitiendas", "Compara catálogos online en los retailers disponibles.", "▤"],
-  ["Brand Intelligence", "Monitorea marca, competencia, promociones y disponibilidad.", "◇"],
-  ["Pricing Intelligence", "Convierte el mercado en índices, brechas y acciones de pricing.", "$"],
-  ["Reportes Ejecutivos", "KPIs y exportaciones listos para compartir y decidir.", "↗"],
+  ["Precios", "Evolución, brechas y movimientos detectados.", "⌁"],
+  ["Categorías", "Composición, marcas y productos por retailer.", "◒"],
+  ["Productos", "Precios actuales del catálogo monitoreado.", "□"],
+  ["Brands", "Seguimiento de marcas, competencia y presencia.", "◆"],
+  ["Automotriz", "Modelos, versiones, bonos y variaciones.", "◇"],
+  ["Datos", "Descarga y estado de actualización.", "↓"],
 ] as const;
 
 export default function SolutionsPage() {
@@ -38,11 +38,11 @@ export default function SolutionsPage() {
         <section className={styles.subHero}>
           <div className={styles.subHeroInner}>
             <div className={styles.heroCopy}>
-              <span className={styles.eyebrow}>SOLUCIONES POR INDUSTRIA Y CASO DE USO</span>
-              <h1>La solución correcta para cada <em>industria y desafío comercial</em></h1>
-              <p>Gana visibilidad, competitividad y velocidad de decisión con inteligencia de precios, promociones, surtido y marca adaptada a la realidad de cada equipo.</p>
+              <span className={styles.eyebrow}>SOLUCIONES BASADAS EN EL PRODUCTO ACTUAL</span>
+              <h1>Analiza precios y mercado con <em>las capacidades que hoy existen</em></h1>
+              <p>MGP Super Precios organiza la información disponible en seis frentes concretos: precios, categorías, productos, Brands, automotriz y datos/operación.</p>
               <div className={styles.heroActions}><Link href="/landing/contacto#demo" className={styles.primaryBtn}>Solicitar demo</Link><Link href="/registro" className={styles.secondaryBtn}>Crear cuenta trial</Link></div>
-              <div className={styles.heroTrust}><span>Datos automatizados</span><span>Cobertura visible</span><span>IA aplicada a negocio</span></div>
+              <div className={styles.heroTrust}><span>Datos automatizados</span><span>Cobertura visible</span><span>Producto verificable</span></div>
               <p style={{ marginTop: 18, fontSize: 12 }}><Link href="/landing/cobertura">Revisar retailers disponibles →</Link></p>
             </div>
             <div className={styles.visibleMenu}>
@@ -52,23 +52,26 @@ export default function SolutionsPage() {
         </section>
 
         <section id="soluciones" className={styles.section}>
-          <SectionHeading title="Nuestras soluciones por industria" copy="Una misma base de inteligencia, adaptada a las preguntas comerciales de cada negocio." />
+          <SectionHeading title="Soluciones disponibles" copy="Cada solución corresponde a una vista o vertical actualmente implementada en la plataforma." />
           <div className={styles.sixGrid}>
-            {solutions.map(([title, copy, bullets, icon, tone]) => <article className={styles.solutionCard} key={title}><PillIcon tone={tone}>{icon}</PillIcon><h3>{title}</h3><p>{copy}</p><ul>{bullets.map((bullet) => <li key={bullet}>{bullet}</li>)}</ul><Link href="/landing/contacto#demo">Ver solución →</Link></article>)}
+            {solutions.map(([title, copy, bullets, icon, tone]) => <article className={styles.solutionCard} key={title}><PillIcon tone={tone}><>{icon}</></PillIcon><h3>{title}</h3><p>{copy}</p><ul>{bullets.map((bullet) => <li key={bullet}>{bullet}</li>)}</ul><Link href="/landing/contacto#demo">Ver en una demo →</Link></article>)}
           </div>
         </section>
 
         <section className={styles.section}>
-          <SectionHeading title="De los datos a la decisión en cada industria" copy="Transformamos problemas repetitivos de mercado en una vista operativa y accionable." />
+          <SectionHeading title="De la pregunta a la vista correcta" copy="La plataforma evita mezclar capacidades: cada necesidad se resuelve en el módulo que corresponde." />
           <div className={styles.decisionGrid}>
             <div className={styles.challengeTable}>
-              <div className={styles.challengeHead}><span>Desafío común</span><span>Cómo lo resolvemos</span></div>
+              <div className={styles.challengeHead}><span>Pregunta de negocio</span><span>Dónde se responde</span></div>
               {[
-                ["Precios desactualizados y poca visibilidad", "Monitoreo automatizado del mercado y comparables consolidados."],
-                ["Promociones difíciles de medir", "Lectura de profundidad promocional, frecuencia y brechas por cadena."],
-                ["Surtido y disponibilidad sin control", "Cobertura de catálogo, stock y gaps de presencia por retailer."],
-                ["Decisiones basadas en intuición", "Dashboards, alertas dentro de la plataforma y asistentes IA conectados a los datos disponibles."],
-                ["Demasiado tiempo analizando", "Automatización de captura, normalización y generación de insights."],
+                ["¿Cómo ha evolucionado este precio?", "Evolución de precios."],
+                ["¿Dónde existe una brecha relevante?", "Brechas de precio."],
+                ["¿Qué subió o bajó?", "Movimientos y alertas."],
+                ["¿Cómo está compuesta esta categoría?", "Análisis de categorías."],
+                ["¿Qué precio tiene este producto?", "Productos."],
+                ["¿Cómo compite y dónde aparece una marca?", "Brands."],
+                ["¿Cómo se estructura el precio de un vehículo?", "Mercado automotriz."],
+                ["¿Puedo llevarme los datos?", "Descarga de bases en CSV para Excel."],
               ].map(([problem, answer]) => <div className={styles.challengeRow} key={problem}><strong>{problem}</strong><p>{answer}</p></div>)}
             </div>
             <DashboardPreview compact />
@@ -76,20 +79,20 @@ export default function SolutionsPage() {
         </section>
 
         <section className={styles.section}>
-          <SectionHeading title="Beneficios por sector" copy="Información útil para decidir, no otra capa de reportes manuales." />
+          <SectionHeading title="Una misma base, distintos equipos" copy="El valor está en usar una fuente común para responder preguntas distintas sin multiplicar análisis manuales." />
           <div className={styles.benefitSix}>
             {[
-              ["Más competitividad", "Detecta cambios y responde con mejor información.", "◎", "blue"],
-              ["Mayor rentabilidad", "Identifica brechas de precio y promociones relevantes.", "$", "green"],
-              ["Ahorro de tiempo", "Automatiza captura, consolidación y lectura del mercado.", "◴", "purple"],
-              ["Menos riesgo", "Prioriza variaciones, quiebres y movimientos atípicos.", "!", "orange"],
-              ["Mejores decisiones", "Trabaja con una fuente común para todo el equipo.", "⌖", "blue"],
-              ["Crecimiento sostenible", "Escala el análisis sin multiplicar tareas manuales.", "↗", "green"],
+              ["Pricing", "Histórico, brechas y movimientos.", "$", "green"],
+              ["Category", "Composición y evolución de categorías.", "◒", "purple"],
+              ["E-commerce", "Productos y precios actuales.", "□", "blue"],
+              ["Marketing / Marca", "Vertical Brands para competencia y presencia.", "◆", "orange"],
+              ["Automotriz", "Estructura de precios y variaciones.", "◇", "blue"],
+              ["Data", "CSV para Excel y estado de fuentes.", "↓", "green"],
             ].map(([title, copy, icon, tone]) => <article className={styles.benefit} key={title}><PillIcon tone={tone as "blue" | "green" | "purple" | "orange"}>{icon}</PillIcon><h3>{title}</h3><p>{copy}</p></article>)}
           </div>
         </section>
 
-        <BottomCTA title="Impulsa tu industria con inteligencia comercial actualizada automáticamente" copy="Solicita una demo y revisemos juntos qué fuentes, categorías y marcas quieres monitorear." />
+        <BottomCTA title="Revisa qué solución corresponde a tu caso" copy="Solicita una demo y validemos juntos las fuentes, módulos y verticales disponibles para tu organización." />
       </main>
     </PageChrome>
   );
