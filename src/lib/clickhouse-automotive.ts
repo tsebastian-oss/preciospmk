@@ -196,6 +196,13 @@ function latestDate(rows: Array<{ observed_at?: string | null }>) {
   return values.at(-1) ?? null;
 }
 
+function previousWeekWindowSql() {
+  return {
+    start: "subtractDays(toStartOfWeek(toTimeZone(now(), 'America/Santiago'), 1), 7)",
+    end: "toStartOfWeek(toTimeZone(now(), 'America/Santiago'), 1)",
+  };
+}
+
 export async function clickHouseAutomotiveOptions(accessInput: EnterpriseAccessContext) {
   const access = accessInput as ScopedAccess;
   const params: ClickHouseParams = {};
@@ -334,6 +341,7 @@ async function automotiveVariationHistoryFromObservations(access: ScopedAccess, 
   const params: ClickHouseParams = {};
   const predicates = autoPredicates(access, params);
   addBrandModelFilters(predicates, params, filters);
+  const week = previousWeekWindowSql();
   return await clickHouseQuery<AutomotiveVariationHistoryRow>(`
     SELECT
       toString(p.id) AS id,
@@ -345,13 +353,16 @@ async function automotiveVariationHistoryFromObservations(access: ScopedAccess, 
       argMaxIf(
         if(toFloat64(ifNull(o.offer_price, 0)) > 0, toFloat64(o.offer_price), toFloat64(ifNull(o.regular_price, 0))),
         o.observed_at,
-        o.observed_at <= subtractDays(now(), 6) AND o.observed_at >= subtractDays(now(), 10)
+        o.observed_at >= ${week.start} AND o.observed_at < ${week.end}
       ) AS previous_price,
       toString(s.observed_at) AS observed_at,
-      toString(maxIf(o.observed_at, o.observed_at <= subtractDays(now(), 6) AND o.observed_at >= subtractDays(now(), 10))) AS previous_observed_at
+      toString(maxIf(o.observed_at, o.observed_at >= ${week.start} AND o.observed_at < ${week.end})) AS previous_observed_at
     FROM products AS p FINAL
     INNER JOIN product_latest_price_state AS s FINAL ON s.product_id = p.id
-    LEFT JOIN price_observations AS o FINAL ON o.product_id = p.id AND o.observed_at >= subtractDays(now(), 11)
+    LEFT JOIN price_observations AS o FINAL
+      ON o.product_id = p.id
+      AND o.observed_at >= ${week.start}
+      AND o.observed_at < ${week.end}
     WHERE ${predicates.join("\n      AND ")}
     GROUP BY p.id, brand, model, version, dealer, current_price, s.observed_at
     ORDER BY brand ASC, model ASC, current_price ASC
@@ -363,8 +374,9 @@ async function automotiveVariationHistoryFromDaily(access: ScopedAccess, filters
   const params: ClickHouseParams = {};
   const predicates = autoPredicates(access, params);
   addBrandModelFilters(predicates, params, filters);
+  const week = previousWeekWindowSql();
   predicates.push("d.effective_price > 0");
-  predicates.push("d.price_date >= subtractDays(toDate(now(), 'America/Santiago'), 11)");
+  predicates.push(`d.price_date >= toDate(${week.start})`);
   return await clickHouseQuery<AutomotiveVariationHistoryRow>(`
     SELECT
       toString(p.id) AS id,
@@ -373,9 +385,13 @@ async function automotiveVariationHistoryFromDaily(access: ScopedAccess, filters
       coalesce(nullIf(p.variant, ''), nullIf(${metadataString("version")}, ''), 'Versión no informada') AS version,
       p.supermarket AS dealer,
       argMax(toFloat64(d.effective_price), d.observed_at) AS current_price,
-      argMaxIf(toFloat64(d.effective_price), d.observed_at, d.price_date <= subtractDays(toDate(now(), 'America/Santiago'), 6) AND d.price_date >= subtractDays(toDate(now(), 'America/Santiago'), 10)) AS previous_price,
+      argMaxIf(
+        toFloat64(d.effective_price),
+        d.observed_at,
+        d.price_date >= toDate(${week.start}) AND d.price_date < toDate(${week.end})
+      ) AS previous_price,
       toString(max(d.observed_at)) AS observed_at,
-      toString(maxIf(d.observed_at, d.price_date <= subtractDays(toDate(now(), 'America/Santiago'), 6) AND d.price_date >= subtractDays(toDate(now(), 'America/Santiago'), 10))) AS previous_observed_at
+      toString(maxIf(d.observed_at, d.price_date >= toDate(${week.start}) AND d.price_date < toDate(${week.end}))) AS previous_observed_at
     FROM daily_pricing_live AS d FINAL
     INNER JOIN products AS p FINAL ON p.id = d.product_id
     WHERE ${predicates.join("\n      AND ")}
