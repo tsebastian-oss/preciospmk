@@ -74,9 +74,19 @@ function latest(values: Array<string | null | undefined>) {
 }
 
 function comparisonWindow(comparison: AutomotiveBrandComparison) {
-  return comparison === "previous_month"
-    ? { minDays: 25, maxDays: 35, label: "mes pasado" as const }
-    : { minDays: 6, maxDays: 10, label: "semana pasada" as const };
+  if (comparison === "previous_month") {
+    return {
+      startSql: "subtractMonths(toStartOfMonth(toTimeZone(now(), 'America/Santiago')), 1)",
+      endSql: "toStartOfMonth(toTimeZone(now(), 'America/Santiago'))",
+      label: "mes pasado" as const,
+    };
+  }
+
+  return {
+    startSql: "subtractDays(toStartOfWeek(toTimeZone(now(), 'America/Santiago'), 1), 7)",
+    endSql: "toStartOfWeek(toTimeZone(now(), 'America/Santiago'), 1)",
+    label: "semana pasada" as const,
+  };
 }
 
 function dedupeCurrentVersions(vehicles: CatalogVehicle[]) {
@@ -104,8 +114,6 @@ async function historicalPrices(vehicles: CatalogVehicle[], comparison: Automoti
     return `(p.brand = {brand_${index}:String} AND p.supermarket = {dealer_${index}:String})`;
   });
   const window = comparisonWindow(comparison);
-  params.min_days = { type: "UInt16", value: window.minDays };
-  params.max_days = { type: "UInt16", value: window.maxDays };
 
   return await clickHouseQuery<HistoricalPriceRow>(`
     SELECT
@@ -113,18 +121,19 @@ async function historicalPrices(vehicles: CatalogVehicle[], comparison: Automoti
       argMaxIf(
         if(toFloat64(ifNull(o.offer_price, 0)) > 0, toFloat64(o.offer_price), toFloat64(ifNull(o.regular_price, 0))),
         o.observed_at,
-        o.observed_at <= subtractDays(now(), {min_days:UInt16})
-          AND o.observed_at >= subtractDays(now(), {max_days:UInt16})
+        o.observed_at >= ${window.startSql}
+          AND o.observed_at < ${window.endSql}
       ) AS previous_price,
       toString(maxIf(
         o.observed_at,
-        o.observed_at <= subtractDays(now(), {min_days:UInt16})
-          AND o.observed_at >= subtractDays(now(), {max_days:UInt16})
+        o.observed_at >= ${window.startSql}
+          AND o.observed_at < ${window.endSql}
       )) AS previous_observed_at
     FROM products AS p FINAL
     LEFT JOIN price_observations AS o FINAL
       ON o.product_id = p.id
-      AND o.observed_at >= subtractDays(now(), {max_days:UInt16})
+      AND o.observed_at >= ${window.startSql}
+      AND o.observed_at < ${window.endSql}
     WHERE p.retailer_type = 'automotive'
       AND p.industry_slug = 'automotive'
       AND JSONExtractString(toString(p.source_metadata), 'capture_status') != 'invalid_identity'
