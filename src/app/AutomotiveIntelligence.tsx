@@ -392,7 +392,7 @@ export default function AutomotiveIntelligence() {
       </div>
 
       <div className={styles.sectionHeader}>
-        <div><h2>{gradeCopy.label}</h2><p>{gradeCopy.description} La comparación busca la última observación disponible entre 6 y 10 días atrás.</p></div>
+        <div><h2>{gradeCopy.label}</h2><p>{gradeCopy.description} La comparación usa la última observación disponible dentro de la semana calendario anterior (lunes a domingo).</p></div>
         <b>{integer.format(variationRows.length)} modelos</b>
       </div>
 
@@ -400,7 +400,7 @@ export default function AutomotiveIntelligence() {
       {!loading && error ? <div className={styles.error}>{error}</div> : null}
       {!loading && !error && variationRows.length === 0 ? <div className={styles.empty}>
         <strong>Todavía no hay versiones comparables para este nivel.</strong>
-        <p>Las versiones con “Precio desde” no se usan para Entry, Mid ni Tope. El histórico semanal aparecerá a medida que se acumulen nuevas capturas.</p>
+        <p>Las versiones con “Precio desde” no se usan para Entry, Mid ni Tope. Una versión se compara solo cuando existe una observación de esa misma versión y fuente dentro de la semana calendario anterior.</p>
       </div> : null}
 
       {!loading && !error && variationRows.length > 0 ? <div className={styles.tableShell}>
