@@ -299,9 +299,9 @@ export default function AutomotiveIntelligence() {
     </div>
 
     <nav className={styles.subnav} aria-label="Inteligencia automotriz">
-      <button className={view === "catalog" ? styles.subnavActive : ""} onClick={() => setView("catalog")}>Mercado automotriz</button>
-      <button className={view === "variations" ? styles.subnavActive : ""} onClick={() => setView("variations")}>Variaciones de precio</button>
-      <button className={view === "brand_variations" ? styles.subnavActive : ""} onClick={() => setView("brand_variations")}>Variación por marca</button>
+      <button type="button" className={view === "catalog" ? styles.subnavActive : ""} onClick={() => setView("catalog")}>Mercado automotriz</button>
+      <button type="button" className={view === "variations" ? styles.subnavActive : ""} onClick={() => setView("variations")}>Variaciones de precio</button>
+      <button type="button" className={view === "brand_variations" ? styles.subnavActive : ""} onClick={() => setView("brand_variations")}>Variación por marca</button>
     </nav>
 
     <div className={`${styles.filters} ${view === "brand_variations" ? styles.filtersWithComparison : ""}`}>
@@ -329,7 +329,7 @@ export default function AutomotiveIntelligence() {
           <option value="previous_month">Mes pasado</option>
         </select>
       </label> : null}
-      <button className={styles.clear} onClick={() => { setBrand(""); setModel(""); setDealer(""); }}>Limpiar</button>
+      <button type="button" className={styles.clear} onClick={() => { setBrand(""); setModel(""); setDealer(""); }}>Limpiar</button>
     </div>
 
     {view === "catalog" ? <>
@@ -378,7 +378,7 @@ export default function AutomotiveIntelligence() {
 
     {view === "variations" ? <>
       <div className={styles.gradeTabs}>
-        {(Object.keys(GRADE_COPY) as Grade[]).map((value) => <button key={value} className={grade === value ? styles.gradeActive : ""} onClick={() => setGrade(value)}>
+        {(Object.keys(GRADE_COPY) as Grade[]).map((value) => <button type="button" key={value} className={grade === value ? styles.gradeActive : ""} onClick={() => setGrade(value)}>
           <strong>{GRADE_COPY[value].label}</strong><span>{GRADE_COPY[value].description}</span>
         </button>)}
       </div>
