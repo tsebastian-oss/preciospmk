@@ -73,6 +73,7 @@ function latest(values: Array<string | null | undefined>) {
   return values.filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
 }
 
+// Comparisons use the complete prior calendar period in Chile, not a fixed rolling-day offset.
 function comparisonWindow(comparison: AutomotiveBrandComparison) {
   if (comparison === "previous_month") {
     return {
