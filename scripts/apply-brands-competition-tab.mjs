@@ -1,5 +1,13 @@
 import fs from "node:fs";
 const f="src/app/BrandsVertical.tsx";let s=fs.readFileSync(f,"utf8");
+
+// New multi-brand BrandsVertical owns its competition experience directly.
+// Keep this legacy patch idempotent for older branches without overwriting it.
+if(s.includes("type LivePulse =")&&s.includes("live.benchmarks")&&s.includes('"competition"')){
+  console.log("Integrated Brands live competition tab detected; legacy competition patch skipped");
+  process.exit(0);
+}
+
 if(!s.includes('import BrandsCompetition from "./BrandsCompetition";'))s=s.replace('import styles from "./BrandsVertical.module.css";','import styles from "./BrandsVertical.module.css";\nimport BrandsCompetition from "./BrandsCompetition";');
 s=s.replace('type Tab = "overview" | "products" | "retailers" | "listings";','type Tab = "overview" | "competition" | "products" | "retailers" | "listings";');
 s=s.replace('[["overview","Overview"],["products","Productos"]','[["overview","Overview"],["competition","Competencia"],["products","Productos"]');
