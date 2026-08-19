@@ -23,23 +23,28 @@ category=category.replace('<article className={`${styles.card} ${styles.stackedC
 if(!category.includes('title="Mix de productos por retailer"'))throw new Error("Category retailer product mix not mounted");
 fs.writeFileSync(categoryPath,category);
 
-// 3) Mount Brands > Precios beside Competencia.
+// 3) Mount legacy Brands > Precios beside Competencia only on the old Victorinox view.
 const brandsPath="src/app/BrandsVertical.tsx";
 let brands=fs.readFileSync(brandsPath,"utf8");
-if(!brands.includes('import BrandsPricesV2 from "./BrandsPricesV2";')){
-  const style='import styles from "./BrandsVertical.module.css";';
-  if(!brands.includes(style))throw new Error("Brands style import missing");
-  brands=brands.replace(style,`${style}\nimport BrandsPricesV2 from "./BrandsPricesV2";`);
+const integratedLiveBrands=brands.includes("type LivePulse =")&&brands.includes("encodeURIComponent(selectedBrand)");
+if(!integratedLiveBrands){
+  if(!brands.includes('import BrandsPricesV2 from "./BrandsPricesV2";')){
+    const style='import styles from "./BrandsVertical.module.css";';
+    if(!brands.includes(style))throw new Error("Brands style import missing");
+    brands=brands.replace(style,`${style}\nimport BrandsPricesV2 from "./BrandsPricesV2";`);
+  }
+  brands=brands.replace('type Tab = "overview" | "competition" | "products" | "retailers" | "listings";','type Tab = "overview" | "competition" | "prices" | "products" | "retailers" | "listings";');
+  brands=brands.replace('[["overview","Overview"],["competition","Competencia"],["products","Productos"]','[["overview","Overview"],["competition","Competencia"],["prices","Precios"],["products","Productos"]');
+  const filtersAnchor='    {(tab === "products" || tab === "listings") && <div className={styles.filters}>';
+  if(!brands.includes('tab === "prices" && <BrandsPricesV2/>')){
+    if(!brands.includes(filtersAnchor))throw new Error("Brands prices anchor missing");
+    brands=brands.replace(filtersAnchor,'    {tab === "prices" && <BrandsPricesV2/>}\n\n'+filtersAnchor);
+  }
+  if(!brands.includes('["prices","Precios"]')||!brands.includes('<BrandsPricesV2/>'))throw new Error("Brands prices tab not mounted");
+  fs.writeFileSync(brandsPath,brands);
+}else{
+  console.log("Integrated multi-brand live view detected; legacy Brands prices patch skipped");
 }
-brands=brands.replace('type Tab = "overview" | "competition" | "products" | "retailers" | "listings";','type Tab = "overview" | "competition" | "prices" | "products" | "retailers" | "listings";');
-brands=brands.replace('[["overview","Overview"],["competition","Competencia"],["products","Productos"]','[["overview","Overview"],["competition","Competencia"],["prices","Precios"],["products","Productos"]');
-const filtersAnchor='    {(tab === "products" || tab === "listings") && <div className={styles.filters}>';
-if(!brands.includes('tab === "prices" && <BrandsPricesV2/>')){
-  if(!brands.includes(filtersAnchor))throw new Error("Brands prices anchor missing");
-  brands=brands.replace(filtersAnchor,'    {tab === "prices" && <BrandsPricesV2/>}\n\n'+filtersAnchor);
-}
-if(!brands.includes('["prices","Precios"]')||!brands.includes('<BrandsPricesV2/>'))throw new Error("Brands prices tab not mounted");
-fs.writeFileSync(brandsPath,brands);
 
 // 4) Category product sample is no longer artificially tiny.
 const categoryLib="src/lib/clickhouse-category-intelligence.ts";
@@ -59,4 +64,4 @@ verify=verify.replace("if (!insight.includes('/api/clickhouse-insight?')) failur
 verify=verify.replace("if (!insightData.includes('clickHouseInsight') || insightData.toLowerCase().includes('supabase')) failures.push('La analítica lazy no está aislada en ClickHouse');","if (!insightData.includes('clickHouseInsightV2') || insightData.toLowerCase().includes('supabase')) failures.push('La analítica lazy V2 no está aislada en ClickHouse');");
 fs.writeFileSync(verifyPath,verify);
 
-console.log("Requested platform fixes applied: evolution/products/gaps/alerts/nav/category mix/Brands prices");
+console.log("Requested platform fixes applied: evolution/products/gaps/alerts/nav/category mix/Brands compatibility");
