@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { enterpriseAccess } from "@/lib/enterprise-auth";
+import { getLiveCompetitivePulse } from "@/lib/brands-live";
 import { supabaseRest } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -12,12 +13,15 @@ export async function GET(request: NextRequest) {
 
   const slug = request.nextUrl.searchParams.get("brand")?.trim().toLowerCase() || "victorinox";
   try {
-    const payload = await supabaseRest<Record<string, unknown>>("rpc/brands_vertical_payload", {
-      method: "POST",
-      body: { p_slug: slug },
-    });
+    const [payload, live] = await Promise.all([
+      supabaseRest<Record<string, unknown>>("rpc/brands_vertical_payload", {
+        method: "POST",
+        body: { p_slug: slug },
+      }),
+      getLiveCompetitivePulse(slug),
+    ]);
     if (!payload || !payload.brand) return NextResponse.json({ error: "Marca no encontrada." }, { status: 404 });
-    return NextResponse.json(payload, { headers: { "cache-control": "private, no-store, max-age=0" } });
+    return NextResponse.json({ ...payload, live }, { headers: { "cache-control": "private, no-store, max-age=0" } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "No fue posible cargar Brands." }, { status: 503 });
   }
