@@ -11,6 +11,7 @@ type Target = { brand:string; role:Role; url:string; location:string; specs:Spec
 type Source = { domain:string; retailer:string; sourceType:"official"|"marketplace"; priority:number; targets:Target[] };
 type Vertical = { slug:string; sources:Source[] };
 type Parsed = Spec & { brand:string; role:Role; url:string; location:string; currentPrice:number; regularPrice:number|null; discountPct:number|null; promotion:boolean };
+type Page = { raw:string; text:string; domain:string };
 
 const KK: Spec[] = [
   {key:"krispy-kreme:kk-pokemon-12",name:"Docena Pokemon",aliases:["Docena Pokemon"],category:"Edición limitada",units:12},
@@ -95,21 +96,63 @@ function decode(v:string){return v.replace(/\\u([0-9a-fA-F]{4})/g,(_,h)=>String.
 function clean(raw:string){return decode(raw).replace(/<script[\s\S]*?<\/script>/gi," ").replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim()}
 function clp(raw:string){const n=Number(raw.replace(/[^0-9]/g,""));return Number.isFinite(n)&&n>=500&&n<=300000?n:null}
 function money(segment:string){const values:number[]=[];for(const match of segment.matchAll(/\$\s*([0-9]{1,3}(?:[.\s][0-9]{3})+|[0-9]{3,6})/g)){const n=clp(match[1]);if(n)values.push(n);if(values.length>=3)break}return values}
-function parseTarget(text:string,target:Target):Parsed[]{
+function escapeRegex(value:string){return value.replace(/[.*+?^${}()|[\]\\]/g,"\\$&").replace(/\s+/g,"\\s+")}
+
+function parsedItem(spec:Spec,target:Target,currentPrice:number,regularPrice:number|null,discountPct:number|null):Parsed {
+  return {...spec,brand:target.brand,role:target.role,url:target.url,location:target.location,currentPrice,regularPrice,discountPct,promotion:Boolean(discountPct||regularPrice||spec.promoMechanic)};
+}
+
+function parseRappi(raw:string,target:Target):Parsed[]{
+  const html=decode(raw);const results:Parsed[]=[];
+  for(const spec of target.specs){let found:Parsed|null=null;
+    for(const alias of spec.aliases){
+      const heading=new RegExp(`<h4[^>]*>\\s*${escapeRegex(alias)}\\s*<\\/h4>`,`i`).exec(html);
+      if(!heading)continue;
+      const start=heading.index;
+      const nextMarker=html.indexOf('data-qa="product-item-',start+heading[0].length+40);
+      const end=nextMarker>start?Math.min(nextMarker,start+3200):Math.min(html.length,start+3200);
+      const card=html.slice(start,end);
+      const prices=money(card);if(!prices.length)continue;
+      const discountMatch=card.match(/-\s*([0-9]{1,2})\s*%/);
+      const currentPrice=prices[0];
+      const regularPrice=discountMatch&&prices[1]&&prices[1]>currentPrice?prices[1]:null;
+      const discountPct=discountMatch?Number(discountMatch[1]):regularPrice?Math.round((1-currentPrice/regularPrice)*100):null;
+      found=parsedItem(spec,target,currentPrice,regularPrice,discountPct);break;
+    }
+    if(!found){
+      for(const alias of spec.aliases){
+        const exactName=escapeRegex(alias).replace(/\\s\+/g,"\\s*");
+        const jsonPattern=new RegExp(`\\"name\\"\\s*:\\s*\\"${exactName}\\"[\\s\\S]{0,900}?\\"offers\\"[\\s\\S]{0,350}?\\"price\\"\\s*:\\s*([0-9]{3,6})`,`i`).exec(html);
+        if(!jsonPattern)continue;const currentPrice=Number(jsonPattern[1]);if(currentPrice>=500&&currentPrice<=300000){found=parsedItem(spec,target,currentPrice,null,null);break;}
+      }
+    }
+    if(found)results.push(found);
+  }
+  return results;
+}
+
+function parseText(text:string,target:Target):Parsed[]{
   const low=text.toLowerCase();const parsed:Parsed[]=[];
-  for(const spec of target.specs){let index=-1;let alias="";for(const candidate of spec.aliases){const found=low.indexOf(candidate.toLowerCase());if(found>=0&&(index<0||found<index)){index=found;alias=candidate}}if(index<0)continue;
-    const segment=text.slice(index+alias.length,index+alias.length+900);const prices=money(segment);if(!prices.length)continue;
-    const discountMatch=segment.slice(0,650).match(/-\s*([0-9]{1,2})\s*%/);const currentPrice=prices[0];const regularPrice=discountMatch&&prices[1]&&prices[1]>currentPrice?prices[1]:null;const discountPct=discountMatch?Number(discountMatch[1]):regularPrice?Math.round((1-currentPrice/regularPrice)*100):null;
-    parsed.push({...spec,brand:target.brand,role:target.role,url:target.url,location:target.location,currentPrice,regularPrice,discountPct,promotion:Boolean(discountPct||spec.promoMechanic)});
+  for(const spec of target.specs){let bestIndex=-1;let bestAlias="";
+    for(const candidate of spec.aliases){const found=low.indexOf(candidate.toLowerCase());if(found>=0&&(bestIndex<0||found<bestIndex)){bestIndex=found;bestAlias=candidate}}
+    if(bestIndex<0)continue;
+    const segment=text.slice(bestIndex+bestAlias.length,bestIndex+bestAlias.length+700);const prices=money(segment);if(!prices.length)continue;
+    const discountMatch=segment.slice(0,500).match(/-\s*([0-9]{1,2})\s*%/);const currentPrice=prices[0];const regularPrice=discountMatch&&prices[1]&&prices[1]>currentPrice?prices[1]:null;const discountPct=discountMatch?Number(discountMatch[1]):regularPrice?Math.round((1-currentPrice/regularPrice)*100):null;
+    parsed.push(parsedItem(spec,target,currentPrice,regularPrice,discountPct));
   }
   return parsed;
 }
-async function fetchPage(url:string){const rappi=new URL(url).hostname.includes("rappi.cl");const response=await fetch(url,{headers:{"user-agent":rappi?BOT_UA:BROWSER_UA,"accept":"text/html,application/xhtml+xml","accept-language":"es-CL,es;q=0.9,en;q=0.7","cache-control":"no-cache"},redirect:"follow",signal:AbortSignal.timeout(22000)});const raw=await response.text();if(!response.ok)throw new Error(`HTTP ${response.status}`);if(raw.length<500)throw new Error(`short_html:${raw.length}`);return clean(raw)}
+
+async function fetchPage(url:string):Promise<Page>{
+  const domain=new URL(url).hostname.replace(/^www\./,"");const rappi=domain==="rappi.cl";
+  const response=await fetch(url,{headers:{"user-agent":rappi?BOT_UA:BROWSER_UA,"accept":"text/html,application/xhtml+xml","accept-language":"es-CL,es;q=0.9,en;q=0.7","cache-control":"no-cache"},redirect:"follow",signal:AbortSignal.timeout(22000)});
+  const raw=await response.text();if(!response.ok)throw new Error(`HTTP ${response.status}`);if(raw.length<500)throw new Error(`short_html:${raw.length}`);return {raw,text:clean(raw),domain};
+}
 async function ensureSource(brandId:string,source:Source){const {data:existing}=await supabase.from("brands_vertical_sources").select("id").eq("brand_id",brandId).eq("domain",source.domain).maybeSingle();if(existing?.id){await supabase.from("brands_vertical_sources").update({retailer_name:source.retailer,source_type:source.sourceType,priority:source.priority,active:true}).eq("id",existing.id);return existing.id}const {data,error}=await supabase.from("brands_vertical_sources").insert({brand_id:brandId,retailer_name:source.retailer,domain:source.domain,source_type:source.sourceType,priority:source.priority,active:true}).select("id").single();if(error)throw error;return data.id}
 async function ensureProduct(brandId:string,item:Parsed){const {data,error}=await supabase.from("brands_vertical_products").upsert({brand_id:brandId,external_sku:item.key,name:item.name,category:item.category,product_url:item.url,canonical_key:item.key,active:true,last_seen_at:new Date().toISOString(),attributes:{actualBrand:item.brand,role:item.role,units:item.units??null,benchmark:item.benchmark??null}},{onConflict:"brand_id,canonical_key"}).select("id").single();if(error)throw error;return data.id}
-async function persist(brandId:string,sourceId:string,item:Parsed){const productId=await ensureProduct(brandId,item);const unitPrice=item.units?Math.round(item.currentPrice/item.units):null;const {error}=await supabase.from("brands_vertical_listings").insert({brand_id:brandId,source_id:sourceId,product_id:productId,source_product_key:item.key,title:item.name,brand_name:item.brand,seller_name:item.brand,category:item.category,product_url:item.url,regular_price:item.regularPrice,current_price:item.currentPrice,currency:"CLP",in_stock:true,attributes:{actualBrand:item.brand,role:item.role,units:item.units??null,unitPrice,benchmark:item.benchmark??null,promotion:item.promotion,promoMechanic:item.promoMechanic??null,discountPct:item.discountPct,snapshotType:"automatic",verification:"source_page_observed",location:item.location},raw:{collector:"qsr-pricing-worker-v5",sourceUrl:item.url},observed_at:new Date().toISOString()});if(error)throw error}
+async function persist(brandId:string,sourceId:string,item:Parsed){const productId=await ensureProduct(brandId,item);const unitPrice=item.units?Math.round(item.currentPrice/item.units):null;const {error}=await supabase.from("brands_vertical_listings").insert({brand_id:brandId,source_id:sourceId,product_id:productId,source_product_key:item.key,title:item.name,brand_name:item.brand,seller_name:item.brand,category:item.category,product_url:item.url,regular_price:item.regularPrice,current_price:item.currentPrice,currency:"CLP",in_stock:true,attributes:{actualBrand:item.brand,role:item.role,units:item.units??null,unitPrice,benchmark:item.benchmark??null,promotion:item.promotion,promoMechanic:item.promoMechanic??null,discountPct:item.discountPct,snapshotType:"automatic",verification:"exact_product_card",location:item.location},raw:{collector:"qsr-pricing-worker-v6",sourceUrl:item.url},observed_at:new Date().toISOString()});if(error)throw error}
 async function collect(vertical:Vertical){const {data:brand,error}=await supabase.from("brands_vertical_brands").select("id").eq("slug",vertical.slug).single();if(error||!brand)throw new Error(`brand_not_found:${vertical.slug}`);const started=new Date().toISOString();const {data:run}=await supabase.from("brands_vertical_discovery_runs").insert({brand_id:brand.id,status:"running",started_at:started,sources_attempted:vertical.sources.length}).select("id").single();let sourcesSucceeded=0,listings=0;const products=new Set<string>();const details:any[]=[];
-  for(const source of vertical.sources){const sourceId=await ensureSource(brand.id,source);let sourceListings=0;const targetDetails:any[]=[];for(const target of source.targets){try{const page=await fetchPage(target.url);const items=parseTarget(page,target);for(const item of items){await persist(brand.id,sourceId,item);sourceListings++;listings++;products.add(item.key)}targetDetails.push({brand:target.brand,url:target.url,found:items.length,status:items.length?"ok":"no-data"})}catch(e){targetDetails.push({brand:target.brand,url:target.url,found:0,status:"error",error:e instanceof Error?e.message:String(e)})}}
+  for(const source of vertical.sources){const sourceId=await ensureSource(brand.id,source);let sourceListings=0;const targetDetails:any[]=[];for(const target of source.targets){try{const page=await fetchPage(target.url);const items=source.domain==="rappi.cl"?parseRappi(page.raw,target):parseText(page.text,target);for(const item of items){await persist(brand.id,sourceId,item);sourceListings++;listings++;products.add(item.key)}targetDetails.push({brand:target.brand,url:target.url,found:items.length,status:items.length?"ok":"no-data",parser:source.domain==="rappi.cl"?"exact-card":"scoped-text"})}catch(e){targetDetails.push({brand:target.brand,url:target.url,found:0,status:"error",error:e instanceof Error?e.message:String(e)})}}
     if(sourceListings>0)sourcesSucceeded++;await supabase.from("brands_vertical_sources").update({last_crawled_at:new Date().toISOString(),last_status:sourceListings?`ok:${sourceListings}`:"degraded:last-valid-retained",last_error:sourceListings?null:JSON.stringify(targetDetails).slice(0,700)}).eq("id",sourceId);details.push({domain:source.domain,found:sourceListings,targets:targetDetails});}
   const status=sourcesSucceeded===vertical.sources.length?"completed":sourcesSucceeded>0?"partial":"failed";if(run?.id)await supabase.from("brands_vertical_discovery_runs").update({status,sources_succeeded:sourcesSucceeded,listings_found:listings,products_found:products.size,finished_at:new Date().toISOString(),notes:JSON.stringify(details)}).eq("id",run.id);return {slug:vertical.slug,status,sourcesSucceeded,sourcesAttempted:vertical.sources.length,listingsFound:listings,productsFound:products.size,details};
 }
