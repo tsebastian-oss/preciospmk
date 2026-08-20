@@ -12,6 +12,7 @@ export async function GET(request: NextRequest) {
   if (!authorization.access) return NextResponse.json({ error: "No fue posible resolver el acceso enterprise." }, { status: 500 });
 
   const slug = request.nextUrl.searchParams.get("brand")?.trim().toLowerCase() || "krispy-kreme";
+
   try {
     const payloadResult = await enterpriseRpc<Record<string, unknown>>(request, "brands_vertical_payload_base", { p_slug: slug });
     if (payloadResult.response) return payloadResult.response;
@@ -20,9 +21,12 @@ export async function GET(request: NextRequest) {
 
     let live: Record<string, unknown> | null = null;
     if (QSR_BRANDS.has(slug)) {
-      const snapshotResult = await enterpriseRpc<Record<string, unknown>>(request, "brands_qsr_competitive_snapshot", { p_slug: slug });
+      const snapshotFunction = slug === "krispy-kreme"
+        ? "brands_qsr_official_snapshot"
+        : "brands_qsr_competitive_snapshot";
+      const snapshotResult = await enterpriseRpc<Record<string, unknown>>(request, snapshotFunction, { p_slug: slug });
       if (snapshotResult.response) {
-        console.error("brands-qsr-snapshot", snapshotResult.response.status);
+        console.error("brands-qsr-snapshot", snapshotFunction, snapshotResult.response.status);
       } else {
         live = snapshotResult.data ?? null;
       }
