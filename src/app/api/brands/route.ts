@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { enterpriseAccess } from "@/lib/enterprise-auth";
-import { supabaseRest } from "@/lib/supabase";
+import { enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -14,21 +13,18 @@ export async function GET(request: NextRequest) {
 
   const slug = request.nextUrl.searchParams.get("brand")?.trim().toLowerCase() || "krispy-kreme";
   try {
-    const payload = await supabaseRest<Record<string, unknown>>("rpc/brands_vertical_payload_base", {
-      method: "POST",
-      body: { p_slug: slug },
-    });
+    const payloadResult = await enterpriseRpc<Record<string, unknown>>(request, "brands_vertical_payload_base", { p_slug: slug });
+    if (payloadResult.response) return payloadResult.response;
+    const payload = payloadResult.data;
     if (!payload || !payload.brand) return NextResponse.json({ error: "Marca no encontrada." }, { status: 404 });
 
     let live: Record<string, unknown> | null = null;
     if (QSR_BRANDS.has(slug)) {
-      try {
-        live = await supabaseRest<Record<string, unknown>>("rpc/brands_qsr_competitive_snapshot", {
-          method: "POST",
-          body: { p_slug: slug },
-        });
-      } catch (snapshotError) {
-        console.error("brands-qsr-snapshot", snapshotError);
+      const snapshotResult = await enterpriseRpc<Record<string, unknown>>(request, "brands_qsr_competitive_snapshot", { p_slug: slug });
+      if (snapshotResult.response) {
+        console.error("brands-qsr-snapshot", snapshotResult.response.status);
+      } else {
+        live = snapshotResult.data ?? null;
       }
     }
 
