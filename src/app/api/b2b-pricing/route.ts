@@ -4,6 +4,12 @@ import { enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+type NormalizedPayload = {
+  summary: Record<string, unknown>;
+  profiles: unknown[];
+  rows: unknown[];
+};
+
 type DashboardPayload = {
   category: string;
   days: number;
@@ -12,7 +18,10 @@ type DashboardPayload = {
   services: unknown[];
   recent: unknown[];
   source: string;
+  normalized?: NormalizedPayload;
 };
+
+const EMPTY_NORMALIZED: NormalizedPayload = { summary: {}, profiles: [], rows: [] };
 
 export async function GET(request: NextRequest) {
   const authorization = await enterpriseAccess(request, "overview");
@@ -29,7 +38,13 @@ export async function GET(request: NextRequest) {
   });
   if (result.response) return result.response;
 
-  return NextResponse.json(result.data ?? {
+  const normalizedResult = await enterpriseRpc<NormalizedPayload>(request, "b2b_pricing_comparables", {
+    p_category: category,
+    p_days: days,
+  });
+  if (normalizedResult.response) return normalizedResult.response;
+
+  const base = result.data ?? {
     category,
     days,
     summary: {},
@@ -37,5 +52,10 @@ export async function GET(request: NextRequest) {
     services: [],
     recent: [],
     source: "mercado_publico_ocds",
+  };
+
+  return NextResponse.json({
+    ...base,
+    normalized: normalizedResult.data ?? EMPTY_NORMALIZED,
   }, { headers: { "cache-control": "private, no-store, max-age=0" } });
 }
