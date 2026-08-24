@@ -8,12 +8,15 @@ export const maxDuration = 60;
 const BASE = "https://api.mercadopublico.cl/APISOCDS/OCDS";
 const COURIER_TERMS = [
   "courier", "mensajeria", "mensajería", "encomienda", "correspondencia", "paqueteria", "paquetería",
-  "entrega postal", "correo nacional", "correo internacional", "valija", "despacho de documentos",
+  "entrega postal", "recoleccion de correo", "recolección de correo", "correo nacional", "correo internacional",
+  "franqueo", "valija", "despacho de documentos",
 ];
-const COURIER_CODES = ["78102201", "78102202", "78102203", "78102204", "78102205", "78101802"];
+const COURIER_CODES = ["78102200", "78102201", "78102202", "78102203", "78102204", "78102205"];
+const KNOWN_COURIER_AWARDS = ["1611-5-LE26", "1867-2-LE26", "1094080-2-LE26"];
 
 type Json = Record<string, any>;
 type Observation = Record<string, unknown>;
+type OcdsRef = { ocid?: string; urlAward?: string; urlTender?: string };
 
 function asArray(value: unknown): Json[] {
   return Array.isArray(value) ? value.filter((item) => item && typeof item === "object") as Json[] : [];
@@ -21,6 +24,7 @@ function asArray(value: unknown): Json[] {
 function text(value: unknown) { return typeof value === "string" ? value.trim() : ""; }
 function number(value: unknown) { const n = Number(value); return Number.isFinite(n) ? n : null; }
 function normalize(value: string) { return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase(); }
+function httpsUrl(value: unknown) { const raw = text(value); return raw ? raw.replace(/^http:\/\//i, "https://") : ""; }
 function providerGroup(name: string) {
   const n = normalize(name);
   if (n.includes("chilexpress")) return "Chilexpress";
@@ -35,12 +39,12 @@ function serviceType(code: string, description: string) {
   if (code === "78102203") return "Entrega / recolección de correo";
   if (code === "78102202") return "Franqueo";
   if (code === "78102201") return "Entrega postal nacional";
-  if (code === "78101802") return "Transporte y distribución";
   const n = normalize(description);
   if (n.includes("internacional")) return "Courier internacional";
   if (n.includes("mensaj")) return "Mensajería";
   if (n.includes("encomienda")) return "Encomiendas";
   if (n.includes("correspond")) return "Correspondencia";
+  if (n.includes("franque")) return "Franqueo";
   return "Courier y logística";
 }
 function isCourier(provider: string, code: string, description: string) {
@@ -60,14 +64,8 @@ function releaseCandidates(value: unknown, out: Json[] = [], depth = 0): Json[] 
   const obj = value as Json;
   const release = obj.compiledRelease ?? obj.release ?? null;
   if (release && typeof release === "object") out.push(release as Json);
-  else if (obj.ocid && (obj.tender || obj.awards || obj.contracts || obj.buyer)) out.push(obj);
-  for (const [key, child] of Object.entries(obj)) {
-    if (["compiledRelease", "release", "releases"].includes(key)) {
-      if (key === "releases") releaseCandidates(child, out, depth + 1);
-      continue;
-    }
-    if (depth < 3 && (Array.isArray(child) || (child && typeof child === "object"))) releaseCandidates(child, out, depth + 1);
-  }
+  else if (obj.ocid && (obj.tender || obj.awards || obj.contracts || obj.buyer || obj.parties)) out.push(obj);
+  if (Array.isArray(obj.releases)) releaseCandidates(obj.releases, out, depth + 1);
   return out;
 }
 function partyBuyer(release: Json) {
@@ -107,19 +105,22 @@ function toObservations(release: Json, sourceKind: string, sourceUrl: string): O
     const awardAmount = number(awardValue.amount);
     const awardCurrency = text(awardValue.currency || "CLP") || "CLP";
     const items = asArray(award.items).length ? asArray(award.items) : asArray(tender.items);
-    const effectiveItems = items.length ? items : [{ id: "award", description: releaseDescription, quantity: 1 }];
+    const effectiveItems = items.length ? items : [{ id: "award", description: [text(award.title), text(award.description), releaseDescription].filter(Boolean).join(" · "), quantity: 1 }];
 
     effectiveItems.forEach((item, itemIndex) => {
       const { code, name } = classification(item);
-      const description = [text(item.description), name, releaseDescription].filter(Boolean).join(" · ").slice(0, 4000);
+      const description = [text(item.description), name, text(award.title), text(award.description), releaseDescription].filter(Boolean).join(" · ").slice(0, 4000);
       if (!isCourier(supplier, code, description)) return;
       const quantity = number(item.quantity);
       const unitObj = item.unit ?? {};
       const unitValue = unitObj.value ?? {};
-      const unitAmount = number(unitValue.amount);
+      const rawUnitAmount = number(unitValue.amount);
       const currency = text(unitValue.currency || awardCurrency || "CLP") || "CLP";
+      const isNominalReference = sourceKind === "licitacion" && rawUnitAmount !== null && rawUnitAmount <= 1;
+      const unitAmount = isNominalReference ? null : rawUnitAmount;
       const lineAmount = unitAmount !== null && quantity !== null ? unitAmount * quantity : null;
-      const useAwardTotal = lineAmount === null && itemIndex === 0 ? awardAmount : null;
+      const usableAwardAmount = sourceKind === "licitacion" && awardAmount !== null && awardAmount <= 1 ? null : awardAmount;
+      const useAwardTotal = lineAmount === null && itemIndex === 0 ? usableAwardAmount : null;
       const processIso = isoDate(award.date ?? release.date ?? release.publishedDate ?? release.contractPeriod?.startDate);
       const processDate = processIso ? processIso.slice(0, 10) : null;
       const itemId = text(item.id) || String(itemIndex);
@@ -146,27 +147,59 @@ function toObservations(release: Json, sourceKind: string, sourceUrl: string): O
         unit_price_clp: currency === "CLP" ? unitAmount : null,
         total_amount_clp: currency === "CLP" ? (lineAmount ?? useAwardTotal) : null,
         currency,
-        price_basis: unitAmount !== null ? "awarded_unit_price" : useAwardTotal !== null ? "award_total" : "public_award",
+        price_basis: isNominalReference ? "nominal_award_reference" : unitAmount !== null ? "awarded_unit_price" : useAwardTotal !== null ? "award_total" : "public_award",
         process_date: processDate,
         observed_at: processIso,
-        raw: { ocid: ocid || null, awardId, itemId },
+        raw: { ocid: ocid || null, awardId, itemId, nominalReference: isNominalReference },
       });
     });
   });
   return rows;
 }
 
-async function fetchPage(kind: string, year: number, month: number, start: number, end: number) {
+async function fetchJson(url: string, timeoutMs = 12_000): Promise<Json> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { cache: "no-store", signal: controller.signal, headers: { accept: "application/json" } });
+    if (!response.ok) throw new Error(`Mercado Público respondió ${response.status}`);
+    const payload = await response.json() as Json;
+    if (Number(payload?.status) === 404) return {};
+    return payload;
+  } finally { clearTimeout(timeout); }
+}
+
+async function fetchRefs(kind: string, year: number, month: number, start: number, end: number) {
   const suffix = kind === "licitacion" ? "listaOCDSAgnoMes" : kind === "trato_directo" ? "listaOCDSAgnoMesTratoDirecto" : "listaOCDSAgnoMesConvenio";
   const sourceUrl = `${BASE}/${suffix}/${year}/${String(month).padStart(2, "0")}/${start}/${end}`;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15_000);
-  try {
-    const response = await fetch(sourceUrl, { cache: "no-store", signal: controller.signal, headers: { accept: "application/json" } });
-    if (!response.ok) throw new Error(`Mercado Público OCDS ${kind} respondió ${response.status}`);
-    const payload = await response.json();
-    return { candidates: releaseCandidates(payload), sourceUrl };
-  } finally { clearTimeout(timeout); }
+  const payload = await fetchJson(sourceUrl);
+  return { refs: asArray(payload?.data) as OcdsRef[], sourceUrl, total: number(payload?.pagination?.total) ?? 0 };
+}
+
+async function fetchAward(url: string, sourceKind: string) {
+  const sourceUrl = httpsUrl(url);
+  if (!sourceUrl) return [] as Observation[];
+  const payload = await fetchJson(sourceUrl);
+  const rows: Observation[] = [];
+  for (const release of releaseCandidates(payload)) rows.push(...toObservations(release, sourceKind, sourceUrl));
+  return rows;
+}
+
+async function fetchManyAwards(refs: OcdsRef[], sourceKind: string, deadline: number) {
+  const rows: Observation[] = [];
+  let detailsRead = 0;
+  const concurrency = 10;
+  for (let i = 0; i < refs.length && Date.now() < deadline; i += concurrency) {
+    const batch = refs.slice(i, i + concurrency);
+    const results = await Promise.all(batch.map(async (ref) => {
+      const url = httpsUrl(ref.urlAward);
+      if (!url) return [] as Observation[];
+      try { return await fetchAward(url, sourceKind); } catch { return [] as Observation[]; }
+    }));
+    detailsRead += batch.length;
+    for (const result of results) rows.push(...result);
+  }
+  return { rows, detailsRead };
 }
 
 export async function POST(request: NextRequest) {
@@ -174,31 +207,50 @@ export async function POST(request: NextRequest) {
   if (authorization.response) return authorization.response;
 
   const body = await request.json().catch(() => ({}));
-  const months = Math.max(1, Math.min(6, Number(body?.months || 2)));
-  const maxPages = Math.max(1, Math.min(12, Number(body?.maxPages || 6)));
-  const pageSize = 1000;
+  const months = Math.max(1, Math.min(3, Number(body?.months || 2)));
+  const maxPages = Math.max(1, Math.min(4, Number(body?.maxPages || 2)));
+  const pageSize = Math.max(20, Math.min(100, Number(body?.pageSize || 50)));
+  const startOffset = Math.max(0, Number(body?.startOffset || 0));
   const now = new Date();
   const collected = new Map<string, Observation>();
   const errors: string[] = [];
+  const deadline = Date.now() + 45_000;
   let pagesRead = 0;
+  let refsScanned = 0;
+  let detailsRead = 0;
 
-  for (let offset = 0; offset < months; offset += 1) {
+  // Seed known recent courier awards so a new workspace gets provider coverage immediately.
+  for (const code of KNOWN_COURIER_AWARDS) {
+    if (Date.now() >= deadline) break;
+    try {
+      const rows = await fetchAward(`${BASE}/award/${code}`, "licitacion");
+      for (const row of rows) collected.set(String(row.source_record_id), row);
+      detailsRead += 1;
+    } catch (error) {
+      errors.push(error instanceof Error ? `seed ${code}: ${error.message}` : `seed ${code}`);
+    }
+  }
+
+  // Trato directo and Convenio Marco frequently expose real awarded unit values.
+  // Licitaciones are represented by the seed layer because many use a nominal $1 award and real spend appears later in OCs.
+  for (let offset = 0; offset < months && Date.now() < deadline; offset += 1) {
     const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - offset, 1));
     const year = date.getUTCFullYear();
     const month = date.getUTCMonth() + 1;
-    for (const kind of ["licitacion", "trato_directo", "convenio_marco"]) {
-      for (let page = 0; page < maxPages; page += 1) {
-        const start = page * pageSize;
+    for (const kind of ["trato_directo", "convenio_marco"]) {
+      for (let page = 0; page < maxPages && Date.now() < deadline; page += 1) {
+        const start = startOffset + page * pageSize;
         const end = start + pageSize;
         try {
-          const { candidates, sourceUrl } = await fetchPage(kind, year, month, start, end);
+          const { refs, total } = await fetchRefs(kind, year, month, start, end);
           pagesRead += 1;
-          for (const release of candidates) {
-            for (const row of toObservations(release, kind, sourceUrl)) collected.set(String(row.source_record_id), row);
-          }
-          if (candidates.length < pageSize) break;
+          refsScanned += refs.length;
+          const detail = await fetchManyAwards(refs, kind, deadline);
+          detailsRead += detail.detailsRead;
+          for (const row of detail.rows) collected.set(String(row.source_record_id), row);
+          if (!refs.length || end >= total) break;
         } catch (error) {
-          errors.push(error instanceof Error ? error.message : `Error ${kind} ${year}-${month}`);
+          errors.push(error instanceof Error ? `${kind} ${year}-${month}: ${error.message}` : `Error ${kind} ${year}-${month}`);
           break;
         }
       }
@@ -207,8 +259,8 @@ export async function POST(request: NextRequest) {
 
   const rows = [...collected.values()];
   let ingested = 0;
-  for (let i = 0; i < rows.length; i += 300) {
-    const chunk = rows.slice(i, i + 300);
+  for (let i = 0; i < rows.length; i += 250) {
+    const chunk = rows.slice(i, i + 250);
     const result = await enterpriseRpc<number>(request, "b2b_ingest_public_observations", { p_rows: chunk });
     if (result.response) return result.response;
     ingested += Number(result.data || 0);
@@ -219,9 +271,13 @@ export async function POST(request: NextRequest) {
     source: "mercado_publico_ocds",
     category: "courier",
     pagesRead,
+    refsScanned,
+    detailsRead,
     matched: rows.length,
     ingested,
     errors: errors.slice(0, 10),
-    coverage: { months, maxPages, pageSize },
+    coverage: { months, maxPages, pageSize, startOffset },
+    nextStartOffset: startOffset + maxPages * pageSize,
+    note: "OCDS award values of CLP 1 in licitaciones are retained as references but excluded from price KPIs.",
   }, { headers: { "cache-control": "private, no-store, max-age=0" } });
 }
