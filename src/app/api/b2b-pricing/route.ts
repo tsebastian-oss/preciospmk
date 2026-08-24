@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 type NormalizedPayload = {
+  layer?: string;
   summary: Record<string, unknown>;
   profiles: unknown[];
   rows: unknown[];
@@ -19,6 +20,7 @@ type DashboardPayload = {
   recent: unknown[];
   source: string;
   normalized?: NormalizedPayload;
+  annexes?: Record<string, unknown>;
 };
 
 const EMPTY_NORMALIZED: NormalizedPayload = { summary: {}, profiles: [], rows: [] };
@@ -31,6 +33,8 @@ export async function GET(request: NextRequest) {
   const category = (url.searchParams.get("category") || "courier").trim().slice(0, 80);
   const requestedDays = Number(url.searchParams.get("days") || 365);
   const days = Number.isFinite(requestedDays) ? Math.max(30, Math.min(1095, Math.round(requestedDays))) : 365;
+  const requestedLayer = (url.searchParams.get("layer") || "public").trim().toLowerCase();
+  const layer = requestedLayer === "b2b" || requestedLayer === "best" ? requestedLayer : "public";
 
   const result = await enterpriseRpc<DashboardPayload>(request, "b2b_pricing_dashboard", {
     p_category: category,
@@ -38,11 +42,15 @@ export async function GET(request: NextRequest) {
   });
   if (result.response) return result.response;
 
-  const normalizedResult = await enterpriseRpc<NormalizedPayload>(request, "b2b_pricing_comparables", {
+  const normalizedResult = await enterpriseRpc<NormalizedPayload>(request, "b2b_pricing_comparables_v2", {
     p_category: category,
     p_days: days,
+    p_layer: layer,
   });
   if (normalizedResult.response) return normalizedResult.response;
+
+  const annexResult = await enterpriseRpc<Record<string, unknown>>(request, "b2b_annex_extraction_summary", { p_days: days });
+  if (annexResult.response) return annexResult.response;
 
   const base = result.data ?? {
     category,
@@ -56,6 +64,8 @@ export async function GET(request: NextRequest) {
 
   return NextResponse.json({
     ...base,
-    normalized: normalizedResult.data ?? EMPTY_NORMALIZED,
+    layer,
+    normalized: normalizedResult.data ?? { ...EMPTY_NORMALIZED, layer },
+    annexes: annexResult.data ?? {},
   }, { headers: { "cache-control": "private, no-store, max-age=0" } });
 }
