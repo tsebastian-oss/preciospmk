@@ -47,7 +47,7 @@ replaceOnce(
 replaceOnce('  }, [days]);', '  }, [days, pricingLayer]);', "load dependencies");
 
 if (!source.includes('fetch("/api/b2b-pricing/market-public-rates/refresh"')) {
-  const refreshStart = source.indexOf('      const response = await fetch("/api/b2b-pricing/refresh"');
+  const refreshStart = source.indexOf('      const marketResponse = await fetch("/api/b2b-pricing/refresh"');
   const refreshEnd = refreshStart >= 0 ? source.indexOf('      await load();', refreshStart) : -1;
   if (refreshStart < 0 || refreshEnd < 0) throw new Error("B2B source layers: missing refresh anchors");
   const newRefresh = `      const requestInit = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ months: 2, maxPages: 4 }) } as const;
