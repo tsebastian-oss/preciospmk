@@ -1,6 +1,7 @@
 import fs from "node:fs";
 
 const appPath = "src/app/UnifiedPlatformApp.tsx";
+const commercialPath = "src/app/CommercialExperience.tsx";
 let source = fs.readFileSync(appPath, "utf8");
 
 const brandImport = 'import BrandsVertical from "./BrandsVertical";';
@@ -56,4 +57,13 @@ if (!source.includes('view === "pricing-b2b" ? <B2BPricing/>')) {
 }
 
 fs.writeFileSync(appPath, source);
+
+let commercial = fs.readFileSync(commercialPath, "utf8");
+if (!commercial.includes('if (view === "pricing-b2b") return "Enterprise";')) {
+  const planAnchor = '  if (view === "scraping") return "Enterprise";';
+  if (!commercial.includes(planAnchor)) throw new Error("B2B pricing: commercial plan anchor missing");
+  commercial = commercial.replace(planAnchor, `${planAnchor}\n  if (view === "pricing-b2b") return "Enterprise";`);
+  fs.writeFileSync(commercialPath, commercial);
+}
+
 console.log("Pricing B2B vertical applied");
