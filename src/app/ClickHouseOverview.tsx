@@ -106,16 +106,18 @@ function shortDate(value: string) {
   }
 }
 
-function timeAgo(value: string | null | undefined) {
-  if (!value) return "sin actualización";
-  const delta = Date.now() - new Date(value).getTime();
-  if (!Number.isFinite(delta) || delta < 0) return "justo ahora";
-  if (delta < 60_000) return "justo ahora";
-  const minutes = Math.floor(delta / 60_000);
-  if (minutes < 60) return `hace ${minutes} min`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `hace ${hours} h`;
-  return `hace ${Math.floor(hours / 24)} d`;
+function datasetDate(value: string | null | undefined) {
+  if (!value) return "fecha no disponible";
+  try {
+    return new Intl.DateTimeFormat("es-CL", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      timeZone: "America/Santiago",
+    }).format(new Date(value)).replace(".", "");
+  } catch {
+    return "fecha no disponible";
+  }
 }
 
 function Sparkline({ values }: { values: number[] }) {
@@ -207,6 +209,7 @@ export default function ClickHouseOverview({ onNavigate }: Props) {
   const [error, setError] = useState("");
 
   const load = useCallback(async (quiet = false, signal?: AbortSignal) => {
+    if (quiet) return;
     if (quiet) setRefreshing(true); else setLoading(true);
     const params = new URLSearchParams({ days: String(days), live: String(Date.now()) });
     if (retailer) params.set("retailer", retailer);
@@ -248,19 +251,19 @@ export default function ClickHouseOverview({ onNavigate }: Props) {
   const priceDrops = (payload?.changes ?? []).filter((item) => item.changePct < 0).slice(0, 4);
   const priceIncreases = (payload?.changes ?? []).filter((item) => item.changePct > 0).slice(0, 4);
   const maxProducts = Math.max(...(payload?.retailers ?? []).map((item) => item.products), 1);
-  const generatedLabel = useMemo(() => timeAgo(payload?.generatedAt), [payload?.generatedAt, refreshing]);
+  const datasetLabel = useMemo(() => datasetDate(payload?.kpis.lastObservedAt), [payload?.kpis.lastObservedAt]);
 
   return <section className={styles.dashboard}>
     <header className={styles.header}>
       <div>
         <span className={styles.eyebrow}>PRICE INTELLIGENCE</span>
         <h1>Price Intelligence Dashboard</h1>
-        <p>Pricing, promociones y movimientos competitivos calculados directamente en ClickHouse.</p>
+        <p>Pricing, promociones y movimientos competitivos calculados en ClickHouse sobre un dataset demo congelado.</p>
       </div>
       <div className={styles.headerStatus}>
         <span className={styles.liveDot}/>
-        <div><small>DATA UPDATED</small><strong>{generatedLabel}</strong></div>
-        <button onClick={() => void load(true)} disabled={refreshing} title="Actualizar">{refreshing ? "…" : "↻"}</button>
+        <div><small>DATASET DEMO</small><strong>{datasetLabel}</strong></div>
+        <button onClick={() => void load(false)} disabled={loading} title="Actualizar vista">{loading ? "…" : "↻"}</button>
         <div className={styles.clickhouseBadge}><i>▥</i><span><small>POWERED BY</small><strong>ClickHouse</strong></span></div>
       </div>
     </header>
@@ -277,7 +280,7 @@ export default function ClickHouseOverview({ onNavigate }: Props) {
     {loading && !payload ? <Skeleton/> : payload && <>
       <section className={styles.kpis}>
         <KpiCard label="Precio mediano" value={money(payload.kpis.medianPrice)} change={payload.kpis.medianVariationPct} detail={`vs. día anterior · ${compact(payload.kpis.monitoredProducts)} SKU`} values={trendValues}/>
-        <KpiCard label="Cambios de precio hoy" value={number(payload.kpis.priceChangesToday)} detail={`${priceDrops.length} bajas destacadas · ${priceIncreases.length} alzas destacadas`} values={payload.changes.map((item) => Math.abs(item.changePct))}/>
+        <KpiCard label="Cambios último día" value={number(payload.kpis.priceChangesToday)} detail={`${priceDrops.length} bajas destacadas · ${priceIncreases.length} alzas destacadas`} values={payload.changes.map((item) => Math.abs(item.changePct))}/>
         <KpiCard label="Productos monitoreados" value={compact(payload.kpis.monitoredProducts)} detail={`${number(payload.kpis.inStockProducts)} con stock`} values={productValues}/>
         <KpiCard label="Retailers activos" value={number(payload.kpis.retailers)} detail={`${pct(payload.kpis.availabilityPct, false)} disponibilidad conocida`} values={payload.retailers.map((item) => item.products)}/>
         <KpiCard label="Promociones activas" value={compact(payload.kpis.promotions)} detail={`${pct(payload.kpis.promotionPct, false)} del catálogo visible`} values={payload.retailers.map((item) => item.promotions)}/>
@@ -319,7 +322,7 @@ export default function ClickHouseOverview({ onNavigate }: Props) {
         </aside>
       </section>
 
-      <footer className={styles.footerNote}><span><i/>CLICKHOUSE LIVE</span><p>Todos los KPI, gráficos, rankings y alertas de este Overview se calculan en ClickHouse. Supabase se usa aquí únicamente para autenticar y aplicar permisos de organización.</p><small>Última observación {timeAgo(payload.kpis.lastObservedAt)}</small></footer>
+      <footer className={styles.footerNote}><span><i/>CLICKHOUSE DEMO</span><p>Los KPI, gráficos, rankings y alertas se calculan en ClickHouse sobre el dataset demo congelado. Supabase continúa capturando la data nueva por separado hasta reactivar la sincronización.</p><small>Datos hasta {datasetLabel}</small></footer>
     </>}
   </section>;
 }
