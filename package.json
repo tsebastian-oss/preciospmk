@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "next": "15.5.22",
+    "pdf-parse": "1.1.1",
     "react": "19.1.1",
     "react-dom": "19.1.1"
   },
