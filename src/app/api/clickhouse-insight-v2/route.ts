@@ -11,6 +11,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const V2 = new Set<InsightV2Mode>(["price-evolution", "price-gaps", "price-alerts", "products", "data-status"]);
+type DemoMode = InsightV2Mode | "retailer-benchmark" | "market-coverage";
 // While there are no paying customers, default to the Supabase-backed demo snapshot.
 // Set CLICKHOUSE_DEMO_MODE=false when ClickHouse should become the live analytics source again.
 const DEMO_MODE = process.env.CLICKHOUSE_DEMO_MODE !== "false";
@@ -177,7 +178,7 @@ async function demoResponse(request: NextRequest, organizationId: string) {
     });
   }
 
-  const mode = (params.get("mode") ?? "price-evolution") as InsightV2Mode;
+  const mode = (params.get("mode") ?? "price-evolution") as DemoMode;
   const generatedAt = new Date().toISOString();
 
   if (mode === "price-evolution") {
