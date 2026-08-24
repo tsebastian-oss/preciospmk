@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 export const dynamic="force-dynamic"; export const revalidate=0; export const maxDuration=60;
 const P=[
- {po:"UTARAPACA-2026",qs:"Bt2OVs/y+GyXo1Fgl+ukSg=="},
- {po:"1082957-770-AG24",qs:"feCRjqW7pwWm1AgSMC5v3g=="},
- {po:"886182-36-AG24",qs:"Z2ycgkvkGKgbe0ASpltswQ=="},
- {po:"892208-2-AG26",qs:"V8ckU2Rz+r4kej8lNdnZoQ=="}
+ {po:"DGMN_CORREOS_2026",qs:"5H0iAsYDU3Zwm+cEFaxaBw=="},
+ {po:"SERVEL_CORREOS_2026",qs:"GyIjPxWfp99UXtgDGR5gnQ=="},
+ {po:"UCHILE_CHILEXPRESS_2026",qs:"IzHV4W7bPuyf5yq4y0RIGA=="}
 ] as const;
 function dec(v:string){return v.replace(/&amp;/g,"&").replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&nbsp;/g," ")}
 function clean(s:string){return dec(s.replace(/<[^>]+>/g," ")).replace(/\s+/g," ").trim()}
