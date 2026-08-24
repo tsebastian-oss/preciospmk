@@ -68,7 +68,6 @@ const money = new Intl.NumberFormat("es-CL", {
 });
 const compact = new Intl.NumberFormat("es-CL", { notation: "compact", maximumFractionDigits: 1 });
 const count = new Intl.NumberFormat("es-CL");
-const DEFAULT_POLLING_SECONDS = 20;
 const DEFAULT_SERIES = ["group:non_alcoholic", "group:grocery", "group:alcoholic"];
 const STORAGE_KEY = "mgp-daily-pricing-series-v2";
 const SERIES_COLORS = ["#58ddff", "#a78bfa", "#ffb45f", "#6ee7b7", "#ff7fa7", "#f7e26b", "#7dd3fc", "#c4b5fd"];
@@ -88,13 +87,20 @@ function longDate(value: string) {
     .format(new Date(`${value}T12:00:00`));
 }
 
-function timeLabel(value: string | null | undefined) {
-  if (!value) return "esperando datos";
-  return new Intl.DateTimeFormat("es-CL", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(value));
+function dataTimestampLabel(value: string | null | undefined) {
+  if (!value) return "fecha no disponible";
+  try {
+    return new Intl.DateTimeFormat("es-CL", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "America/Santiago",
+    }).format(new Date(value)).replace(".", "");
+  } catch {
+    return "fecha no disponible";
+  }
 }
 
 function changeLabel(current: number | null, previous: number | null) {
@@ -219,7 +225,7 @@ export default function DailyPricingChartPortal() {
         if (disposed) return;
         const message = reason instanceof Error ? reason.message : "No fue posible cargar la tendencia de pricing";
         if (!payload) setError(message);
-        else setSyncWarning("Sincronización temporalmente interrumpida");
+        else setSyncWarning("No fue posible actualizar la vista");
       } finally {
         inFlight = false;
         if (!disposed) {
@@ -230,20 +236,10 @@ export default function DailyPricingChartPortal() {
     };
 
     void loadTrend(true);
-    const pollingSeconds = payload?.pollingSeconds ?? DEFAULT_POLLING_SECONDS;
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === "visible") void loadTrend(false);
-    }, Math.max(10, pollingSeconds) * 1000);
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") void loadTrend(false);
-    };
-    document.addEventListener("visibilitychange", handleVisibility);
 
     return () => {
       disposed = true;
       controller?.abort();
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, [target, days, filtersReady, seriesKey]);
 
@@ -305,7 +301,6 @@ export default function DailyPricingChartPortal() {
 
   const activeIndex = dates.length ? Math.min(hoverIndex ?? dates.length - 1, dates.length - 1) : 0;
   const activeDate = dates[activeIndex];
-  const pollingSeconds = payload?.pollingSeconds ?? DEFAULT_POLLING_SECONDS;
   const maxSeries = filterPayload?.maxSeries ?? payload?.maxSeries ?? 8;
 
   function selectPoint(event: MouseEvent<SVGRectElement>) {
@@ -338,16 +333,16 @@ export default function DailyPricingChartPortal() {
         <div>
           <div className={styles.eyebrowRow}>
             <span>DAILY PRICING TREND</span>
-            <b className={styles.liveBadge}><i />EN VIVO</b>
-            {payload?.partialDay && <b>HOY EN CURSO</b>}
+            <b className={styles.liveBadge}><i />DATASET DEMO</b>
+            <b>HISTÓRICO CONGELADO</b>
           </div>
           <h2>Evolución diaria de precios por categoría y marca</h2>
-          <p>Agrega o quita líneas para comparar categorías y marcas. El día actual se recalcula con cada captura y el histórico cerrado permanece fijo.</p>
+          <p>Agrega o quita líneas para comparar categorías y marcas sobre el histórico congelado de la demo. La vista se recalcula solo cuando cambias filtros o período.</p>
         </div>
         <div className={styles.headerControls}>
           <div className={styles.liveMeta}>
             <i className={syncing ? styles.syncing : ""} />
-            <div><strong>{syncWarning || "Actualización automática"}</strong><small>Último dato {timeLabel(payload?.latestObservationAt ?? payload?.refreshedAt)} · cada {pollingSeconds}s</small></div>
+            <div><strong>{syncWarning || (syncing ? "Actualizando vista" : "Sin actualización automática")}</strong><small>Último dato {dataTimestampLabel(payload?.latestObservationAt ?? payload?.refreshedAt)}</small></div>
           </div>
           <div className={styles.rangeControl} aria-label="Rango del gráfico">
             {[30, 60, 90].map((period) => <button key={period} className={days === period ? styles.rangeActive : ""} onClick={() => setDays(period)}>{period}D</button>)}
@@ -417,7 +412,7 @@ export default function DailyPricingChartPortal() {
         </div>
 
         <div className={styles.activeSnapshot}>
-          <strong>{activeDate ? longDate(activeDate) : "—"}{activeIndex === dates.length - 1 && payload?.partialDay ? " · en vivo" : ""}</strong>
+          <strong>{activeDate ? longDate(activeDate) : "—"}</strong>
           <div>{displaySeries.map((series) => {
             const point = activeDate ? pointMaps.get(series.id)?.get(activeDate) : null;
             const price = numeric(point?.price);
@@ -427,7 +422,7 @@ export default function DailyPricingChartPortal() {
         </div>
 
         <div className={styles.chartWrap}>
-          <svg viewBox={`0 0 ${chart.width} ${chart.height}`} role="img" aria-label="Gráfico en vivo de evolución diaria de precios para las categorías y marcas seleccionadas">
+          <svg viewBox={`0 0 ${chart.width} ${chart.height}`} role="img" aria-label="Gráfico histórico de evolución diaria de precios para las categorías y marcas seleccionadas">
             <defs>
               <filter id="pricingGlow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="3" result="blur" /><feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge></filter>
             </defs>
@@ -451,7 +446,7 @@ export default function DailyPricingChartPortal() {
 
         <footer className={styles.footer}>
           <div><span>Metodología</span><strong>Promedio recortado 5%–95%</strong><small>Cada línea usa los SKU de la categoría o marca elegida; las fechas cerradas no vuelven a modificarse.</small></div>
-          <div><span>Feed en vivo</span><strong>{count.format(payload?.currentDayObservations ?? 0)} SKU hoy</strong><small>El punto de hoy incorpora nuevas tomas automáticamente cada {pollingSeconds} segundos.</small></div>
+          <div><span>Dataset demo</span><strong>{count.format(payload?.currentDayObservations ?? 0)} SKU en el último día disponible</strong><small>Sin actualización automática; la vista consulta el histórico congelado solo al entrar o cambiar filtros.</small></div>
         </footer>
       </>}
     </article>,
