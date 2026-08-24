@@ -8,7 +8,7 @@ export const maxDuration = 60;
 const SIGNAL = /(\$|precio|tarifa|valor|kg|kilo|gram|sobre|encomienda|valija|santiago|arica|iquique|antofagasta|copiap[oó]|serena|valpara[ií]so|rancagua|talca|chill[aá]n|concepci[oó]n|temuco|valdivia|puerto montt|chilexpress|correos)/i;
 
 function compactText(text: string) {
-  const parts = text.split(/\s*\|\s*|\n+/).map(v => v.trim()).filter(Boolean);
+  const parts = text.split(/\s*\|\s*|\n+/).map((v: string) => v.trim()).filter(Boolean);
   const selected = new Map<number, string>();
   for (let i = 0; i < parts.length; i += 1) {
     if (!SIGNAL.test(parts[i])) continue;
@@ -20,11 +20,11 @@ function compactText(text: string) {
 function compactSheets(sheets: unknown) {
   if (!Array.isArray(sheets)) return [];
   return sheets.map((sheet: any) => {
-    const rows = Array.isArray(sheet?.rows) ? sheet.rows : [];
+    const rows: unknown[][] = Array.isArray(sheet?.rows) ? sheet.rows : [];
     const kept: Array<{ row: number; values: unknown[] }> = [];
     for (let i = 0; i < rows.length; i += 1) {
-      const row = Array.isArray(rows[i]) ? rows[i] : [];
-      const text = row.map(v => v == null ? "" : String(v)).join(" | ");
+      const row: unknown[] = Array.isArray(rows[i]) ? rows[i] : [];
+      const text = row.map((v: unknown) => v == null ? "" : String(v)).join(" | ");
       if (i < 25 || SIGNAL.test(text)) kept.push({ row: i + 1, values: row });
       if (kept.length >= 250) break;
     }
