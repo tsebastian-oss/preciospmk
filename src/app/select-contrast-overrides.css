@@ -1,0 +1,19 @@
+/* Native dropdown contrast guard.
+   The app mixes dark and light surfaces while the root color-scheme is dark.
+   Some browsers therefore render the native option popup with a light background
+   but inherited light/white text. Force the popup itself to a readable light scheme
+   without changing the closed select styling defined by each module. */
+
+select {
+  color-scheme: light;
+}
+
+select option,
+select optgroup {
+  background-color: #ffffff !important;
+  color: #172033 !important;
+}
+
+select option:disabled {
+  color: #6b7280 !important;
+}
