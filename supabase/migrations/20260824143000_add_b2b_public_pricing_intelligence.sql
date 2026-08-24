@@ -28,14 +28,236 @@ create table if not exists public.b2b_public_observations (
   updated_at timestamptz not null default now()
 );
 
-create index if not exists b2b_public_observations_category_date_idx on public.b2b_public_observations(category, process_date desc);
-create index if not exists b2b_public_observations_provider_idx on public.b2b_public_observations(provider_group, process_date desc);
-create index if not exists b2b_public_observations_classification_idx on public.b2b_public_observations(classification_code);
+create index if not exists b2b_public_observations_category_date_idx
+  on public.b2b_public_observations(category, process_date desc);
+create index if not exists b2b_public_observations_provider_idx
+  on public.b2b_public_observations(provider_group, process_date desc);
+create index if not exists b2b_public_observations_classification_idx
+  on public.b2b_public_observations(classification_code);
 
 alter table public.b2b_public_observations enable row level security;
 
 drop policy if exists b2b_public_observations_authenticated_read on public.b2b_public_observations;
-create policy b2b_public_observations_authenticated_read on public.b2b_public_observations for select to authenticated using (true);
+create policy b2b_public_observations_authenticated_read
+  on public.b2b_public_observations
+  for select
+  to authenticated
+  using (true);
 
--- Ingestion and dashboard RPCs are deployed in production via the matching Supabase migration.
--- They intentionally require authenticated users and expose only public procurement data.
+create or replace function public.b2b_ingest_public_observations(p_rows jsonb)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_count integer := 0;
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+  if p_rows is null or jsonb_typeof(p_rows) <> 'array' then
+    return 0;
+  end if;
+
+  insert into public.b2b_public_observations (
+    source_record_id, source, source_kind, source_url, ocid, process_id,
+    provider_name, provider_group, buyer_name, buyer_region, category,
+    service_type, classification_code, classification_name, description,
+    quantity, unit, unit_price_clp, total_amount_clp, currency, price_basis,
+    process_date, observed_at, raw, updated_at
+  )
+  select
+    x.source_record_id,
+    coalesce(nullif(x.source,''), 'mercado_publico_ocds'),
+    x.source_kind,
+    x.source_url,
+    x.ocid,
+    x.process_id,
+    x.provider_name,
+    x.provider_group,
+    x.buyer_name,
+    x.buyer_region,
+    coalesce(nullif(x.category,''), 'courier'),
+    x.service_type,
+    x.classification_code,
+    x.classification_name,
+    x.description,
+    x.quantity,
+    x.unit,
+    x.unit_price_clp,
+    x.total_amount_clp,
+    x.currency,
+    x.price_basis,
+    x.process_date,
+    x.observed_at,
+    x.raw,
+    now()
+  from jsonb_to_recordset(p_rows) as x(
+    source_record_id text,
+    source text,
+    source_kind text,
+    source_url text,
+    ocid text,
+    process_id text,
+    provider_name text,
+    provider_group text,
+    buyer_name text,
+    buyer_region text,
+    category text,
+    service_type text,
+    classification_code text,
+    classification_name text,
+    description text,
+    quantity numeric,
+    unit text,
+    unit_price_clp numeric,
+    total_amount_clp numeric,
+    currency text,
+    price_basis text,
+    process_date date,
+    observed_at timestamptz,
+    raw jsonb
+  )
+  where nullif(x.source_record_id,'') is not null
+    and nullif(x.provider_name,'') is not null
+    and nullif(x.provider_group,'') is not null
+  on conflict (source_record_id) do update set
+    source_url = excluded.source_url,
+    provider_name = excluded.provider_name,
+    provider_group = excluded.provider_group,
+    buyer_name = excluded.buyer_name,
+    buyer_region = excluded.buyer_region,
+    service_type = excluded.service_type,
+    classification_code = excluded.classification_code,
+    classification_name = excluded.classification_name,
+    description = excluded.description,
+    quantity = excluded.quantity,
+    unit = excluded.unit,
+    unit_price_clp = excluded.unit_price_clp,
+    total_amount_clp = excluded.total_amount_clp,
+    currency = excluded.currency,
+    price_basis = excluded.price_basis,
+    process_date = excluded.process_date,
+    observed_at = excluded.observed_at,
+    raw = excluded.raw,
+    updated_at = now();
+
+  get diagnostics v_count = row_count;
+  return v_count;
+end;
+$$;
+
+revoke all on function public.b2b_ingest_public_observations(jsonb) from public;
+grant execute on function public.b2b_ingest_public_observations(jsonb) to authenticated;
+
+create or replace function public.b2b_pricing_dashboard(
+  p_category text default 'courier',
+  p_days integer default 365
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_result jsonb;
+  v_days integer := greatest(30, least(coalesce(p_days,365), 1095));
+begin
+  if auth.uid() is null then
+    raise exception 'not authenticated';
+  end if;
+
+  with filtered as (
+    select *
+    from public.b2b_public_observations
+    where category = coalesce(nullif(p_category,''), 'courier')
+      and coalesce(process_date, observed_at::date, ingested_at::date) >= current_date - v_days
+  ), provider_stats as (
+    select
+      provider_group,
+      max(provider_name) as provider_name,
+      count(*) as observations,
+      count(distinct buyer_name) filter (where buyer_name is not null) as buyers,
+      coalesce(sum(total_amount_clp) filter (where total_amount_clp > 0),0) as amount,
+      percentile_cont(0.5) within group (order by unit_price_clp) filter (where unit_price_clp > 0) as median_unit_price,
+      min(unit_price_clp) filter (where unit_price_clp > 0) as min_unit_price,
+      max(unit_price_clp) filter (where unit_price_clp > 0) as max_unit_price,
+      max(coalesce(process_date, observed_at::date)) as latest_date
+    from filtered
+    group by provider_group
+  ), total_market as (
+    select coalesce(sum(amount),0) as amount from provider_stats
+  ), providers as (
+    select jsonb_agg(jsonb_build_object(
+      'providerGroup', p.provider_group,
+      'providerName', p.provider_name,
+      'observations', p.observations,
+      'buyers', p.buyers,
+      'amount', p.amount,
+      'sharePct', case when t.amount > 0 then round((p.amount / t.amount * 100)::numeric,1) else 0 end,
+      'medianUnitPrice', p.median_unit_price,
+      'minUnitPrice', p.min_unit_price,
+      'maxUnitPrice', p.max_unit_price,
+      'latestDate', p.latest_date
+    ) order by p.amount desc, p.observations desc) as data
+    from provider_stats p cross join total_market t
+  ), services as (
+    select jsonb_agg(jsonb_build_object(
+      'serviceType', service_type,
+      'observations', observations,
+      'amount', amount,
+      'medianUnitPrice', median_unit_price
+    ) order by amount desc, observations desc) as data
+    from (
+      select
+        coalesce(nullif(service_type,''), 'Otros servicios') as service_type,
+        count(*) observations,
+        coalesce(sum(total_amount_clp) filter (where total_amount_clp > 0),0) amount,
+        percentile_cont(0.5) within group (order by unit_price_clp) filter (where unit_price_clp > 0) median_unit_price
+      from filtered
+      group by 1
+      order by amount desc
+      limit 12
+    ) s
+  ), recent as (
+    select jsonb_agg(to_jsonb(r) order by r.process_date desc nulls last, r.id desc) as data
+    from (
+      select id, provider_group as "providerGroup", provider_name as "providerName",
+        buyer_name as "buyerName", service_type as "serviceType",
+        classification_code as "classificationCode", description,
+        quantity, unit, unit_price_clp as "unitPriceClp",
+        total_amount_clp as "totalAmountClp", price_basis as "priceBasis",
+        process_date as "processDate", source_url as "sourceUrl", source_kind as "sourceKind"
+      from filtered
+      order by process_date desc nulls last, id desc
+      limit 100
+    ) r
+  ), summary as (
+    select jsonb_build_object(
+      'observations', count(*),
+      'providers', count(distinct provider_group),
+      'buyers', count(distinct buyer_name) filter (where buyer_name is not null),
+      'marketAmount', coalesce(sum(total_amount_clp) filter (where total_amount_clp > 0),0),
+      'medianUnitPrice', percentile_cont(0.5) within group (order by unit_price_clp) filter (where unit_price_clp > 0),
+      'latestDate', max(coalesce(process_date, observed_at::date)),
+      'lastIngestedAt', max(ingested_at)
+    ) as data
+    from filtered
+  )
+  select jsonb_build_object(
+    'category', coalesce(nullif(p_category,''), 'courier'),
+    'days', v_days,
+    'summary', coalesce((select data from summary), '{}'::jsonb),
+    'providers', coalesce((select data from providers), '[]'::jsonb),
+    'services', coalesce((select data from services), '[]'::jsonb),
+    'recent', coalesce((select data from recent), '[]'::jsonb),
+    'source', 'mercado_publico_ocds'
+  ) into v_result;
+
+  return v_result;
+end;
+$$;
+
+revoke all on function public.b2b_pricing_dashboard(text, integer) from public;
+grant execute on function public.b2b_pricing_dashboard(text, integer) to authenticated;
