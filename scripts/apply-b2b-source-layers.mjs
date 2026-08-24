@@ -30,6 +30,11 @@ replaceOnce(
   "pricing layer constants",
 );
 replaceOnce(
+  'const WEIGHT_BANDS = ["0–0,5 kg", "0,51–1,5 kg", "1,51–3 kg", "3,01–6 kg", "6,01–10 kg", "10,1–15 kg", "15+ kg"];',
+  'const WEIGHT_BANDS = ["0–0,5 kg", "0,51–1,5 kg", "1,51–3 kg", "3,01–6 kg", "6,01–10 kg", "0–1,4 kg", "1,5–2,9 kg", "3–5,9 kg", "6–10 kg", "10,1–15 kg", "15+ kg"];',
+  "observed B2B weight bands",
+);
+replaceOnce(
   '  if (metric === "kgkm") {\n    const kg = n(row.marketMedianPricePerKg);\n    const km = n(row.medianPricePerKm);\n    const providerKg = n(row.medianPricePerKg);\n    return providerKg > 0 && km > 0 ? kg * (km / providerKg) : 0;\n  }',
   '  if (metric === "kgkm") return n(row.marketMedianPricePerKgKm);',
   "market kgkm metric",
