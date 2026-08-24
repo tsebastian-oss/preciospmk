@@ -188,7 +188,7 @@ async function demoResponse(request: NextRequest, organizationId: string) {
       p_series: selectedSeries ?? null,
     });
     const series = (trend?.series ?? []).map((item) => ({
-      retailer: item.label ?? selectedBrand || "Mercado",
+      retailer: item.label ?? (selectedBrand || "Mercado"),
       points: (item.points ?? [])
         .filter((point) => point.date && Number(point.price ?? 0) > 0)
         .map((point) => ({ date: point.date!, price: Number(point.price ?? 0), products: Number(point.skus ?? 0) })),
