@@ -56,7 +56,7 @@ type Payload = {
 const nf = new Intl.NumberFormat("es-CL");
 const money = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
 const compactMoney = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", notation: "compact", maximumFractionDigits: 1 });
-function n(value: Numeric) { const x = Number(value ?? 0); return Number.isFinite(x) ? x : 0; }
+function n(value: Numeric | undefined) { const x = Number(value ?? 0); return Number.isFinite(x) ? x : 0; }
 function date(value?: string | null) { if (!value) return "—"; const d = new Date(value); return Number.isNaN(d.getTime()) ? value : new Intl.DateTimeFormat("es-CL", { dateStyle: "medium" }).format(d); }
 function sourceKind(value?: string | null) {
   if (value === "trato_directo") return "Trato directo";
