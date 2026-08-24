@@ -209,6 +209,7 @@ export default function ClickHouseOverview({ onNavigate }: Props) {
   const [error, setError] = useState("");
 
   const load = useCallback(async (quiet = false, signal?: AbortSignal) => {
+    if (quiet) return;
     if (quiet) setRefreshing(true); else setLoading(true);
     const params = new URLSearchParams({ days: String(days), live: String(Date.now()) });
     if (retailer) params.set("retailer", retailer);
@@ -235,6 +236,13 @@ export default function ClickHouseOverview({ onNavigate }: Props) {
     return () => controller.abort();
   }, [load]);
 
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === "visible") void load(true);
+    }, 30_000);
+    return () => window.clearInterval(interval);
+  }, [load]);
+
   const trendValues = payload?.trend.map((point) => point.medianPrice) ?? [];
   const productValues = payload?.trend.map((point) => point.products) ?? [];
   const retailerOptions = payload?.retailers ?? [];
@@ -255,7 +263,7 @@ export default function ClickHouseOverview({ onNavigate }: Props) {
       <div className={styles.headerStatus}>
         <span className={styles.liveDot}/>
         <div><small>DATASET DEMO</small><strong>{datasetLabel}</strong></div>
-        <button onClick={() => void load(true)} disabled={refreshing} title="Actualizar vista">{refreshing ? "…" : "↻"}</button>
+        <button onClick={() => void load(false)} disabled={loading} title="Actualizar vista">{loading ? "…" : "↻"}</button>
         <div className={styles.clickhouseBadge}><i>▥</i><span><small>POWERED BY</small><strong>ClickHouse</strong></span></div>
       </div>
     </header>
