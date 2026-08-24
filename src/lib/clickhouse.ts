@@ -35,13 +35,11 @@ function queryUrl(params: ClickHouseParams) {
   return url;
 }
 
-export async function clickHouseQuery<T>(
+async function executeQueryAttempt<T>(
   sql: string,
-  params: ClickHouseParams = {},
-  timeoutMs = 7_000,
+  params: ClickHouseParams,
+  timeoutMs: number,
 ): Promise<T[]> {
-  if (!configured()) throw new Error("ClickHouse is not configured");
-
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -72,6 +70,31 @@ export async function clickHouseQuery<T>(
       .map((line) => JSON.parse(line) as T);
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+export async function clickHouseQuery<T>(
+  sql: string,
+  params: ClickHouseParams = {},
+  timeoutMs = 7_000,
+): Promise<T[]> {
+  if (!configured()) throw new Error("ClickHouse is not configured");
+
+  try {
+    return await executeQueryAttempt<T>(sql, params, timeoutMs);
+  } catch (error) {
+    const aborted = error instanceof Error && error.name === "AbortError";
+    if (!aborted) throw error;
+
+    // ClickHouse Cloud can take longer than the normal query timeout to wake
+    // from idle. Retry once with a larger window so aggressive idling keeps
+    // costs low without making the first dashboard/chat request fail.
+    const retryTimeoutMs = Math.max(20_000, timeoutMs * 2);
+    console.warn("ClickHouse query timed out; retrying after possible cold start", {
+      timeoutMs,
+      retryTimeoutMs,
+    });
+    return executeQueryAttempt<T>(sql, params, retryTimeoutMs);
   }
 }
 
