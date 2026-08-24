@@ -45,4 +45,36 @@ if (!css.includes(marker)) {
   fs.writeFileSync(cssPath, css);
 }
 
+const overviewPath = "src/app/ClickHouseOverview.tsx";
+if (fs.existsSync(overviewPath)) {
+  let overview = fs.readFileSync(overviewPath, "utf8");
+  overview = overview
+    .replace(
+      "Pricing, promociones y movimientos competitivos calculados en ClickHouse sobre un dataset demo congelado.",
+      "Pricing, promociones y movimientos competitivos calculados directamente en ClickHouse sobre el histórico sincronizado.",
+    )
+    .replace("<small>DATASET DEMO</small>", "<small>CLICKHOUSE LIVE</small>")
+    .replace("CLICKHOUSE DEMO", "CLICKHOUSE LIVE")
+    .replace(
+      "Los KPI, gráficos, rankings y alertas se calculan en ClickHouse sobre el dataset demo congelado. Supabase continúa capturando la data nueva por separado hasta reactivar la sincronización.",
+      "Los KPI, gráficos, rankings y alertas se calculan directamente en ClickHouse sobre el histórico sincronizado. La actualización se ejecuta bajo demanda para evitar consumo innecesario de compute.",
+    )
+    .replace("Datos hasta {datasetLabel}", "Último dato {datasetLabel}");
+  fs.writeFileSync(overviewPath, overview);
+}
+
+const dailyTrendPath = "src/app/DailyPricingChartPortal.tsx";
+if (fs.existsSync(dailyTrendPath)) {
+  let dailyTrend = fs.readFileSync(dailyTrendPath, "utf8");
+  dailyTrend = dailyTrend
+    .replace("DATASET DEMO", "LIVE DATA")
+    .replace("HISTÓRICO CONGELADO", "ACTUALIZACIÓN BAJO DEMANDA")
+    .replace(
+      "Agrega o quita líneas para comparar categorías y marcas sobre el histórico congelado de la demo. La vista se recalcula solo cuando cambias filtros o período.",
+      "Agrega o quita líneas para comparar categorías y marcas sobre el histórico sincronizado. La vista se recalcula cuando cambias filtros o período, sin polling automático.",
+    )
+    .replace('syncing ? "Actualizando vista" : "Sin actualización automática"', 'syncing ? "Actualizando vista" : "Actualización bajo demanda"');
+  fs.writeFileSync(dailyTrendPath, dailyTrend);
+}
+
 console.log("ClickHouse Price Intelligence dashboard wired into Overview");
