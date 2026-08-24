@@ -2,6 +2,7 @@ import fs from "node:fs";
 
 const appPath = "src/app/UnifiedPlatformApp.tsx";
 const commercialPath = "src/app/CommercialExperience.tsx";
+const pricingPath = "src/app/B2BPricing.tsx";
 let source = fs.readFileSync(appPath, "utf8");
 
 const brandImport = 'import BrandsVertical from "./BrandsVertical";';
@@ -33,7 +34,7 @@ if (!source.includes('label: "Pricing B2B"')) {
 const copyAnchor = 'const COPY: Record<View, { title: string; description: string }> = {\n';
 if (!source.includes('"pricing-b2b": { title: "Pricing B2B"')) {
   if (!source.includes(copyAnchor)) throw new Error("B2B pricing: COPY anchor missing");
-  source = source.replace(copyAnchor, `${copyAnchor}  "pricing-b2b": { title: "Pricing B2B", description: "Compara precios y montos B2B observados en compras públicas por categoría, proveedor y comprador." },\n`);
+  source = source.replace(copyAnchor, `${copyAnchor}  "pricing-b2b": { title: "Pricing B2B", description: "Compara precios B2B normalizados por ruta, peso y distancia junto al contexto de compras públicas." },\n`);
 }
 
 source = source.replace(
@@ -65,5 +66,46 @@ if (!commercial.includes('if (view === "pricing-b2b") return "Enterprise";')) {
   commercial = commercial.replace(planAnchor, `${planAnchor}\n  if (view === "pricing-b2b") return "Enterprise";`);
   fs.writeFileSync(commercialPath, commercial);
 }
+
+let pricing = fs.readFileSync(pricingPath, "utf8");
+pricing = pricing.replace(
+  /const WEIGHT_BANDS = \[[^\n]+\];/,
+  'const WEIGHT_BANDS = ["0–0,5 kg", "0,5–1,5 kg", "1,5–3 kg", "3–6 kg", "6–10 kg", "10–15 kg", "15–20 kg", "20+ kg"];',
+);
+pricing = pricing.replace(
+  /const refresh = async \(\) => \{[\s\S]*?\n  \};\n\n  const providers/,
+  `const refresh = async () => {
+    setRefreshing(true);
+    setNotice("");
+    try {
+      const marketResponse = await fetch("/api/b2b-pricing/refresh", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ months: 2, maxPages: 6 }),
+      });
+      const marketResult = await marketResponse.json() as { matched?: number; ingested?: number; error?: string };
+      if (!marketResponse.ok) throw new Error(marketResult.error || "No fue posible actualizar Mercado Público");
+
+      const ratesResponse = await fetch("/api/b2b-pricing/public-rates/refresh", { method: "POST" });
+      const ratesResult = await ratesResponse.json() as { ingested?: number; rows?: number; warnings?: string[]; error?: string };
+      if (!ratesResponse.ok) throw new Error(ratesResult.error || "No fue posible actualizar tarifarios públicos");
+
+      const warnings = Array.isArray(ratesResult.warnings) && ratesResult.warnings.length
+        ? \` · \${ratesResult.warnings.length} advertencia(s) de fuente\`
+        : "";
+      setNotice(\`Fuentes actualizadas: \${nf.format(Number(marketResult.matched || 0))} observaciones públicas · \${nf.format(Number(ratesResult.ingested || ratesResult.rows || 0))} tarifas normalizadas\${warnings}.\`);
+      await load();
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Error actualizando fuentes B2B");
+    } finally { setRefreshing(false); }
+  };
+
+  const providers`,
+);
+pricing = pricing.replace(
+  "cada fila pertenece a un perfil estándar (servicio + banda de peso + banda de distancia)",
+  "cada fila pertenece a un perfil homogéneo (servicio + ruta exacta cuando existe + peso de referencia)",
+);
+fs.writeFileSync(pricingPath, pricing);
 
 console.log("Pricing B2B vertical applied");
