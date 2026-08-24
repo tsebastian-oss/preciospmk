@@ -47,9 +47,9 @@ replaceOnce(
 replaceOnce('  }, [days]);', '  }, [days, pricingLayer]);', "load dependencies");
 
 if (!source.includes('fetch("/api/b2b-pricing/market-public-rates/refresh"')) {
-  const refreshPattern = /      const response = await fetch\("\/api\/b2b-pricing\/refresh", \{[\s\S]*?      setNotice\(`Fuentes actualizadas:[\s\S]*?\);/;
-  const match = source.match(refreshPattern);
-  if (!match) throw new Error("B2B source layers: missing multi-source refresh block");
+  const refreshStart = source.indexOf('      const response = await fetch("/api/b2b-pricing/refresh"');
+  const refreshEnd = refreshStart >= 0 ? source.indexOf('      await load();', refreshStart) : -1;
+  if (refreshStart < 0 || refreshEnd < 0) throw new Error("B2B source layers: missing refresh anchors");
   const newRefresh = `      const requestInit = { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ months: 2, maxPages: 4 }) } as const;
       const [marketResponse, publicResponse, annexResponse] = await Promise.all([
         fetch("/api/b2b-pricing/refresh", requestInit),
@@ -62,8 +62,9 @@ if (!source.includes('fetch("/api/b2b-pricing/market-public-rates/refresh"')) {
       if (!marketResponse.ok) throw new Error(market.error || "No fue posible actualizar Mercado Público");
       if (!publicResponse.ok) throw new Error(publicRates.error || "No fue posible actualizar tarifarios públicos");
       if (!annexResponse.ok) throw new Error(annexes.error || "No fue posible revisar anexos públicos");
-      setNotice(\`Fuentes actualizadas: \${nf.format(Number(publicRates.rows || publicRates.ingested || 0))} tarifas públicas · \${nf.format(Number(annexes.acceptedComparableRates || 0))} tarifas B2B verificadas · \${nf.format(Number(annexes.candidateRates || 0))} candidatos revisados en \${nf.format(Number(annexes.pdfsRead || 0))} anexos.\`);`;
-  source = source.replace(refreshPattern, newRefresh);
+      setNotice(\`Fuentes actualizadas: \${nf.format(Number(publicRates.rows || publicRates.ingested || 0))} tarifas públicas · \${nf.format(Number(annexes.acceptedComparableRates || 0))} tarifas B2B verificadas · \${nf.format(Number(annexes.candidateRates || 0))} candidatos revisados en \${nf.format(Number(annexes.pdfsRead || 0))} anexos.\`);
+`;
+  source = source.slice(0, refreshStart) + newRefresh + source.slice(refreshEnd);
 }
 
 const matrixControlAnchor = `        <div className={matrixStyles.matrixControls}>
