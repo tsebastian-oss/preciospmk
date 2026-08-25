@@ -16,7 +16,7 @@ type Result = {
 };
 
 type DispatchRequest = {
-  only?: "automotive" | "lider";
+  only?: "automotive" | "lider" | "falabella";
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
@@ -99,22 +99,20 @@ Deno.serve(async (request: Request) => {
   } catch {
     return json({ error: "invalid_request_body" }, 400);
   }
-  if (input.only && !["automotive", "lider"].includes(input.only)) {
+  if (input.only && !["automotive", "lider", "falabella"].includes(input.only)) {
     return json({ error: "unsupported_dispatch_target" }, 400);
   }
 
   const automotiveTarget: Target = { slug: "automotive-crawl-worker", retailer: "Automotriz", timeoutMs: 125_000 };
   const liderDiscoveryTarget: Target = { slug: "lider-discovery-worker", retailer: "Lider discovery", timeoutMs: 55_000 };
   const liderProductTarget: Target = { slug: "lider-crawl-worker", retailer: "Lider product fallback", timeoutMs: 55_000 };
+  const falabellaTarget: Target = { slug: "falabella-listing-worker", retailer: "Falabella", timeoutMs: 125_000 };
   const minute = new Date().getUTCMinutes();
 
   let targets: Target[];
   if (input.only === "automotive") {
     targets = [automotiveTarget];
   } else if (input.only === "lider") {
-    // The daily Lider run is dominated by ~1.9k `lider_listing` tasks. Three
-    // discovery passes claim up to six listing tasks per dispatch, while two
-    // product passes drain any JSON-LD fallback product pages.
     targets = [
       liderDiscoveryTarget,
       liderDiscoveryTarget,
@@ -122,10 +120,11 @@ Deno.serve(async (request: Request) => {
       liderProductTarget,
       liderProductTarget,
     ];
+  } else if (input.only === "falabella") {
+    targets = [falabellaTarget, falabellaTarget, falabellaTarget];
   } else {
     targets = [
       { slug: "catalog-crawl-worker", retailer: "Jumbo/Santa Isabel", timeoutMs: 55_000 },
-      // Prioritize the large Lider listing queue before long-running workers.
       liderDiscoveryTarget,
       liderDiscoveryTarget,
       liderDiscoveryTarget,
@@ -134,9 +133,9 @@ Deno.serve(async (request: Request) => {
       { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
       { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
       { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
-      { slug: "falabella-listing-worker", retailer: "Falabella", timeoutMs: 125_000 },
-      { slug: "falabella-listing-worker", retailer: "Falabella", timeoutMs: 125_000 },
-      { slug: "falabella-listing-worker", retailer: "Falabella", timeoutMs: 125_000 },
+      falabellaTarget,
+      falabellaTarget,
+      falabellaTarget,
       { slug: "pharmacy-crawl-worker", retailer: "Salcobrand/Cruz Verde/Ahumada", timeoutMs: 125_000 },
       { slug: "home-improvement-crawl-worker", retailer: "Easy/Sodimac", timeoutMs: 125_000 },
       { slug: "home-improvement-crawl-worker", retailer: "Easy/Sodimac", timeoutMs: 125_000 },
