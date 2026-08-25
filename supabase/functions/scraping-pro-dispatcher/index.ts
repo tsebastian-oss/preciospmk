@@ -21,9 +21,8 @@ type DispatchRequest = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-// Keep the global pool conservative to avoid connection storms. Throughput for
-// high-volume retailers is increased by scheduling several small worker passes
-// at the front of the queue instead of increasing global concurrency.
+// Keep the global pool conservative to avoid connection storms. High-volume
+// queues get several small passes at the front instead of higher concurrency.
 const MAX_CONCURRENCY = 2;
 
 function json(body: unknown, status = 200) {
@@ -105,25 +104,33 @@ Deno.serve(async (request: Request) => {
   }
 
   const automotiveTarget: Target = { slug: "automotive-crawl-worker", retailer: "Automotriz", timeoutMs: 125_000 };
-  const liderTarget: Target = { slug: "lider-crawl-worker", retailer: "Lider", timeoutMs: 55_000 };
+  const liderDiscoveryTarget: Target = { slug: "lider-discovery-worker", retailer: "Lider discovery", timeoutMs: 55_000 };
+  const liderProductTarget: Target = { slug: "lider-crawl-worker", retailer: "Lider product fallback", timeoutMs: 55_000 };
   const minute = new Date().getUTCMinutes();
 
   let targets: Target[];
   if (input.only === "automotive") {
     targets = [automotiveTarget];
   } else if (input.only === "lider") {
-    // Three passes claim up to six Lider queue tasks while the global pool
-    // remains capped at two concurrent function calls.
-    targets = [liderTarget, liderTarget, liderTarget];
+    // The daily Lider run is dominated by ~1.9k `lider_listing` tasks. Three
+    // discovery passes claim up to six listing tasks per dispatch, while two
+    // product passes drain any JSON-LD fallback product pages.
+    targets = [
+      liderDiscoveryTarget,
+      liderDiscoveryTarget,
+      liderDiscoveryTarget,
+      liderProductTarget,
+      liderProductTarget,
+    ];
   } else {
     targets = [
       { slug: "catalog-crawl-worker", retailer: "Jumbo/Santa Isabel", timeoutMs: 55_000 },
-      // Lider typically creates ~1.8k-2k queue tasks. One 2-task pass/minute
-      // cannot drain that queue in the daily window, so run three small passes
-      // before the slower department-store workers.
-      liderTarget,
-      liderTarget,
-      liderTarget,
+      // Prioritize the large Lider listing queue before long-running workers.
+      liderDiscoveryTarget,
+      liderDiscoveryTarget,
+      liderDiscoveryTarget,
+      liderProductTarget,
+      liderProductTarget,
       { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
       { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
       { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
@@ -138,7 +145,6 @@ Deno.serve(async (request: Request) => {
   }
 
   if (!input.only && minute % 5 === 0) {
-    targets.push({ slug: "lider-discovery-worker", retailer: "Lider discovery", timeoutMs: 55_000 });
     targets.push({ slug: "jumbo-price-refresh-worker", retailer: "Jumbo price refresh", timeoutMs: 55_000 });
   }
 
