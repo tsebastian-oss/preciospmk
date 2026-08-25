@@ -30,8 +30,8 @@ replaceOnce(
   "pricing layer constants",
 );
 replaceOnce(
-  'const WEIGHT_BANDS = ["0–0,5 kg", "0,51–1,5 kg", "1,51–3 kg", "3,01–6 kg", "6,01–10 kg", "10,1–15 kg", "15+ kg"];',
-  'const WEIGHT_BANDS = ["0–0,5 kg", "0,51–1,5 kg", "1,51–3 kg", "3,01–6 kg", "6,01–10 kg", "0–1,4 kg", "1,5–2,9 kg", "3–5,9 kg", "6–10 kg", "10,1–15 kg", "15+ kg"];',
+  'const WEIGHT_BANDS = ["0–0,5 kg", "0,5–1,5 kg", "1,5–3 kg", "3–6 kg", "6–10 kg", "10–15 kg", "15–20 kg", "20+ kg"];',
+  'const WEIGHT_BANDS = ["0–0,5 kg", "0,5–1,5 kg", "0–1,4 kg", "1,5–2,9 kg", "1,5–3 kg", "3–5,9 kg", "3–6 kg", "6–10 kg", "10–15 kg", "15–20 kg", "20+ kg"];',
   "observed B2B weight bands",
 );
 replaceOnce(
