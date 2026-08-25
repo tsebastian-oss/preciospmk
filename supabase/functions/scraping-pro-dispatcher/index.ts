@@ -16,11 +16,14 @@ type Result = {
 };
 
 type DispatchRequest = {
-  only?: "automotive";
+  only?: "automotive" | "lider";
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+// Keep the global pool conservative to avoid connection storms. Throughput for
+// high-volume retailers is increased by scheduling several small worker passes
+// at the front of the queue instead of increasing global concurrency.
 const MAX_CONCURRENCY = 2;
 
 function json(body: unknown, status = 200) {
@@ -97,24 +100,42 @@ Deno.serve(async (request: Request) => {
   } catch {
     return json({ error: "invalid_request_body" }, 400);
   }
-  if (input.only && input.only !== "automotive") return json({ error: "unsupported_dispatch_target" }, 400);
+  if (input.only && !["automotive", "lider"].includes(input.only)) {
+    return json({ error: "unsupported_dispatch_target" }, 400);
+  }
 
   const automotiveTarget: Target = { slug: "automotive-crawl-worker", retailer: "Automotriz", timeoutMs: 125_000 };
+  const liderTarget: Target = { slug: "lider-crawl-worker", retailer: "Lider", timeoutMs: 55_000 };
   const minute = new Date().getUTCMinutes();
-  const targets: Target[] = input.only === "automotive" ? [automotiveTarget] : [
-    { slug: "catalog-crawl-worker", retailer: "Jumbo/Santa Isabel", timeoutMs: 55_000 },
-    { slug: "lider-crawl-worker", retailer: "Lider", timeoutMs: 55_000 },
-    { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
-    { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
-    { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
-    { slug: "falabella-listing-worker", retailer: "Falabella", timeoutMs: 125_000 },
-    { slug: "falabella-listing-worker", retailer: "Falabella", timeoutMs: 125_000 },
-    { slug: "falabella-listing-worker", retailer: "Falabella", timeoutMs: 125_000 },
-    { slug: "pharmacy-crawl-worker", retailer: "Salcobrand/Cruz Verde/Ahumada", timeoutMs: 125_000 },
-    { slug: "home-improvement-crawl-worker", retailer: "Easy/Sodimac", timeoutMs: 125_000 },
-    { slug: "home-improvement-crawl-worker", retailer: "Easy/Sodimac", timeoutMs: 125_000 },
-    automotiveTarget,
-  ];
+
+  let targets: Target[];
+  if (input.only === "automotive") {
+    targets = [automotiveTarget];
+  } else if (input.only === "lider") {
+    // Three passes claim up to six Lider queue tasks while the global pool
+    // remains capped at two concurrent function calls.
+    targets = [liderTarget, liderTarget, liderTarget];
+  } else {
+    targets = [
+      { slug: "catalog-crawl-worker", retailer: "Jumbo/Santa Isabel", timeoutMs: 55_000 },
+      // Lider typically creates ~1.8k-2k queue tasks. One 2-task pass/minute
+      // cannot drain that queue in the daily window, so run three small passes
+      // before the slower department-store workers.
+      liderTarget,
+      liderTarget,
+      liderTarget,
+      { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
+      { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
+      { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
+      { slug: "falabella-listing-worker", retailer: "Falabella", timeoutMs: 125_000 },
+      { slug: "falabella-listing-worker", retailer: "Falabella", timeoutMs: 125_000 },
+      { slug: "falabella-listing-worker", retailer: "Falabella", timeoutMs: 125_000 },
+      { slug: "pharmacy-crawl-worker", retailer: "Salcobrand/Cruz Verde/Ahumada", timeoutMs: 125_000 },
+      { slug: "home-improvement-crawl-worker", retailer: "Easy/Sodimac", timeoutMs: 125_000 },
+      { slug: "home-improvement-crawl-worker", retailer: "Easy/Sodimac", timeoutMs: 125_000 },
+      automotiveTarget,
+    ];
+  }
 
   if (!input.only && minute % 5 === 0) {
     targets.push({ slug: "lider-discovery-worker", retailer: "Lider discovery", timeoutMs: 55_000 });
