@@ -460,7 +460,7 @@ export default function UnifiedPlatformApp() {
   return <div className={styles.app}>
     <aside className={`${styles.sidebar} ${mobileOpen ? styles.mobileOpen : ""}`}>
       <button className={styles.brand} onClick={() => navigate("overview")}><span className={styles.logo}><i/><i/><i/></span><span><strong>MGP Intelligence</strong><small>Commerce Decision Platform</small></span></button>
-      <nav className={styles.navigation}>{visibleMenu.map((group) => <section key={group.label} className={styles.navGroup}><h3>{group.label}</h3>{group.items.map((item) => <button key={item.view} data-usage-action={item.view === "usage" ? "module_view" : undefined} data-usage-module={item.view === "usage" ? "admin-usage" : undefined} className={view === item.view ? styles.activeNav : ""} onClick={() => navigate(item.view)}><i>{item.icon}</i><span>{item.label}</span>{item.view === "alerts" && alerts.length > 0 && <b>{alerts.length}</b>}</button>)}</section>)}</nav>
+      <nav className={styles.navigation}>{visibleMenu.map((group) => <section key={group.label} className={styles.navGroup}><h3>{group.label}</h3>{group.items.map((item) => <button key={item.view} className={view === item.view ? styles.activeNav : ""} onClick={() => navigate(item.view)}><i>{item.icon}</i><span>{item.label}</span>{item.view === "alerts" && alerts.length > 0 && <b>{alerts.length}</b>}</button>)}</section>)}</nav>
       <div className={styles.account}><div><span>MG</span><div><strong>MGP Team</strong><small>Administrador</small></div></div><hr/><small>Plan Enterprise</small><p>{number(summary?.total_products)} SKU monitoreados</p><div><i style={{ width: `${Math.min(100, stockCoverage)}%` }}/></div><strong><em/> Pipeline operativo</strong></div>
     </aside>
 
