@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import styles from "./BrandsVertical.module.css";
+import BodegasDonLuisPanel from "./BodegasDonLuisPanel";
 
 type Source = {
   id: string;
@@ -685,6 +686,8 @@ export default function BrandsVertical({ initialBrand = "krispy-kreme", locked =
 
   if (loading) return <section className={styles.shell}><div className={styles.state}>Actualizando inteligencia competitiva…</div></section>;
   if (error || !payload) return <section className={styles.shell}><div className={styles.error}>{error || "Brands no está disponible."}</div></section>;
+
+  if (selectedBrand === "bodegas-don-luis") return <BodegasDonLuisPanel payload={payload} locked={locked}/>;
 
   const run = payload.lastRun;
   const live = payload.live;
