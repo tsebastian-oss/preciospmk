@@ -634,7 +634,7 @@ function PiwenChannelProfitability() {
   </div>;
 }
 
-export default function BrandsVertical({ initialBrand = "krispy-kreme" }: { initialBrand?: string }) {
+export default function BrandsVertical({ initialBrand = "krispy-kreme", locked = false }: { initialBrand?: string; locked?: boolean }) {
   const [selectedBrand, setSelectedBrand] = useState(initialBrand);
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -695,13 +695,17 @@ export default function BrandsVertical({ initialBrand = "krispy-kreme" }: { init
         <h1>{qsr ? `${payload.brand.name} Market Intelligence` : payload.brand.name}</h1>
         <p>{live ? `Monitoreo de precios, categorías y arquitectura competitiva de ${live.subjectBrand} vs ${live.competitorBrand}${officialOnly ? " usando exclusivamente sus canales web oficiales" : ""}.` : "Descubrimiento de canales, catálogo, precios y presencia digital."}</p>
       </div>
-      <label className={styles.brandPicker}>
+      {locked ? <div className={styles.brandPicker}>
+        <span>Panel contratado</span>
+        <strong style={{ color: "#f8fafc", fontSize: 16 }}>{payload.brand.name}</strong>
+        <small>Chile · inteligencia competitiva</small>
+      </div> : <label className={styles.brandPicker}>
         <span>Vertical analizada</span>
         <select value={selectedBrand} onChange={event => { setSelectedBrand(event.target.value); setTab("overview"); }}>
           {BRAND_OPTIONS.map(item => <option key={item.slug} value={item.slug}>{item.name} · {item.detail}</option>)}
         </select>
         <small>Chile · inteligencia competitiva</small>
-      </label>
+      </label>}
     </div>
 
     <nav className={styles.tabs} aria-label="Secciones Brands">
