@@ -9,7 +9,7 @@ const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY
   ?? process.env.SUPABASE_PUBLISHABLE_KEY
   ?? "sb_publishable_4FrGlw8owGm5EtwMs9V5zQ_oBrH0c0-";
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? "";
-const OPENAI_MODEL = (process.env.OPENAI_MODEL ?? "gpt-5.1").trim();
+const OPENAI_MODEL = (process.env.OPENAI_MODEL ?? "gpt-5").trim();
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 
 type Message = { role: "user" | "assistant"; content: string };
