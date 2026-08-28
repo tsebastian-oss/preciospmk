@@ -27,6 +27,8 @@ const PRIVATE_PAGE_PREFIXES = [
   "/cuenta",
   "/trial-expired",
   "/reset-password",
+  "/entry",
+  "/panel",
 ];
 
 type SessionState = {
@@ -141,6 +143,11 @@ export async function middleware(request: NextRequest) {
   const session = await sessionState(request);
 
   if (pathname === "/") {
+    if (session.authenticated && request.cookies.get("mgp_client_brand")?.value) {
+      const panelUrl = request.nextUrl.clone();
+      panelUrl.pathname = "/panel";
+      return applySessionCookies(NextResponse.redirect(panelUrl), session);
+    }
     if (session.authenticated) return applySessionCookies(NextResponse.next(), session);
     const landingUrl = request.nextUrl.clone();
     landingUrl.pathname = "/landing";
@@ -148,9 +155,9 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname === "/login" && session.authenticated) {
-    const onboardingUrl = request.nextUrl.clone();
-    onboardingUrl.pathname = "/onboarding";
-    return applySessionCookies(NextResponse.redirect(onboardingUrl), session);
+    const entryUrl = request.nextUrl.clone();
+    entryUrl.pathname = "/entry";
+    return applySessionCookies(NextResponse.redirect(entryUrl), session);
   }
 
   if (isPrivateApi(pathname) && !session.authenticated) {
