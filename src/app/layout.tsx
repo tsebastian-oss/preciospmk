@@ -1,4 +1,5 @@
 import type { Viewport } from "next";
+import UsageTracker from "./UsageTracker";
 import "./globals.css";
 import "./mobile-tablet-overrides.css";
 import "./desktop-layout-overrides-v2.css";
@@ -19,5 +20,5 @@ export const metadata = {
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="es-CL"><body>{children}</body></html>;
+  return <html lang="es-CL"><body><UsageTracker />{children}</body></html>;
 }
