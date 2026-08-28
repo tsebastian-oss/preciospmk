@@ -6,7 +6,29 @@ export const revalidate = 0;
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? "";
 const OPENAI_MODEL = (process.env.PIWEN_OPENAI_MODEL ?? "gpt-5.6").trim();
+const GLOBAL_OPENAI_MODEL = (process.env.OPENAI_MODEL ?? "").trim();
 const OPENAI_URL = "https://api.openai.com/v1/responses";
+
+function modelCandidates() {
+  return [...new Set([
+    OPENAI_MODEL,
+    "gpt-5.6",
+    "gpt-5.6-sol",
+    GLOBAL_OPENAI_MODEL,
+    "gpt-5.1",
+    "gpt-5",
+    "gpt-5-mini",
+    "gpt-4.1",
+  ].map(item => item.trim()).filter(Boolean))];
+}
+
+function canFallbackModel(status: number, data: any) {
+  const code = String(data?.error?.code || data?.error?.type || "").toLowerCase();
+  return [400, 403, 404].includes(status)
+    || code.includes("model_not_found")
+    || code.includes("model")
+    || code.includes("permission");
+}
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -99,45 +121,82 @@ export async function POST(request: NextRequest) {
     const lastUser = [...messages].reverse().find((item) => item.role === "user");
     if (!lastUser) return NextResponse.json({ error: "Escribe una consulta de pricing." }, { status: 400 });
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 55_000);
-    try {
-      const response = await fetch(OPENAI_URL, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${OPENAI_API_KEY}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({
-          model: OPENAI_MODEL,
+    let lastFailure: { status: number; code: string; message: string } | null = null;
+
+    for (const model of modelCandidates()) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 55_000);
+      try {
+        const body: Record<string, unknown> = {
+          model,
           instructions: instructions(),
           input: messages,
-          reasoning: { effort: "medium" },
           store: false,
           max_output_tokens: 1800,
-        }),
-        cache: "no-store",
-        signal: controller.signal,
-      });
+        };
+        if (/^gpt-5(?:\\.|$)/i.test(model)) body.reasoning = { effort: "medium" };
 
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        console.warn("Piwén Pricing Copilot OpenAI error", { status: response.status, code: data?.error?.code || data?.error?.type });
-        return NextResponse.json({ error: "No fue posible consultar Pricing Copilot en este momento." }, { status: 503 });
+        const response = await fetch(OPENAI_URL, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${OPENAI_API_KEY}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(body),
+          cache: "no-store",
+          signal: controller.signal,
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          lastFailure = {
+            status: response.status,
+            code: String(data?.error?.code || data?.error?.type || ""),
+            message: String(data?.error?.message || ""),
+          };
+          console.warn("Piwén Pricing Copilot model attempt failed", {
+            model,
+            status: response.status,
+            code: lastFailure.code,
+          });
+          if (canFallbackModel(response.status, data)) continue;
+          break;
+        }
+
+        const answer = outputText(data);
+        if (!answer) {
+          lastFailure = { status: 503, code: "empty_response", message: "OpenAI returned no answer" };
+          continue;
+        }
+
+        return NextResponse.json({
+          answer,
+          model: data?.model || model,
+          requestedModel: OPENAI_MODEL,
+          modelFallback: model !== OPENAI_MODEL,
+          assistant: "Pricing Copilot",
+          dataSource: "piwen-pricing-context",
+        }, { headers: { "cache-control": "private, no-store, max-age=0" } });
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          lastFailure = { status: 408, code: "timeout", message: "Model request timed out" };
+          continue;
+        }
+        lastFailure = { status: 503, code: "runtime_error", message: error instanceof Error ? error.message : "unknown" };
+        break;
+      } finally {
+        clearTimeout(timeout);
       }
-
-      const answer = outputText(data);
-      if (!answer) return NextResponse.json({ error: "Pricing Copilot no devolvió una respuesta." }, { status: 503 });
-
-      return NextResponse.json({
-        answer,
-        model: data?.model || OPENAI_MODEL,
-        assistant: "Pricing Copilot",
-        dataSource: "piwen-pricing-context",
-      }, { headers: { "cache-control": "private, no-store, max-age=0" } });
-    } finally {
-      clearTimeout(timeout);
     }
+
+    console.warn("Piwén Pricing Copilot exhausted model candidates", {
+      status: lastFailure?.status,
+      code: lastFailure?.code,
+    });
+    return NextResponse.json({
+      error: "No fue posible consultar Pricing Copilot en este momento.",
+      code: lastFailure?.code || "model_unavailable",
+    }, { status: 503 });
   } catch (error) {
     return NextResponse.json({
       error: error instanceof Error && error.name === "AbortError"
