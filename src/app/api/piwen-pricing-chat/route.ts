@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { enterpriseAccess } from "@/lib/enterprise-auth";
+import { brandScopeAllows, enterpriseAccess } from "@/lib/enterprise-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -107,8 +107,9 @@ Empieza por responder directamente la pregunta. Evita respuestas largas si una c
 }
 
 export async function POST(request: NextRequest) {
-  const authorization = await enterpriseAccess(request, "overview");
+  const authorization = await enterpriseAccess(request, "brand-panel");
   if (authorization.response) return authorization.response;
+  if (!authorization.access || !brandScopeAllows(authorization.access, "piwen")) return NextResponse.json({ error: "Este panel no está habilitado para tu cuenta." }, { status: 403 });
   if (!authorization.access) return NextResponse.json({ error: "No fue posible resolver el acceso enterprise." }, { status: 500 });
 
   if (OPENAI_API_KEY.length < 20) {
