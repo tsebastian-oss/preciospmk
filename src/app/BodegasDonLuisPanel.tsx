@@ -276,7 +276,7 @@ function PriceTrendChart({ category, data }: { category: "Pisco" | "Ron" | "Vino
   return <article className={styles.trendCard}>
     <div className={styles.trendTitle}>
       <div><span>PRECIO PROMEDIO · S/</span><h3>{category}</h3></div>
-      <small>{times.length} {times.length === 1 ? "toma" : "tomas"} · cada {data?.bucketHours || 6}h</small>
+      <small>{times.length} {times.length === 1 ? "toma" : "tomas"} · captura semanal · martes</small>
     </div>
 
     <div className={styles.trendLegend}>
@@ -537,7 +537,7 @@ export default function BodegasDonLuisPanel({ payload, locked = false }: { paylo
       <section className={styles.trendSection}>
         <div className={styles.trendSectionHeader}>
           <div><span>EVOLUCIÓN DE MERCADO</span><h2>Precio promedio por cadena</h2><p>Una línea por cada cadena censada. El histórico se alimenta automáticamente con cada censo completo de precios.</p></div>
-          <div><strong>{trendsLoading ? "Actualizando…" : `${trends?.bucketHours || 6}h`}</strong><small>frecuencia de captura</small></div>
+          <div><strong>{trendsLoading ? "Actualizando…" : "Semanal"}</strong><small>captura cada martes</small></div>
         </div>
         {trendsError ? <div className={styles.error}>{trendsError}</div> : <div className={styles.trendGrid}>
           {TREND_CATEGORIES.map(category => <PriceTrendChart key={category} category={category} data={trends}/>)}
