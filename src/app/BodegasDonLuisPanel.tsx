@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
 import styles from "./BodegasDonLuisPanel.module.css";
 
 type BdlPayload = {
@@ -91,6 +91,98 @@ function captureLabel(value: string | null | undefined) {
     hour12: false,
     timeZone: "America/Lima",
   }).format(new Date(value));
+}
+
+function chatInline(value: string) {
+  return value.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g).filter(Boolean).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={index}>{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("*") && part.endsWith("*")) {
+      return <em key={index}>{part.slice(1, -1)}</em>;
+    }
+    return <Fragment key={index}>{part}</Fragment>;
+  });
+}
+
+function chatTableCells(line: string) {
+  return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(cell => cell.trim());
+}
+
+function chatIsTableDivider(line: string) {
+  const cells = chatTableCells(line);
+  return cells.length > 1 && cells.every(cell => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, "")));
+}
+
+function ChatMarkdown({ text }: { text: string }) {
+  const lines = String(text || "").replace(/\r\n/g, "\n").trim().split("\n");
+  const blocks = [];
+  let index = 0;
+  let key = 0;
+
+  while (index < lines.length) {
+    const line = (lines[index] || "").trim();
+    if (!line) { index += 1; continue; }
+
+    const heading = /^(#{1,4})\s+(.+)$/.exec(line);
+    if (heading) {
+      blocks.push(<h4 key={"h-" + key++}>{chatInline(heading[2])}</h4>);
+      index += 1;
+      continue;
+    }
+
+    if (line.includes("|") && index + 1 < lines.length && chatIsTableDivider(lines[index + 1] || "")) {
+      const headers = chatTableCells(line);
+      index += 2;
+      const rows: string[][] = [];
+      while (index < lines.length && (lines[index] || "").includes("|")) {
+        rows.push(chatTableCells(lines[index]));
+        index += 1;
+      }
+      blocks.push(<div className={styles.chatTableWrap} key={"table-" + key++}><table className={styles.chatTable}>
+        <thead><tr>{headers.map((header, cellIndex) => <th key={cellIndex}>{chatInline(header)}</th>)}</tr></thead>
+        <tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{headers.map((_, cellIndex) => <td key={cellIndex}>{chatInline(row[cellIndex] || "")}</td>)}</tr>)}</tbody>
+      </table></div>);
+      continue;
+    }
+
+    if (/^[-*+]\s+/.test(line)) {
+      const items: string[] = [];
+      while (index < lines.length && /^[-*+]\s+/.test((lines[index] || "").trim())) {
+        items.push((lines[index] || "").trim().replace(/^[-*+]\s+/, ""));
+        index += 1;
+      }
+      blocks.push(<ul key={"ul-" + key++}>{items.map((item, itemIndex) => <li key={itemIndex}>{chatInline(item)}</li>)}</ul>);
+      continue;
+    }
+
+    if (/^\d+[.)]\s+/.test(line)) {
+      const items: string[] = [];
+      while (index < lines.length && /^\d+[.)]\s+/.test((lines[index] || "").trim())) {
+        items.push((lines[index] || "").trim().replace(/^\d+[.)]\s+/, ""));
+        index += 1;
+      }
+      blocks.push(<ol key={"ol-" + key++}>{items.map((item, itemIndex) => <li key={itemIndex}>{chatInline(item)}</li>)}</ol>);
+      continue;
+    }
+
+    const paragraph: string[] = [line];
+    index += 1;
+    while (
+      index < lines.length &&
+      (lines[index] || "").trim() &&
+      !/^#{1,4}\s+/.test((lines[index] || "").trim()) &&
+      !/^[-*+]\s+/.test((lines[index] || "").trim()) &&
+      !/^\d+[.)]\s+/.test((lines[index] || "").trim()) &&
+      !((lines[index] || "").includes("|") && index + 1 < lines.length && chatIsTableDivider(lines[index + 1] || ""))
+    ) {
+      paragraph.push((lines[index] || "").trim());
+      index += 1;
+    }
+    blocks.push(<p key={"p-" + key++}>{paragraph.map((item, itemIndex) => <Fragment key={itemIndex}>{itemIndex > 0 && <br/>}{chatInline(item)}</Fragment>)}</p>);
+  }
+
+  return <div className={styles.chatMarkdown}>{blocks}</div>;
 }
 
 function PriceTrendChart({ category, data }: { category: "Pisco" | "Ron" | "Vino"; data: TrendData | null }) {
@@ -282,7 +374,7 @@ function ChatView() {
         </div>}
         {messages.map((message, index) => <article key={index} className={message.role === "user" ? styles.userMessage : styles.assistantMessage}>
           <span>{message.role === "user" ? "Tú" : "MGP Intelligence"}</span>
-          <div>{message.content}</div>
+          <div>{message.role === "assistant" ? <ChatMarkdown text={message.content}/> : message.content}</div>
         </article>)}
         {loading && <article className={styles.assistantMessage}><span>MGP Intelligence</span><div className={styles.thinking}>Analizando la base censada…</div></article>}
       </div>
