@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { enterpriseAccess } from "@/lib/enterprise-auth";
+import { brandScopeAllows, enterpriseAccess } from "@/lib/enterprise-auth";
 import { clickHouseConfigured, clickHouseQuery, type ClickHouseParams } from "@/lib/clickhouse";
 
 export const dynamic = "force-dynamic";
@@ -50,12 +50,13 @@ function brandName(slug: string) {
 }
 
 export async function GET(request: NextRequest) {
-  const auth = await enterpriseAccess(request, "overview");
+  const auth = await enterpriseAccess(request, "brand-panel");
   if (auth.response) return auth.response;
   if (!auth.access) return NextResponse.json({ error: "No fue posible resolver el acceso enterprise." }, { status: 500 });
   if (!clickHouseConfigured()) return NextResponse.json({ error: "ClickHouse no está configurado." }, { status: 503 });
 
   const slug = request.nextUrl.searchParams.get("brand")?.trim().toLowerCase().slice(0, 100) || "victorinox";
+  if (!brandScopeAllows(auth.access, slug)) return NextResponse.json({ error: "Esta marca no está habilitada para tu cuenta." }, { status: 403 });
   const displayBrand = brandName(slug);
   const params: ClickHouseParams = { brand: { type: "String", value: slug } };
   const predicate = "lowerUTF8(ifNull(p.brand, '')) = {brand:String}";
