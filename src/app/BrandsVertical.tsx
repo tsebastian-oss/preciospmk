@@ -136,7 +136,7 @@ type Payload = {
   live: LivePulse | null;
 };
 
-type Tab = "overview" | "competition" | "products" | "retailers" | "listings";
+type Tab = "overview" | "competition" | "pricing-lab" | "promotions" | "packs" | "profitability" | "products" | "retailers" | "listings";
 
 const BRAND_OPTIONS = [
   { slug: "piwen", name: "Piwén", detail: "Frutos secos · Pricing demo" },
@@ -226,6 +226,226 @@ function PriceHistoryChart({ history, category, subjectBrand, competitorBrand }:
   </div>;
 }
 
+
+type PiwenSkuPreset = {
+  id: string;
+  name: string;
+  currentPrice: number;
+  marketPrice: number;
+  productCost: number;
+  packaging: number;
+  fulfillment: number;
+  monthlyUnits: number;
+  elasticity: number;
+};
+
+const PIWEN_SKUS: PiwenSkuPreset[] = [
+  { id: "caju-1kg", name: "Castañas de cajú sin sal 1 kg", currentPrice: 23800, marketPrice: 30417, productCost: 10800, packaging: 650, fulfillment: 850, monthlyUnits: 420, elasticity: -1.25 },
+  { id: "almendra-250", name: "Almendra natural 250 g", currentPrice: 5450, marketPrice: 4282, productCost: 2350, packaging: 280, fulfillment: 420, monthlyUnits: 760, elasticity: -1.1 },
+  { id: "pistacho-80", name: "Pistacho sin sal 80 g", currentPrice: 3150, marketPrice: 2840, productCost: 1220, packaging: 180, fulfillment: 290, monthlyUnits: 690, elasticity: -1.35 },
+];
+
+const PIWEN_CHANNELS = [
+  { id: "direct", name: "Piwén.cl", commission: 0 },
+  { id: "marketplace", name: "Marketplace", commission: 14 },
+  { id: "retail", name: "Retail moderno", commission: 25 },
+];
+
+function safeNumber(value: number) { return Number.isFinite(value) ? value : 0; }
+function roundPrice(value: number) { return Math.max(0, Math.round(value / 10) * 10); }
+function pctSigned(value: number) { return `${value >= 0 ? "+" : ""}${value.toLocaleString("es-CL", { maximumFractionDigits: 1 })}%`; }
+
+function PiwenPricingLab() {
+  const [skuId, setSkuId] = useState(PIWEN_SKUS[0].id);
+  const preset = PIWEN_SKUS.find(item => item.id === skuId) || PIWEN_SKUS[0];
+  const [price, setPrice] = useState(preset.currentPrice);
+  const [cost, setCost] = useState(preset.productCost);
+  const [packaging, setPackaging] = useState(preset.packaging);
+  const [fulfillment, setFulfillment] = useState(preset.fulfillment);
+  const [marketPrice, setMarketPrice] = useState(preset.marketPrice);
+  const [baseUnits, setBaseUnits] = useState(preset.monthlyUnits);
+  const [elasticity, setElasticity] = useState(preset.elasticity);
+  const [channelId, setChannelId] = useState("direct");
+  const [minMargin, setMinMargin] = useState(30);
+  const [targetIndex, setTargetIndex] = useState(100);
+
+  const loadSku = (nextId: string) => {
+    const next = PIWEN_SKUS.find(item => item.id === nextId) || PIWEN_SKUS[0];
+    setSkuId(nextId);
+    setPrice(next.currentPrice);
+    setCost(next.productCost);
+    setPackaging(next.packaging);
+    setFulfillment(next.fulfillment);
+    setMarketPrice(next.marketPrice);
+    setBaseUnits(next.monthlyUnits);
+    setElasticity(next.elasticity);
+  };
+
+  const channel = PIWEN_CHANNELS.find(item => item.id === channelId) || PIWEN_CHANNELS[0];
+  const commissionRate = channel.commission / 100;
+  const variableCost = safeNumber(cost + packaging + fulfillment);
+  const netRevenue = price * (1 - commissionRate);
+  const contribution = netRevenue - variableCost;
+  const marginPct = netRevenue > 0 ? contribution / netRevenue * 100 : 0;
+  const priceIndex = marketPrice > 0 ? price / marketPrice * 100 : 0;
+  const priceRatio = preset.currentPrice > 0 ? price / preset.currentPrice : 1;
+  const projectedUnits = Math.max(0, Math.round(baseUnits * Math.pow(Math.max(priceRatio, .01), elasticity)));
+  const projectedRevenue = projectedUnits * price;
+  const projectedContribution = projectedUnits * contribution;
+  const currentNetRevenue = preset.currentPrice * (1 - commissionRate);
+  const currentContribution = currentNetRevenue - variableCost;
+  const currentTotalContribution = baseUnits * currentContribution;
+  const contributionDelta = currentTotalContribution !== 0 ? (projectedContribution / currentTotalContribution - 1) * 100 : 0;
+  const targetCompetitivePrice = marketPrice * targetIndex / 100;
+  const targetMarginRate = Math.min(Math.max(minMargin / 100, 0), .9);
+  const minNetRevenue = variableCost / Math.max(1 - targetMarginRate, .05);
+  const minGrossPrice = minNetRevenue / Math.max(1 - commissionRate, .05);
+  const recommendedPrice = roundPrice(Math.max(targetCompetitivePrice, minGrossPrice));
+
+  return <div className={styles.piwenLab}>
+    <article className={styles.piwenIntro}>
+      <div><span>DECISION ENGINE · DEMO</span><h2>Pricing Lab</h2><p>Simula precio, rentabilidad, posición competitiva y respuesta de volumen antes de ejecutar un cambio.</p></div>
+      <em>Los costos y elasticidades son supuestos editables para la demostración.</em>
+    </article>
+
+    <div className={styles.piwenLabGrid}>
+      <article className={styles.piwenControls}>
+        <div className={styles.piwenControlHeader}><div><span>ESCENARIO</span><h3>Variables de decisión</h3></div><strong>{preset.name}</strong></div>
+        <label><span>SKU</span><select value={skuId} onChange={event => loadSku(event.target.value)}>{PIWEN_SKUS.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <div className={styles.piwenFieldGrid}>
+          <label><span>Precio simulado</span><input type="number" value={price} onChange={e=>setPrice(Number(e.target.value))}/><small>{money.format(price)}</small></label>
+          <label><span>Benchmark mercado</span><input type="number" value={marketPrice} onChange={e=>setMarketPrice(Number(e.target.value))}/><small>Base índice 100</small></label>
+          <label><span>Costo producto</span><input type="number" value={cost} onChange={e=>setCost(Number(e.target.value))}/></label>
+          <label><span>Packaging</span><input type="number" value={packaging} onChange={e=>setPackaging(Number(e.target.value))}/></label>
+          <label><span>Fulfillment</span><input type="number" value={fulfillment} onChange={e=>setFulfillment(Number(e.target.value))}/></label>
+          <label><span>Volumen base / mes</span><input type="number" value={baseUnits} onChange={e=>setBaseUnits(Number(e.target.value))}/></label>
+          <label><span>Elasticidad</span><input type="number" step=".05" value={elasticity} onChange={e=>setElasticity(Number(e.target.value))}/></label>
+          <label><span>Canal</span><select value={channelId} onChange={e=>setChannelId(e.target.value)}>{PIWEN_CHANNELS.map(item=><option key={item.id} value={item.id}>{item.name} · {item.commission}% fee</option>)}</select></label>
+        </div>
+        <label className={styles.piwenRange}><span>Precio: {money.format(price)}</span><input type="range" min={Math.round(preset.currentPrice*.65)} max={Math.round(preset.currentPrice*1.35)} step="10" value={price} onChange={e=>setPrice(Number(e.target.value))}/><small>{money.format(Math.round(preset.currentPrice*.65))}<b>Actual {money.format(preset.currentPrice)}</b>{money.format(Math.round(preset.currentPrice*1.35))}</small></label>
+      </article>
+
+      <article className={styles.piwenResultPanel}>
+        <div className={styles.piwenResultHeader}><div><span>RESULTADO SIMULADO</span><h3>{money.format(price)}</h3></div><b className={marginPct >= minMargin ? styles.piwenGood : styles.piwenWarn}>{marginPct.toFixed(1)}% margen</b></div>
+        <div className={styles.piwenMetricGrid}>
+          <div><span>Price Index</span><strong>{priceIndex.toFixed(0)}</strong><small>{priceIndex > 100 ? "premium vs benchmark" : "ventaja vs benchmark"}</small></div>
+          <div><span>Contribución / unidad</span><strong>{money.format(contribution)}</strong><small>después de costos y fee</small></div>
+          <div><span>Volumen proyectado</span><strong>{number.format(projectedUnits)}</strong><small>{pctSigned((projectedUnits/baseUnits-1)*100)} vs base</small></div>
+          <div><span>Facturación mensual</span><strong>{money.format(projectedRevenue)}</strong><small>escenario simulado</small></div>
+          <div><span>Contribución mensual</span><strong>{money.format(projectedContribution)}</strong><small>{pctSigned(contributionDelta)} vs actual</small></div>
+          <div><span>Fee canal</span><strong>{channel.commission}%</strong><small>{channel.name}</small></div>
+        </div>
+        <div className={styles.piwenRecommendation}>
+          <span>PRECIO RECOMENDADO</span>
+          <strong>{money.format(recommendedPrice)}</strong>
+          <p>Respeta margen mínimo de <b>{minMargin}%</b> y objetivo de Price Index <b>{targetIndex}</b>. Precio mínimo rentable: {money.format(roundPrice(minGrossPrice))}.</p>
+          <div><label>Margen mín. <input type="number" value={minMargin} onChange={e=>setMinMargin(Number(e.target.value))}/>%</label><label>Índice objetivo <input type="number" value={targetIndex} onChange={e=>setTargetIndex(Number(e.target.value))}/></label></div>
+        </div>
+      </article>
+    </div>
+  </div>;
+}
+
+function PiwenPromoSimulator() {
+  const [price, setPrice] = useState(23800);
+  const [variableCost, setVariableCost] = useState(12300);
+  const [baseUnits, setBaseUnits] = useState(420);
+  const [mechanic, setMechanic] = useState("20off");
+  const [uplift, setUplift] = useState(35);
+  const effectivePrice = mechanic === "20off" ? price*.8 : mechanic === "second50" ? price*.75 : mechanic === "2x1" ? price*.5 : price*(2/3);
+  const currentContribution = price-variableCost;
+  const promoContribution = effectivePrice-variableCost;
+  const breakEvenLift = promoContribution > 0 ? Math.max(0, currentContribution/promoContribution-1)*100 : Infinity;
+  const promoUnits = Math.round(baseUnits*(1+uplift/100));
+  const promoTotal = promoUnits*promoContribution;
+  const baseTotal = baseUnits*currentContribution;
+  const delta = baseTotal ? (promoTotal/baseTotal-1)*100 : 0;
+  return <div className={styles.piwenLab}>
+    <article className={styles.piwenIntro}><div><span>PROMOTION ECONOMICS</span><h2>Promo Simulator</h2><p>Compara mecánicas promocionales y calcula cuánto volumen adicional necesitas para proteger la contribución.</p></div><em>Supuestos demo editables.</em></article>
+    <div className={styles.piwenLabGrid}>
+      <article className={styles.piwenControls}>
+        <div className={styles.piwenFieldGrid}>
+          <label><span>Precio lista</span><input type="number" value={price} onChange={e=>setPrice(Number(e.target.value))}/></label>
+          <label><span>Costo variable unitario</span><input type="number" value={variableCost} onChange={e=>setVariableCost(Number(e.target.value))}/></label>
+          <label><span>Volumen base / mes</span><input type="number" value={baseUnits} onChange={e=>setBaseUnits(Number(e.target.value))}/></label>
+          <label><span>Mecánica</span><select value={mechanic} onChange={e=>setMechanic(e.target.value)}><option value="20off">20% descuento</option><option value="second50">2ª unidad -50%</option><option value="3for2">3x2</option><option value="2x1">2x1</option></select></label>
+        </div>
+        <label className={styles.piwenRange}><span>Uplift de volumen esperado: +{uplift}%</span><input type="range" min="0" max="150" step="5" value={uplift} onChange={e=>setUplift(Number(e.target.value))}/><small>0%<b>Supuesto comercial</b>+150%</small></label>
+      </article>
+      <article className={styles.piwenResultPanel}>
+        <div className={styles.piwenMetricGrid}>
+          <div><span>Precio efectivo / unidad</span><strong>{money.format(effectivePrice)}</strong></div>
+          <div><span>Contribución promo / unidad</span><strong>{money.format(promoContribution)}</strong></div>
+          <div><span>Uplift break-even</span><strong>{Number.isFinite(breakEvenLift)?`+${breakEvenLift.toFixed(0)}%`:"No rentable"}</strong><small>para igualar contribución base</small></div>
+          <div><span>Unidades promo</span><strong>{number.format(promoUnits)}</strong></div>
+          <div><span>Contribución promo</span><strong>{money.format(promoTotal)}</strong></div>
+          <div><span>Impacto vs base</span><strong className={delta>=0?styles.piwenGoodText:styles.piwenWarnText}>{pctSigned(delta)}</strong></div>
+        </div>
+        <div className={styles.piwenRecommendation}><span>LECTURA</span><strong>{delta>=0?"Promoción crea valor":"Promoción destruye contribución"}</strong><p>Con esta mecánica necesitas aproximadamente <b>{Number.isFinite(breakEvenLift)?`+${breakEvenLift.toFixed(0)}%`:"un margen mayor"}</b> de volumen para quedar en break-even.</p></div>
+      </article>
+    </div>
+  </div>;
+}
+
+function PiwenPackArchitecture() {
+  const [prices, setPrices] = useState({ p250:3550, p1000:11800, p5000:30600 });
+  const rows = [
+    { id:"p250", label:"250 g · D2C", grams:250, price:prices.p250 },
+    { id:"p1000", label:"1 kg · D2C", grams:1000, price:prices.p1000 },
+    { id:"p5000", label:"5 kg · Mayorista", grams:5000, price:prices.p5000 },
+  ];
+  const baseKg = rows[0].price/(rows[0].grams/1000);
+  return <div className={styles.piwenLab}>
+    <article className={styles.piwenIntro}><div><span>PACK ARCHITECTURE</span><h2>Escalera de formatos</h2><p>Normaliza cada formato a $/kg y valida que el ahorro por tamaño sea consistente y entendible.</p></div><em>Ejemplo: Mix Aconcagua.</em></article>
+    <article className={styles.piwenPackPanel}>
+      <div className={styles.piwenPackRows}>
+        {rows.map(row => {
+          const kg = row.price/(row.grams/1000);
+          const saving = (1-kg/baseKg)*100;
+          return <div key={row.id} className={styles.piwenPackRow}>
+            <div><span>{row.label}</span><input type="number" value={row.price} onChange={e=>setPrices(current=>({...current,[row.id]:Number(e.target.value)}))}/></div>
+            <strong>{money.format(kg)}<small>/ kg</small></strong>
+            <b className={saving>=0?styles.piwenGood:styles.piwenWarn}>{saving<=.1?"Base":`-${saving.toFixed(1)}% / kg`}</b>
+          </div>;
+        })}
+      </div>
+      <div className={styles.piwenRecommendation}><span>ARQUITECTURA</span><strong>Premium de conveniencia → ahorro familiar → escalón mayorista</strong><p>El formato grande debería reducir progresivamente el $/kg. El sistema puede alertar automáticamente cuando un pack rompe esa lógica.</p></div>
+    </article>
+  </div>;
+}
+
+function PiwenChannelProfitability() {
+  const [cost, setCost] = useState(10800);
+  const [rows, setRows] = useState([
+    { id:"direct", channel:"Piwén.cl", price:23800, fee:0, logistics:1500, trade:0 },
+    { id:"ml", channel:"Marketplace", price:16480, fee:14, logistics:1100, trade:0 },
+    { id:"wholesale", channel:"Mayorista", price:15400, fee:0, logistics:650, trade:6 },
+    { id:"retail", channel:"Retail moderno", price:23800, fee:0, logistics:700, trade:28 },
+  ]);
+  const patch = (id:string,key:string,value:number) => setRows(current=>current.map(row=>row.id===id?{...row,[key]:value}:row));
+  return <div className={styles.piwenLab}>
+    <article className={styles.piwenIntro}><div><span>CHANNEL PROFITABILITY</span><h2>Rentabilidad por canal</h2><p>No basta comparar PVP: traduce precio, fees, descuentos y logística a contribución real por canal.</p></div><label className={styles.piwenInlineInput}>Costo producto <input type="number" value={cost} onChange={e=>setCost(Number(e.target.value))}/></label></article>
+    <article className={styles.piwenChannelTable}>
+      <div className={styles.piwenChannelHead}><span>Canal</span><span>Precio</span><span>Fee %</span><span>Trade %</span><span>Logística</span><span>Ingreso neto</span><span>Margen</span></div>
+      {rows.map(row => {
+        const net = row.price*(1-row.fee/100-row.trade/100);
+        const contribution = net-cost-row.logistics;
+        const margin = net>0?contribution/net*100:0;
+        return <div className={styles.piwenChannelRow} key={row.id}>
+          <strong>{row.channel}</strong>
+          <input type="number" value={row.price} onChange={e=>patch(row.id,"price",Number(e.target.value))}/>
+          <input type="number" value={row.fee} onChange={e=>patch(row.id,"fee",Number(e.target.value))}/>
+          <input type="number" value={row.trade} onChange={e=>patch(row.id,"trade",Number(e.target.value))}/>
+          <input type="number" value={row.logistics} onChange={e=>patch(row.id,"logistics",Number(e.target.value))}/>
+          <span>{money.format(net)}</span>
+          <b className={margin>=30?styles.piwenGood:margin>=15?styles.piwenNeutral:styles.piwenWarn}>{margin.toFixed(1)}%</b>
+        </div>;
+      })}
+      <small>Supuestos demostrativos: reemplazables por costos, rebates, fees y logística real de Piwén.</small>
+    </article>
+  </div>;
+}
+
 export default function BrandsVertical({ initialBrand = "krispy-kreme" }: { initialBrand?: string }) {
   const [selectedBrand, setSelectedBrand] = useState(initialBrand);
   const [payload, setPayload] = useState<Payload | null>(null);
@@ -297,7 +517,7 @@ export default function BrandsVertical({ initialBrand = "krispy-kreme" }: { init
     </div>
 
     <nav className={styles.tabs} aria-label="Secciones Brands">
-      {([["overview",qsr ? "Resumen ejecutivo" : "Overview"], ...(live ? [["competition","Competencia"]] : []), ["products","Productos"],["retailers","Fuentes"],["listings","Evidencia"]] as [Tab,string][]).map(([key,label]) => <button key={key} className={tab===key?styles.activeTab:""} onClick={()=>setTab(key)}>{label}</button>)}
+      {([["overview",qsr ? "Resumen ejecutivo" : "Overview"], ...(live ? [["competition","Competencia"]] : []), ...(selectedBrand === "piwen" ? [["pricing-lab","Pricing Lab"],["promotions","Promociones"],["packs","Packs"],["profitability","Rentabilidad"]] : []), ["products","Productos"],["retailers","Fuentes"],["listings","Evidencia"]] as [Tab,string][]).map(([key,label]) => <button key={key} className={tab===key?styles.activeTab:""} onClick={()=>setTab(key)}>{label}</button>)}
     </nav>
 
     {tab === "overview" && <>
@@ -439,6 +659,11 @@ export default function BrandsVertical({ initialBrand = "krispy-kreme" }: { init
         </article>)}
       </div>
     </>}
+
+    {tab === "pricing-lab" && selectedBrand === "piwen" && <PiwenPricingLab/>}
+    {tab === "promotions" && selectedBrand === "piwen" && <PiwenPromoSimulator/>}
+    {tab === "packs" && selectedBrand === "piwen" && <PiwenPackArchitecture/>}
+    {tab === "profitability" && selectedBrand === "piwen" && <PiwenChannelProfitability/>}
 
     {(tab === "products" || tab === "listings") && <div className={styles.filters}>
       <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Buscar producto, SKU, marca o categoría…" />
