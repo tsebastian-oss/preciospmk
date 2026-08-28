@@ -127,6 +127,7 @@ type LivePulse = {
 };
 
 type Payload = {
+  currency?: string;
   brand: { id: string; slug: string; name: string; countryCode: string; officialUrl: string | null };
   summary: { products: number; sources: number; listings: number; sellers: number; inStockPct: number | null; promoPct: number | null; lastObservedAt: string | null };
   sources: Source[];
@@ -140,6 +141,7 @@ type Tab = "overview" | "copilot" | "competition" | "pricing-lab" | "promotions"
 
 const BRAND_OPTIONS = [
   { slug: "piwen", name: "Piwén", detail: "Frutos secos · Pricing demo" },
+  { slug: "bodegas-don-luis", name: "Bodegas Don Luis", detail: "Perú · Pisco, ron y vino" },
   { slug: "krispy-kreme", name: "Krispy Kreme", detail: "vs Dunkin · QSR" },
   { slug: "little-caesars", name: "Little Caesars", detail: "vs Papa Johns · QSR" },
   { slug: "victorinox", name: "Victorinox", detail: "Retail intelligence" },
@@ -148,7 +150,16 @@ const BRAND_OPTIONS = [
 const money = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
 const number = new Intl.NumberFormat("es-CL");
 
-function moneyOrDash(value: number | null) { return value && value > 0 ? money.format(value) : "—"; }
+function moneyOrDash(value: number | null, currency = "CLP") {
+  if (!(value && value > 0)) return "—";
+  const locale = currency === "PEN" ? "es-PE" : "es-CL";
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency,
+    minimumFractionDigits: currency === "PEN" ? 2 : 0,
+    maximumFractionDigits: currency === "PEN" ? 2 : 0,
+  }).format(value);
+}
 function dateOrDash(value: string | null) { return value ? new Intl.DateTimeFormat("es-CL", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value)) : "—"; }
 function shortDate(value: string) { return new Intl.DateTimeFormat("es-CL", { day: "2-digit", month: "short" }).format(new Date(`${value}T12:00:00`)); }
 function percent(value: number | null) { return value == null ? "—" : `${Math.abs(value).toLocaleString("es-CL", { maximumFractionDigits: 1 })}%`; }
@@ -167,7 +178,7 @@ function benchmarkSignal(item: LiveBenchmark) {
   return `${item.label}: paridad de precio.`;
 }
 
-function PriceHistoryChart({ history, category, subjectBrand, competitorBrand }: { history: PriceHistory; category: string; subjectBrand: string; competitorBrand: string }) {
+function PriceHistoryChart({ history, category, subjectBrand, competitorBrand, currency = "CLP" }: { history: PriceHistory; category: string; subjectBrand: string; competitorBrand: string; currency?: string }) {
   const points = history.points.filter(item => item.category === category);
   const dates = Array.from(new Set(points.map(item => item.date))).sort();
   const useUnitPrice = category.startsWith("Packs ·");
@@ -203,14 +214,14 @@ function PriceHistoryChart({ history, category, subjectBrand, competitorBrand }:
     <div className={styles.historyMetricRow}>
       <span>{useUnitPrice ? "Precio promedio por unidad" : "Precio promedio por producto"}</span>
       <div>
-        <strong>{subjectBrand}: {moneyOrDash(latestSubject ? metric(latestSubject) : null)}</strong>
-        <strong>{competitorBrand}: {moneyOrDash(latestCompetitor ? metric(latestCompetitor) : null)}</strong>
+        <strong>{subjectBrand}: {moneyOrDash(latestSubject ? metric(latestSubject) : null, currency)}</strong>
+        <strong>{competitorBrand}: {moneyOrDash(latestCompetitor ? metric(latestCompetitor) : null, currency)}</strong>
       </div>
     </div>
     <svg className={styles.historySvg} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Evolución de precios de ${category}`}>
       {ticks.map(tick => <g key={tick.y}>
         <line className={styles.historyGridLine} x1={left} y1={tick.y} x2={width - right} y2={tick.y} />
-        <text className={styles.historyAxisText} x={left - 10} y={tick.y + 4} textAnchor="end">{money.format(Math.round(tick.value))}</text>
+        <text className={styles.historyAxisText} x={left - 10} y={tick.y + 4} textAnchor="end">{moneyOrDash(Math.round(tick.value), currency)}</text>
       </g>)}
       {dateLabels.map(date => <text key={date} className={styles.historyAxisText} x={x(date)} y={height - 12} textAnchor="middle">{shortDate(date)}</text>)}
       {subject.length > 1 && <path className={styles.historySubjectLine} d={path(subject)} />}
@@ -677,6 +688,7 @@ export default function BrandsVertical({ initialBrand = "krispy-kreme", locked =
 
   const run = payload.lastRun;
   const live = payload.live;
+  const displayCurrency = payload.currency || "CLP";
   const qsr = payload.brand.slug === "krispy-kreme" || payload.brand.slug === "little-caesars";
   const officialOnly = live?.sourcePolicy === "official-only";
   const brandSource = live?.sources.find(item => item.role === "brand");
@@ -731,7 +743,7 @@ export default function BrandsVertical({ initialBrand = "krispy-kreme", locked =
             <strong>{item.brand}</strong>
             <div><b>{item.metrics.items}</b><small> precios monitoreados</small></div>
             <div><b>{item.metrics.promoItems}</b><small> combos / promos</small></div>
-            <div><b>{moneyOrDash(item.metrics.lowestPrice)}</b><small> precio de entrada</small></div>
+            <div><b>{moneyOrDash(item.metrics.lowestPrice, displayCurrency)}</b><small> precio de entrada</small></div>
           </div>)}
         </div>
       </article>}
@@ -740,8 +752,8 @@ export default function BrandsVertical({ initialBrand = "krispy-kreme", locked =
         {live.benchmarks.slice(0, 6).map(benchmark => <article key={benchmark.key} className={styles.benchmarkCard}>
           <span>{benchmark.label} · BENCHMARK OFICIAL</span>
           <div className={styles.benchmarkPrices}>
-            <div><small>{benchmark.subject.brand}</small><strong>{moneyOrDash(benchmark.subject.price)}</strong>{benchmark.subject.unitPrice && benchmark.subject.unitPrice !== benchmark.subject.price ? <em>{moneyOrDash(benchmark.subject.unitPrice)} / unidad</em> : null}</div>
-            <div><small>{benchmark.competitor.brand}</small><strong>{moneyOrDash(benchmark.competitor.price)}</strong>{benchmark.competitor.unitPrice && benchmark.competitor.unitPrice !== benchmark.competitor.price ? <em>{moneyOrDash(benchmark.competitor.unitPrice)} / unidad</em> : null}</div>
+            <div><small>{benchmark.subject.brand}</small><strong>{moneyOrDash(benchmark.subject.price, displayCurrency)}</strong>{benchmark.subject.unitPrice && benchmark.subject.unitPrice !== benchmark.subject.price ? <em>{moneyOrDash(benchmark.subject.unitPrice, displayCurrency)} / unidad</em> : null}</div>
+            <div><small>{benchmark.competitor.brand}</small><strong>{moneyOrDash(benchmark.competitor.price, displayCurrency)}</strong>{benchmark.competitor.unitPrice && benchmark.competitor.unitPrice !== benchmark.competitor.price ? <em>{moneyOrDash(benchmark.competitor.unitPrice, displayCurrency)} / unidad</em> : null}</div>
           </div>
           <p><b>{benchmark.leader || "—"}</b> lidera · brecha {percent(benchmark.gapPct)}</p>
           <small className={styles.note}>{benchmarkSignal(benchmark)}</small>
@@ -778,7 +790,7 @@ export default function BrandsVertical({ initialBrand = "krispy-kreme", locked =
             </select>
           </label>
         </div>
-        <PriceHistoryChart history={history} category={activeHistoryCategory} subjectBrand={live!.subjectBrand} competitorBrand={live!.competitorBrand} />
+        <PriceHistoryChart history={history} category={activeHistoryCategory} subjectBrand={live!.subjectBrand} competitorBrand={live!.competitorBrand} currency={displayCurrency} />
       </article>}
 
       {qsr && live && <article className={styles.panel}>
@@ -820,8 +832,8 @@ export default function BrandsVertical({ initialBrand = "krispy-kreme", locked =
         {live.benchmarks.map(benchmark => <article key={benchmark.key} className={styles.benchmarkCard}>
           <span>{benchmark.label}</span>
           <div className={styles.benchmarkPrices}>
-            <div><small>{benchmark.subject.brand}</small><strong>{moneyOrDash(benchmark.subject.price)}</strong>{benchmark.subject.unitPrice && benchmark.subject.unitPrice !== benchmark.subject.price ? <em>{moneyOrDash(benchmark.subject.unitPrice)} / unidad</em> : null}</div>
-            <div><small>{benchmark.competitor.brand}</small><strong>{moneyOrDash(benchmark.competitor.price)}</strong>{benchmark.competitor.unitPrice && benchmark.competitor.unitPrice !== benchmark.competitor.price ? <em>{moneyOrDash(benchmark.competitor.unitPrice)} / unidad</em> : null}</div>
+            <div><small>{benchmark.subject.brand}</small><strong>{moneyOrDash(benchmark.subject.price, displayCurrency)}</strong>{benchmark.subject.unitPrice && benchmark.subject.unitPrice !== benchmark.subject.price ? <em>{moneyOrDash(benchmark.subject.unitPrice, displayCurrency)} / unidad</em> : null}</div>
+            <div><small>{benchmark.competitor.brand}</small><strong>{moneyOrDash(benchmark.competitor.price, displayCurrency)}</strong>{benchmark.competitor.unitPrice && benchmark.competitor.unitPrice !== benchmark.competitor.price ? <em>{moneyOrDash(benchmark.competitor.unitPrice, displayCurrency)} / unidad</em> : null}</div>
           </div>
           <p><b>{benchmark.leader || "—"}</b> tiene el mejor precio · brecha {percent(benchmark.gapPct)}</p>
           <small className={styles.note}>{benchmark.note}</small>
@@ -837,14 +849,14 @@ export default function BrandsVertical({ initialBrand = "krispy-kreme", locked =
           <div className={styles.microKpis}>
             <div><span>Detectados</span><strong>{item.metrics.items}</strong></div>
             <div><span>Combos / promos</span><strong>{item.metrics.promoItems}</strong></div>
-            <div><span>Precio entrada</span><strong>{moneyOrDash(item.metrics.lowestPrice)}</strong></div>
+            <div><span>Precio entrada</span><strong>{moneyOrDash(item.metrics.lowestPrice, displayCurrency)}</strong></div>
             <div><span>Fuente</span><strong>{officialOnly ? "Oficial" : item.channel}</strong></div>
           </div>
           {item.status === "degraded" && <div className={styles.sourceWarning}>La fuente no expuso precios en esta lectura. Se conserva la última captura válida. {item.error || ""}</div>}
           <div className={styles.liveItems}>
             {item.items.map(product => <div className={styles.liveItem} key={product.key}>
-              <div><span>{product.marketCategory || product.category}</span><strong>{product.name}</strong>{product.units && product.units > 1 && product.unitPrice ? <small>{moneyOrDash(product.unitPrice)} por unidad{product.promoMechanic ? ` · ${product.promoMechanic}` : ""}</small> : product.promoMechanic ? <small>{product.promoMechanic}</small> : null}</div>
-              <div className={styles.priceCell}><strong>{moneyOrDash(product.currentPrice)}</strong>{product.regularPrice ? <small>Ref. {moneyOrDash(product.regularPrice)}</small> : null}{product.discountPct ? <b>-{product.discountPct}%</b> : product.promotion ? <b>PROMO</b> : null}</div>
+              <div><span>{product.marketCategory || product.category}</span><strong>{product.name}</strong>{product.units && product.units > 1 && product.unitPrice ? <small>{moneyOrDash(product.unitPrice, displayCurrency)} por unidad{product.promoMechanic ? ` · ${product.promoMechanic}` : ""}</small> : product.promoMechanic ? <small>{product.promoMechanic}</small> : null}</div>
+              <div className={styles.priceCell}><strong>{moneyOrDash(product.currentPrice, displayCurrency)}</strong>{product.regularPrice ? <small>Ref. {moneyOrDash(product.regularPrice, displayCurrency)}</small> : null}{product.discountPct ? <b>-{product.discountPct}%</b> : product.promotion ? <b>PROMO</b> : null}</div>
             </div>)}
             {!item.items.length && <div className={styles.emptyLive}>No hay precios válidos en la última captura.</div>}
           </div>
@@ -864,8 +876,8 @@ export default function BrandsVertical({ initialBrand = "krispy-kreme", locked =
 
     {tab === "products" && <article className={styles.panel}><div className={styles.panelTitle}><div><h2>Catálogo monitoreado</h2><p>{officialOnly ? "Productos detectados desde los canales oficiales." : "Productos normalizados para análisis."}</p></div><span>{visibleProducts.length} productos</span></div><div className={styles.tableWrap}><table><thead><tr><th>Producto</th><th>SKU / EAN</th><th>Categoría</th><th>Última detección</th></tr></thead><tbody>{visibleProducts.map(p=><tr key={p.id}><td><strong>{p.name}</strong></td><td>{p.sku || p.ean || "—"}</td><td>{p.category || "—"}</td><td>{dateOrDash(p.lastSeenAt)}</td></tr>)}{!visibleProducts.length&&<tr><td colSpan={4} className={styles.empty}>Aún no hay productos capturados.</td></tr>}</tbody></table></div></article>}
 
-    {tab === "retailers" && <article className={styles.panel}><div className={styles.panelTitle}><div><h2>Fuentes de inteligencia</h2><p>{officialOnly ? "Sólo canales oficiales con precio publicado y trazable." : "Canales activos y trazables que alimentan el análisis."}</p></div></div><div className={styles.cards}>{payload.sources.map(s=><div className={styles.retailCard} key={s.id}><span>{s.source_type}</span><h3>{s.retailer_name}</h3><p>{s.domain}</p><dl><div><dt>Observaciones actuales</dt><dd>{s.listings}</dd></div><div><dt>Precio mín.</dt><dd>{moneyOrDash(s.min_price)}</dd></div><div><dt>Precio máx.</dt><dd>{moneyOrDash(s.max_price)}</dd></div></dl><small>Última captura: {dateOrDash(s.last_crawled_at)}</small>{s.last_error&&<em>{s.last_error}</em>}</div>)}</div></article>}
+    {tab === "retailers" && <article className={styles.panel}><div className={styles.panelTitle}><div><h2>Fuentes de inteligencia</h2><p>{officialOnly ? "Sólo canales oficiales con precio publicado y trazable." : "Canales activos y trazables que alimentan el análisis."}</p></div></div><div className={styles.cards}>{payload.sources.map(s=><div className={styles.retailCard} key={s.id}><span>{s.source_type}</span><h3>{s.retailer_name}</h3><p>{s.domain}</p><dl><div><dt>Observaciones actuales</dt><dd>{s.listings}</dd></div><div><dt>Precio mín.</dt><dd>{moneyOrDash(s.min_price, displayCurrency)}</dd></div><div><dt>Precio máx.</dt><dd>{moneyOrDash(s.max_price, displayCurrency)}</dd></div></dl><small>Última captura: {dateOrDash(s.last_crawled_at)}</small>{s.last_error&&<em>{s.last_error}</em>}</div>)}</div></article>}
 
-    {tab === "listings" && <article className={styles.panel}><div className={styles.panelTitle}><div><h2>Evidencia de precios</h2><p>{officialOnly ? "Precio y timestamp persistidos desde los canales oficiales para auditoría e histórico." : "Precio, fuente y timestamp persistidos para auditoría."}</p></div><span>{visibleListings.length} registros</span></div><div className={styles.tableWrap}><table><thead><tr><th>Producto</th><th>Fuente / Marca</th><th>Precio</th><th>Stock</th><th>Observado</th></tr></thead><tbody>{visibleListings.map(l=><tr key={l.id}><td><a href={l.url} target="_blank" rel="noreferrer"><strong>{l.title}</strong></a></td><td>{l.source}<small className={styles.block}>{l.seller || l.domain}</small></td><td><strong>{moneyOrDash(l.currentPrice)}</strong>{l.regularPrice&&l.currentPrice&&l.regularPrice>l.currentPrice?<small className={styles.block}>Ref. {moneyOrDash(l.regularPrice)}</small>:null}</td><td>{l.inStock===null?"—":l.inStock?"Disponible":"Sin stock"}</td><td>{dateOrDash(l.observedAt)}</td></tr>)}{!visibleListings.length&&<tr><td colSpan={5} className={styles.empty}>Aún no hay evidencia persistida para esta vertical.</td></tr>}</tbody></table></div></article>}
+    {tab === "listings" && <article className={styles.panel}><div className={styles.panelTitle}><div><h2>Evidencia de precios</h2><p>{officialOnly ? "Precio y timestamp persistidos desde los canales oficiales para auditoría e histórico." : "Precio, fuente y timestamp persistidos para auditoría."}</p></div><span>{visibleListings.length} registros</span></div><div className={styles.tableWrap}><table><thead><tr><th>Producto</th><th>Fuente / Marca</th><th>Precio</th><th>Stock</th><th>Observado</th></tr></thead><tbody>{visibleListings.map(l=><tr key={l.id}><td><a href={l.url} target="_blank" rel="noreferrer"><strong>{l.title}</strong></a></td><td>{l.source}<small className={styles.block}>{l.seller || l.domain}</small></td><td><strong>{moneyOrDash(l.currentPrice, displayCurrency)}</strong>{l.regularPrice&&l.currentPrice&&l.regularPrice>l.currentPrice?<small className={styles.block}>Ref. {moneyOrDash(l.regularPrice, displayCurrency)}</small>:null}</td><td>{l.inStock===null?"—":l.inStock?"Disponible":"Sin stock"}</td><td>{dateOrDash(l.observedAt)}</td></tr>)}{!visibleListings.length&&<tr><td colSpan={5} className={styles.empty}>Aún no hay evidencia persistida para esta vertical.</td></tr>}</tbody></table></div></article>}
   </section>;
 }
