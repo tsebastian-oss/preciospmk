@@ -255,6 +255,111 @@ function safeNumber(value: number) { return Number.isFinite(value) ? value : 0; 
 function roundPrice(value: number) { return Math.max(0, Math.round(value / 10) * 10); }
 function pctSigned(value: number) { return `${value >= 0 ? "+" : ""}${value.toLocaleString("es-CL", { maximumFractionDigits: 1 })}%`; }
 
+function renderCopilotInline(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean);
+  return parts.map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) return <strong key={index}>{part.slice(2, -2)}</strong>;
+    if (part.startsWith("`") && part.endsWith("`")) return <code key={index}>{part.slice(1, -1)}</code>;
+    return part;
+  });
+}
+
+function CopilotMarkdown({ content }: { content: string }) {
+  const lines = content.replace(/\r/g, "").split("\n");
+  const blocks: JSX.Element[] = [];
+  let index = 0;
+  let blockKey = 0;
+
+  const parseRow = (line: string) => line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(cell => cell.trim());
+  const isSeparator = (line: string) => {
+    const cells = parseRow(line);
+    return cells.length > 0 && cells.every(cell => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, "")));
+  };
+
+  while (index < lines.length) {
+    const raw = lines[index];
+    const line = raw.trim();
+
+    if (!line) {
+      index += 1;
+      continue;
+    }
+
+    if (line.startsWith("|") && index + 1 < lines.length && isSeparator(lines[index + 1])) {
+      const header = parseRow(line);
+      const rows: string[][] = [];
+      index += 2;
+      while (index < lines.length && lines[index].trim().startsWith("|")) {
+        rows.push(parseRow(lines[index]));
+        index += 1;
+      }
+      blocks.push(
+        <div className={styles.copilotTableWrap} key={`table-${blockKey++}`}>
+          <table className={styles.copilotTable}>
+            <thead><tr>{header.map((cell, cellIndex) => <th key={cellIndex}>{renderCopilotInline(cell)}</th>)}</tr></thead>
+            <tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{header.map((_, cellIndex) => <td key={cellIndex}>{renderCopilotInline(row[cellIndex] || "")}</td>)}</tr>)}</tbody>
+          </table>
+        </div>
+      );
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,4})\s+(.+)$/);
+    if (heading) {
+      const level = heading[1].length;
+      const text = heading[2];
+      blocks.push(level <= 2
+        ? <h3 className={styles.copilotHeading} key={`heading-${blockKey++}`}>{renderCopilotInline(text)}</h3>
+        : <h4 className={styles.copilotSubheading} key={`heading-${blockKey++}`}>{renderCopilotInline(text)}</h4>);
+      index += 1;
+      continue;
+    }
+
+    if (/^[-*]\s+/.test(line)) {
+      const items: string[] = [];
+      while (index < lines.length && /^[-*]\s+/.test(lines[index].trim())) {
+        items.push(lines[index].trim().replace(/^[-*]\s+/, ""));
+        index += 1;
+      }
+      blocks.push(<ul className={styles.copilotList} key={`list-${blockKey++}`}>{items.map((item, itemIndex) => <li key={itemIndex}>{renderCopilotInline(item)}</li>)}</ul>);
+      continue;
+    }
+
+    if (/^\d+[.)]\s+/.test(line)) {
+      const items: string[] = [];
+      while (index < lines.length && /^\d+[.)]\s+/.test(lines[index].trim())) {
+        items.push(lines[index].trim().replace(/^\d+[.)]\s+/, ""));
+        index += 1;
+      }
+      blocks.push(<ol className={styles.copilotList} key={`olist-${blockKey++}`}>{items.map((item, itemIndex) => <li key={itemIndex}>{renderCopilotInline(item)}</li>)}</ol>);
+      continue;
+    }
+
+    if (/^\*[^*].*\*$/.test(line)) {
+      blocks.push(<div className={styles.copilotNote} key={`note-${blockKey++}`}>{renderCopilotInline(line.slice(1, -1))}</div>);
+      index += 1;
+      continue;
+    }
+
+    const paragraph: string[] = [line];
+    index += 1;
+    while (
+      index < lines.length &&
+      lines[index].trim() &&
+      !/^(#{1,4})\s+/.test(lines[index].trim()) &&
+      !/^[-*]\s+/.test(lines[index].trim()) &&
+      !/^\d+[.)]\s+/.test(lines[index].trim()) &&
+      !(lines[index].trim().startsWith("|") && index + 1 < lines.length && isSeparator(lines[index + 1]))
+    ) {
+      paragraph.push(lines[index].trim());
+      index += 1;
+    }
+    blocks.push(<p className={styles.copilotParagraph} key={`p-${blockKey++}`}>{renderCopilotInline(paragraph.join(" "))}</p>);
+  }
+
+  return <div className={styles.copilotMarkdown}>{blocks}</div>;
+}
+
 function PiwenPricingCopilot() {
   const starter = "Hola. Soy Pricing Copilot de Piwén. Puedo analizar brechas vs competencia, simular cambios de precio, promociones, margen y rentabilidad por canal. ¿Qué quieres evaluar?";
   const [messages, setMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([{ role: "assistant", content: starter }]);
@@ -320,7 +425,7 @@ function PiwenPricingCopilot() {
         <div className={styles.piwenChatMessages}>
           {messages.map((message, index) => <div key={index} className={message.role === "user" ? styles.piwenUserMessage : styles.piwenAssistantMessage}>
             <span>{message.role === "user" ? "TÚ" : "PRICING COPILOT"}</span>
-            <p>{message.content}</p>
+            {message.role === "assistant" ? <CopilotMarkdown content={message.content} /> : <p>{message.content}</p>}
           </div>)}
           {loading && <div className={styles.piwenAssistantMessage}><span>PRICING COPILOT</span><p className={styles.piwenThinking}>Analizando pricing, margen y contexto competitivo…</p></div>}
         </div>
