@@ -61,8 +61,6 @@ const MENU: MenuGroup[] = [
   ] },
 ];
 
-const ADMIN_MENU: MenuGroup = { label: "Administración", items: [{ view: "usage", label: "Uso de la plataforma", icon: "◎" }] };
-
 const COPY: Record<View, { title: string; description: string }> = {
   overview: { title: "Resumen Ejecutivo", description: "Panorama general del monitoreo de precios, surtido y actividad competitiva en Chile." },
   "price-image": { title: "Price Image", description: "Compara el nivel de precios de cada cadena contra el promedio del mercado." },
@@ -82,6 +80,8 @@ const COPY: Record<View, { title: string; description: string }> = {
   settings: { title: "Configuración", description: "Administra industria, preferencias visuales y comportamiento del dashboard." },
   usage: { title: "Uso de la plataforma", description: "Revisa sesiones, tiempo activo, módulos utilizados, consultas IA y descargas por usuario y cliente." },
 };
+
+const ADMIN_MENU: MenuGroup = { label: "Administración", items: [{ view: "usage", label: "Uso de la plataforma", icon: "◎" }] };
 
 const DEFAULT_FILTERS: Filters = { retailerType: "all", supermarket: "", category: "", brand: "", query: "", stock: "all", period: 30 };
 const SERIES_COLORS = ["#2563eb", "#10b981", "#8b5cf6", "#f59e0b", "#06b6d4", "#ec4899", "#64748b", "#14b8a6"];
