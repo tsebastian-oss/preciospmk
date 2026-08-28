@@ -84,7 +84,7 @@ const SOURCES:Source[]=[
 ];
 
 function decode(s:string){return s.replace(/\\u([0-9a-fA-F]{4})/g,(_,h)=>String.fromCharCode(parseInt(h,16))).replace(/&nbsp;|&#160;/gi," ").replace(/&amp;/gi,"&").replace(/&quot;|&#34;/gi,'"').replace(/&#39;|&apos;/gi,"'")}
-function clean(s:string){return decode(s).replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<noscript[\s\S]*?<\/noscript>/gi," ").replace(/<[^>]+>/g," ").replace(/\s+/g," ").trim()}
+function clean(s:string){return decode(s).replace(/<style[\s\S]*?<\/style>/gi," ").replace(/<noscript[\s\S]*?<\/noscript>/gi," ").replace(/<[^>]+>/g," ").replace(/(\d)\s*([.,])\s*(\d)/g,"$1$2$3").replace(/\s+/g," ").trim()}
 function pen(s:string){const n=Number(s.replace(/\s/g,"").replace(",","."));return Number.isFinite(n)&&n>=10&&n<=1000?n:null}
 function values(segment:string){const out:number[]=[];const re=/S\/\s*([0-9]{1,4}(?:[.,][0-9]{1,2})?)/gi;for(const m of segment.matchAll(re)){const v=pen(m[1]);if(v&&!out.some(x=>Math.abs(x-v)<.001))out.push(v);if(out.length>=5)break}return out}
 function parse(raw:string,t:Target){
@@ -111,7 +111,7 @@ function parse(raw:string,t:Target){
     const current=p2&&p2<p1&&p2/p1>.5?p2:p1;
     const regular=p1>current*1.015?p1:(prices.find(x=>x>current*1.015)??null);
     const pm=seg.match(/-\s*([0-9]{1,2}(?:[.,][0-9])?)\s*%/);
-    const d=pm?Number(pm[1].replace(",",".")):regular?Math.round((1-current/regular)*1000)/10:null;
+    const d=regular?Math.round((1-current/regular)*1000)/10:pm?Number(pm[1].replace(",",".")):null;
     out.push({...s,currentPrice:current,regularPrice:regular,discountPct:d,promotion:Boolean(d&&d>0),sourceUrl:t.url});
   }
   return out
