@@ -16,7 +16,7 @@ const routedFetch = `    const baseEndpoint = selectedBrand === "victorinox"
 
 if (source.includes(directFetch)) source = source.replace(directFetch, routedFetch);
 
-if (!source.includes('useState("krispy-kreme")')) throw new Error("Krispy Kreme default brand not applied");
+if (!source.includes('useState("krispy-kreme")') && !source.includes('useState(initialBrand)')) throw new Error("Brands default brand state not applied");
 if (!source.includes('/api/brands-clickhouse-v3?brand=')) throw new Error("Victorinox ClickHouse fast path not applied");
 if (!source.includes('historyCategory')) throw new Error("Official Brands history view not detected");
 
