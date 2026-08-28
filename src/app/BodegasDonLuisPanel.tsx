@@ -125,6 +125,8 @@ function ChatMarkdown({ text }: { text: string }) {
   const blocks = [];
   let index = 0;
   let key = 0;
+  let tableRendered = false;
+  let paragraphCount = 0;
 
   while (index < lines.length) {
     const line = (lines[index] || "").trim();
@@ -132,7 +134,7 @@ function ChatMarkdown({ text }: { text: string }) {
 
     const heading = /^(#{1,4})\s+(.+)$/.exec(line);
     if (heading) {
-      blocks.push(<h4 key={"h-" + key++}>{chatInline(heading[2])}</h4>);
+      blocks.push(<div className={styles.chatSectionTitle} key={"h-" + key++}>{chatInline(heading[2])}</div>);
       index += 1;
       continue;
     }
@@ -145,22 +147,33 @@ function ChatMarkdown({ text }: { text: string }) {
         rows.push(chatTableCells(lines[index]));
         index += 1;
       }
+
       const priceColumn = headers.findIndex(header => /precio promedio|precio por botella|precio vigente/i.test(header));
       const chainColumn = headers.findIndex(header => /cadena/i.test(header));
       const comparablePrices = priceColumn >= 0 ? rows.map(row => chatNumericValue(row[priceColumn] || "")) : [];
       const validPrices = comparablePrices.filter(value => Number.isFinite(value));
       const bestPrice = validPrices.length ? Math.min(...validPrices) : null;
-      blocks.push(<div className={styles.chatTableWrap} key={"table-" + key++}><table className={styles.chatTable}>
-        <thead><tr>{headers.map((header, cellIndex) => <th key={cellIndex} className={/precio|sku|rango|promoción|descuento|%/i.test(header) ? styles.chatNumericHead : ""}>{chatInline(header)}</th>)}</tr></thead>
-        <tbody>{rows.map((row, rowIndex) => {
-          const rowPrice = priceColumn >= 0 ? chatNumericValue(row[priceColumn] || "") : Number.NaN;
-          const isLeader = bestPrice != null && Number.isFinite(rowPrice) && Math.abs(rowPrice - bestPrice) < 0.001;
-          return <tr key={rowIndex} className={isLeader ? styles.chatLeaderRow : ""}>{headers.map((header, cellIndex) => <td key={cellIndex} className={/precio|sku|rango|promoción|descuento|%/i.test(header) ? styles.chatNumericCell : ""}>
-            {chatInline(row[cellIndex] || "")}
-            {isLeader && cellIndex === chainColumn && <span className={styles.chatBestBadge}>MEJOR PRECIO</span>}
-          </td>)}</tr>;
-        })}</tbody>
-      </table></div>);
+      tableRendered = true;
+
+      blocks.push(<section className={styles.chatTableCard} key={"table-" + key++}>
+        <div className={styles.chatTableHeader}>
+          <div><span>COMPARACIÓN</span><strong>{chainColumn >= 0 ? "Precios por cadena" : "Detalle de mercado"}</strong></div>
+          <small>{rows.length} {rows.length === 1 ? "registro" : "registros"}</small>
+        </div>
+        <div className={styles.chatTableWrap}>
+          <table className={styles.chatTable}>
+            <thead><tr>{headers.map((header, cellIndex) => <th key={cellIndex} className={/precio|sku|rango|promoción|descuento|%/i.test(header) ? styles.chatNumericHead : ""}>{chatInline(header)}</th>)}</tr></thead>
+            <tbody>{rows.map((row, rowIndex) => {
+              const rowPrice = priceColumn >= 0 ? chatNumericValue(row[priceColumn] || "") : Number.NaN;
+              const isLeader = bestPrice != null && Number.isFinite(rowPrice) && Math.abs(rowPrice - bestPrice) < 0.001;
+              return <tr key={rowIndex} className={isLeader ? styles.chatLeaderRow : ""}>{headers.map((header, cellIndex) => <td key={cellIndex} className={/precio|sku|rango|promoción|descuento|%/i.test(header) ? styles.chatNumericCell : ""}>
+                <span>{chatInline(row[cellIndex] || "")}</span>
+                {isLeader && cellIndex === chainColumn && <span className={styles.chatBestBadge}>MEJOR PRECIO</span>}
+              </td>)}</tr>;
+            })}</tbody>
+          </table>
+        </div>
+      </section>);
       continue;
     }
 
@@ -170,7 +183,20 @@ function ChatMarkdown({ text }: { text: string }) {
         items.push((lines[index] || "").trim().replace(/^[-*+]\s+/, ""));
         index += 1;
       }
-      blocks.push(<ul key={"ul-" + key++}>{items.map((item, itemIndex) => <li key={itemIndex} className={/^advertencia\s*:/i.test(item.replace(/\*\*/g, "")) ? styles.chatWarningItem : ""}>{chatInline(item)}</li>)}</ul>);
+
+      if (tableRendered) {
+        const regular = items.filter(item => !/^advertencia\s*:/i.test(item.replace(/\*\*/g, "")));
+        const warnings = items.filter(item => /^advertencia\s*:/i.test(item.replace(/\*\*/g, "")));
+        if (regular.length) {
+          blocks.push(<section className={styles.chatInsightSection} key={"insights-" + key++}>
+            <div className={styles.chatInsightLabel}>LECTURA EJECUTIVA</div>
+            <div className={styles.chatInsightGrid}>{regular.map((item, itemIndex) => <article key={itemIndex}><span>{String(itemIndex + 1).padStart(2, "0")}</span><p>{chatInline(item)}</p></article>)}</div>
+          </section>);
+        }
+        warnings.forEach((item, itemIndex) => blocks.push(<div className={styles.chatCaution} key={"warning-" + key++ + "-" + itemIndex}><span>!</span><p>{chatInline(item.replace(/^advertencia\s*:\s*/i, ""))}</p></div>));
+      } else {
+        blocks.push(<ul className={styles.chatList} key={"ul-" + key++}>{items.map((item, itemIndex) => <li key={itemIndex}>{chatInline(item)}</li>)}</ul>);
+      }
       continue;
     }
 
@@ -180,7 +206,7 @@ function ChatMarkdown({ text }: { text: string }) {
         items.push((lines[index] || "").trim().replace(/^\d+[.)]\s+/, ""));
         index += 1;
       }
-      blocks.push(<ol key={"ol-" + key++}>{items.map((item, itemIndex) => <li key={itemIndex}>{chatInline(item)}</li>)}</ol>);
+      blocks.push(<div className={styles.chatInsightGrid} key={"ol-" + key++}>{items.map((item, itemIndex) => <article key={itemIndex}><span>{String(itemIndex + 1).padStart(2, "0")}</span><p>{chatInline(item)}</p></article>)}</div>);
       continue;
     }
 
@@ -197,7 +223,12 @@ function ChatMarkdown({ text }: { text: string }) {
       paragraph.push((lines[index] || "").trim());
       index += 1;
     }
-    blocks.push(<p key={"p-" + key++}>{paragraph.map((item, itemIndex) => <Fragment key={itemIndex}>{itemIndex > 0 && <br/>}{chatInline(item)}</Fragment>)}</p>);
+
+    const content = paragraph.map((item, itemIndex) => <Fragment key={itemIndex}>{itemIndex > 0 && <br/>}{chatInline(item)}</Fragment>);
+    blocks.push(paragraphCount === 0
+      ? <div className={styles.chatLead} key={"lead-" + key++}><span className={styles.chatLeadLabel}>RESPUESTA</span><p>{content}</p></div>
+      : <p className={styles.chatParagraph} key={"p-" + key++}>{content}</p>);
+    paragraphCount += 1;
   }
 
   return <div className={styles.chatMarkdown}>{blocks}</div>;
@@ -390,11 +421,14 @@ function ChatView() {
           <p>El asistente consulta exclusivamente la base censada de Bodegas Don Luis: precios, cadenas, marcas, formatos, promociones y evolución histórica.</p>
           <div className={styles.exampleGrid}>{examples.map(example => <button key={example} onClick={() => setInput(example)}>{example}</button>)}</div>
         </div>}
-        {messages.map((message, index) => <article key={index} className={message.role === "user" ? styles.userMessage : styles.assistantMessage}>
-          <span>{message.role === "user" ? "Tú" : "MGP Intelligence"}</span>
-          <div>{message.role === "assistant" ? <ChatMarkdown text={message.content}/> : message.content}</div>
-        </article>)}
-        {loading && <article className={styles.assistantMessage}><span>MGP Intelligence</span><div className={styles.thinking}>Analizando la base censada…</div></article>}
+        {messages.map((message, index) => message.role === "user"
+          ? <article key={index} className={styles.userMessage}><span>Tú</span><div>{message.content}</div></article>
+          : <article key={index} className={styles.assistantMessage}>
+              <div className={styles.assistantAnswerHeader}><span className={styles.aiDot}>●</span><div><strong>MGP Intelligence</strong><small>Pricing Intelligence · Perú</small></div></div>
+              <ChatMarkdown text={message.content}/>
+            </article>
+        )}
+        {loading && <article className={styles.assistantMessage}><div className={styles.assistantAnswerHeader}><span className={styles.aiDot}>●</span><div><strong>MGP Intelligence</strong><small>Analizando información censada</small></div></div><div className={styles.thinkingCard}>Analizando la base censada…</div></article>}
       </div>
 
       {error && <div className={styles.chatError}>{error}</div>}
