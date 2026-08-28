@@ -33,10 +33,38 @@ type MatrixData = {
   totalSkuObservations: number;
 };
 
+type TrendPoint = {
+  at: string;
+  capturedAt: string;
+  retailer: string;
+  category: "Pisco" | "Ron" | "Vino";
+  avgPrice: number;
+  minPrice: number;
+  maxPrice: number;
+  skuCount: number;
+};
+
+type TrendData = {
+  days: number;
+  bucketHours: number;
+  categories: Array<"Pisco" | "Ron" | "Vino">;
+  chains: string[];
+  points: TrendPoint[];
+  lastCapturedAt: string | null;
+};
+
 type ChatMessage = { role: "user" | "assistant"; content: string };
 type Conversation = { id: string; title: string; created_at: string; updated_at: string };
 
 const CATEGORIES = ["Pisco", "Ron", "Vino"] as const;
+const TREND_CATEGORIES = ["Ron", "Vino", "Pisco"] as const;
+const CHAIN_COLORS: Record<string, string> = {
+  "Metro Perú": "#38bdf8",
+  "Plaza Vea / Makro": "#f59e0b",
+  "Tottus Perú": "#34d399",
+  "Vivanda": "#a78bfa",
+  "Wong": "#fb7185",
+};
 type Tab = "overview" | "chains" | "downloads" | "chat";
 
 function pen(value: number | null | undefined) {
@@ -51,6 +79,96 @@ function number(value: number | null | undefined) {
 function date(value: string | null | undefined) {
   if (!value) return "—";
   return new Intl.DateTimeFormat("es-PE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function captureLabel(value: string | null | undefined) {
+  if (!value) return "—";
+  return new Intl.DateTimeFormat("es-PE", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "America/Lima",
+  }).format(new Date(value));
+}
+
+function PriceTrendChart({ category, data }: { category: "Pisco" | "Ron" | "Vino"; data: TrendData | null }) {
+  const points = (data?.points || []).filter(point => point.category === category);
+  const chains = (data?.chains || []).filter(chain => points.some(point => point.retailer === chain));
+  const times = [...new Set(points.map(point => point.at))].sort((a,b) => new Date(a).getTime() - new Date(b).getTime());
+  const values = points.map(point => Number(point.avgPrice)).filter(value => Number.isFinite(value));
+
+  const width = 720;
+  const height = 255;
+  const left = 54;
+  const right = 18;
+  const top = 18;
+  const bottom = 38;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+
+  if (!values.length) {
+    return <article className={styles.trendCard}>
+      <div className={styles.trendTitle}><div><span>EVOLUCIÓN</span><h3>{category}</h3></div><small>Sin tomas todavía</small></div>
+      <div className={styles.trendEmpty}>El gráfico se llenará automáticamente con las próximas capturas de precio.</div>
+    </article>;
+  }
+
+  const rawMin = Math.min(...values);
+  const rawMax = Math.max(...values);
+  const spread = Math.max(rawMax - rawMin, rawMax * 0.08, 2);
+  const min = Math.max(0, rawMin - spread * 0.14);
+  const max = rawMax + spread * 0.14;
+  const y = (value: number) => top + ((max - value) / Math.max(0.0001, max - min)) * plotHeight;
+  const x = (at: string) => {
+    const index = times.indexOf(at);
+    if (times.length <= 1) return left + plotWidth / 2;
+    return left + (index / (times.length - 1)) * plotWidth;
+  };
+
+  const yTicks = Array.from({ length: 4 }, (_, index) => min + ((max - min) * index / 3)).reverse();
+  const xTickIndexes = times.length <= 4
+    ? times.map((_, index) => index)
+    : [0, Math.floor((times.length - 1) / 2), times.length - 1];
+
+  return <article className={styles.trendCard}>
+    <div className={styles.trendTitle}>
+      <div><span>PRECIO PROMEDIO · S/</span><h3>{category}</h3></div>
+      <small>{times.length} {times.length === 1 ? "toma" : "tomas"} · cada {data?.bucketHours || 6}h</small>
+    </div>
+
+    <div className={styles.trendLegend}>
+      {chains.map(chain => {
+        const latest = [...points].filter(point => point.retailer === chain).sort((a,b) => new Date(b.at).getTime() - new Date(a.at).getTime())[0];
+        return <div key={chain}><i style={{ background: CHAIN_COLORS[chain] || "#cbd5e1" }}/><span>{chain}</span><b>{pen(latest?.avgPrice)}</b></div>;
+      })}
+    </div>
+
+    <div className={styles.chartWrap}>
+      <svg className={styles.trendSvg} viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Evolución de precio promedio de ${category} por cadena`}>
+        {yTicks.map((tick,index) => <g key={tick}>
+          <line x1={left} x2={width-right} y1={y(tick)} y2={y(tick)} className={styles.gridLine}/>
+          <text x={left-8} y={y(tick)+3} textAnchor="end" className={styles.axisText}>{Math.round(tick)}</text>
+        </g>)}
+
+        {xTickIndexes.map(index => <text key={times[index]} x={x(times[index])} y={height-12} textAnchor={index === 0 ? "start" : index === times.length-1 ? "end" : "middle"} className={styles.axisText}>{captureLabel(times[index])}</text>)}
+
+        {chains.map(chain => {
+          const chainPoints = points.filter(point => point.retailer === chain).sort((a,b) => new Date(a.at).getTime() - new Date(b.at).getTime());
+          const color = CHAIN_COLORS[chain] || "#cbd5e1";
+          const path = chainPoints.map((point,index) => `${index === 0 ? "M" : "L"} ${x(point.at)} ${y(point.avgPrice)}`).join(" ");
+          return <g key={chain}>
+            {chainPoints.length > 1 && <path d={path} fill="none" stroke={color} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>}
+            {chainPoints.map(point => <circle key={point.at+"-"+chain} cx={x(point.at)} cy={y(point.avgPrice)} r="4.5" fill={color} stroke="#0f172a" strokeWidth="2">
+              <title>{chain} · {captureLabel(point.capturedAt)} · {pen(point.avgPrice)} · {number(point.skuCount)} SKU</title>
+            </circle>)}
+          </g>;
+        })}
+      </svg>
+    </div>
+    <p className={styles.trendFoot}>Cada punto promedia el surtido censado de la cadena en esa toma. Pasa el cursor sobre un punto para ver precio y número de SKU.</p>
+  </article>;
 }
 
 function ChatView() {
@@ -183,6 +301,9 @@ export default function BodegasDonLuisPanel({ payload, locked = false }: { paylo
   const [matrix, setMatrix] = useState<MatrixData | null>(null);
   const [matrixError, setMatrixError] = useState("");
   const [matrixLoading, setMatrixLoading] = useState(true);
+  const [trends, setTrends] = useState<TrendData | null>(null);
+  const [trendsLoading, setTrendsLoading] = useState(true);
+  const [trendsError, setTrendsError] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -196,6 +317,22 @@ export default function BodegasDonLuisPanel({ payload, locked = false }: { paylo
       .then(data => { if (active) setMatrix(data); })
       .catch(cause => { if (active) setMatrixError(cause instanceof Error ? cause.message : "No fue posible cargar la comparación."); })
       .finally(() => { if (active) setMatrixLoading(false); });
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    setTrendsLoading(true);
+    setTrendsError("");
+    fetch("/api/brands/bodegas-don-luis/trends?days=30", { cache: "no-store" })
+      .then(async response => {
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "No fue posible cargar el histórico.");
+        return data as TrendData;
+      })
+      .then(data => { if (active) setTrends(data); })
+      .catch(cause => { if (active) setTrendsError(cause instanceof Error ? cause.message : "No fue posible cargar el histórico."); })
+      .finally(() => { if (active) setTrendsLoading(false); });
     return () => { active = false; };
   }, []);
 
@@ -251,6 +388,16 @@ export default function BodegasDonLuisPanel({ payload, locked = false }: { paylo
           <div><span>CATEGORÍA</span><h2>{item.category}</h2></div>
           <dl><div><dt>SKU-cadena</dt><dd>{matrixLoading ? "…" : number(item.sku)}</dd></div><div><dt>Promos</dt><dd>{matrixLoading ? "…" : number(item.promos)}</dd></div></dl>
         </article>)}
+      </section>
+
+      <section className={styles.trendSection}>
+        <div className={styles.trendSectionHeader}>
+          <div><span>EVOLUCIÓN DE MERCADO</span><h2>Precio promedio por cadena</h2><p>Una línea por cada cadena censada. El histórico se alimenta automáticamente con cada censo completo de precios.</p></div>
+          <div><strong>{trendsLoading ? "Actualizando…" : `${trends?.bucketHours || 6}h`}</strong><small>frecuencia de captura</small></div>
+        </div>
+        {trendsError ? <div className={styles.error}>{trendsError}</div> : <div className={styles.trendGrid}>
+          {TREND_CATEGORIES.map(category => <PriceTrendChart key={category} category={category} data={trends}/>)}
+        </div>}
       </section>
 
       <section className={styles.panel}>
