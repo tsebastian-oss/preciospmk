@@ -136,7 +136,7 @@ type Payload = {
   live: LivePulse | null;
 };
 
-type Tab = "overview" | "competition" | "pricing-lab" | "promotions" | "packs" | "profitability" | "products" | "retailers" | "listings";
+type Tab = "overview" | "copilot" | "competition" | "pricing-lab" | "promotions" | "packs" | "profitability" | "products" | "retailers" | "listings";
 
 const BRAND_OPTIONS = [
   { slug: "piwen", name: "Piwén", detail: "Frutos secos · Pricing demo" },
@@ -254,6 +254,89 @@ const PIWEN_CHANNELS = [
 function safeNumber(value: number) { return Number.isFinite(value) ? value : 0; }
 function roundPrice(value: number) { return Math.max(0, Math.round(value / 10) * 10); }
 function pctSigned(value: number) { return `${value >= 0 ? "+" : ""}${value.toLocaleString("es-CL", { maximumFractionDigits: 1 })}%`; }
+
+function PiwenPricingCopilot() {
+  const starter = "Hola. Soy Pricing Copilot de Piwén. Puedo analizar brechas vs competencia, simular cambios de precio, promociones, margen y rentabilidad por canal. ¿Qué quieres evaluar?";
+  const [messages, setMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([{ role: "assistant", content: starter }]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [model, setModel] = useState("GPT-5.6 Sol");
+
+  const suggestions = [
+    "¿Qué productos están más desalineados vs mercado?",
+    "¿Qué pasa si bajo 8% el pistacho?",
+    "¿Qué precio recomendarías para castañas de cajú?",
+    "¿Qué promo tendría mejor lógica económica?",
+  ];
+
+  const ask = async (question: string) => {
+    const clean = question.trim();
+    if (!clean || loading) return;
+    const next = [...messages, { role: "user" as const, content: clean }];
+    setMessages(next);
+    setInput("");
+    setLoading(true);
+    try {
+      const response = await fetch("/api/piwen-pricing-chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        cache: "no-store",
+        body: JSON.stringify({ messages: next.slice(-12) }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data?.answer) throw new Error(data?.error || "No fue posible consultar Pricing Copilot.");
+      setMessages(current => [...current, { role: "assistant", content: String(data.answer) }]);
+      if (typeof data?.model === "string" && data.model) setModel(data.model.replace("gpt-5.6-sol", "GPT-5.6 Sol").replace("gpt-5.6", "GPT-5.6 Sol"));
+    } catch (error) {
+      setMessages(current => [...current, { role: "assistant", content: error instanceof Error ? error.message : "No fue posible consultar Pricing Copilot." }]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return <div className={styles.piwenCopilot}>
+    <article className={styles.piwenCopilotHero}>
+      <div>
+        <span>AI PRICING ADVISOR</span>
+        <h2>Pricing Copilot</h2>
+        <p>Consulta en lenguaje natural la inteligencia de precios de Piwén y prueba escenarios antes de tomar una decisión.</p>
+      </div>
+      <div className={styles.piwenCopilotModel}><i />Impulsado por <strong>{model}</strong><small>Contexto Piwén · Super Precios</small></div>
+    </article>
+
+    <div className={styles.piwenCopilotGrid}>
+      <aside className={styles.piwenCopilotAside}>
+        <span>PREGUNTAS SUGERIDAS</span>
+        {suggestions.map(item => <button key={item} onClick={() => ask(item)} disabled={loading}>{item}<b>→</b></button>)}
+        <div className={styles.piwenCopilotScope}>
+          <strong>Qué entiende</strong>
+          <p>Benchmarks por kg, brechas de canal, supuestos de costo, elasticidad, promociones y rentabilidad.</p>
+          <small>Los costos y el histórico de 30 días están identificados como supuestos/demo hasta conectar datos reales.</small>
+        </div>
+      </aside>
+
+      <section className={styles.piwenChat}>
+        <div className={styles.piwenChatMessages}>
+          {messages.map((message, index) => <div key={index} className={message.role === "user" ? styles.piwenUserMessage : styles.piwenAssistantMessage}>
+            <span>{message.role === "user" ? "TÚ" : "PRICING COPILOT"}</span>
+            <p>{message.content}</p>
+          </div>)}
+          {loading && <div className={styles.piwenAssistantMessage}><span>PRICING COPILOT</span><p className={styles.piwenThinking}>Analizando pricing, margen y contexto competitivo…</p></div>}
+        </div>
+        <form className={styles.piwenChatComposer} onSubmit={event => { event.preventDefault(); void ask(input); }}>
+          <textarea value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              void ask(input);
+            }
+          }} placeholder="Ej: Si quiero mantener un margen mínimo de 30%, ¿hasta cuánto puedo bajar castañas de cajú?" rows={2} />
+          <button type="submit" disabled={loading || !input.trim()}>{loading ? "Analizando…" : "Preguntar ↗"}</button>
+        </form>
+      </section>
+    </div>
+  </div>;
+}
 
 function PiwenPricingLab() {
   const [skuId, setSkuId] = useState(PIWEN_SKUS[0].id);
@@ -517,7 +600,7 @@ export default function BrandsVertical({ initialBrand = "krispy-kreme" }: { init
     </div>
 
     <nav className={styles.tabs} aria-label="Secciones Brands">
-      {([["overview",qsr ? "Resumen ejecutivo" : "Overview"], ...(live ? [["competition","Competencia"]] : []), ...(selectedBrand === "piwen" ? [["pricing-lab","Pricing Lab"],["promotions","Promociones"],["packs","Packs"],["profitability","Rentabilidad"]] : []), ["products","Productos"],["retailers","Fuentes"],["listings","Evidencia"]] as [Tab,string][]).map(([key,label]) => <button key={key} className={tab===key?styles.activeTab:""} onClick={()=>setTab(key)}>{label}</button>)}
+      {([["overview",qsr ? "Resumen ejecutivo" : "Overview"], ...(live ? [["competition","Competencia"]] : []), ...(selectedBrand === "piwen" ? [["copilot","Pricing Copilot"],["pricing-lab","Pricing Lab"],["promotions","Promociones"],["packs","Packs"],["profitability","Rentabilidad"]] : []), ["products","Productos"],["retailers","Fuentes"],["listings","Evidencia"]] as [Tab,string][]).map(([key,label]) => <button key={key} className={tab===key?styles.activeTab:""} onClick={()=>setTab(key)}>{label}</button>)}
     </nav>
 
     {tab === "overview" && <>
@@ -660,7 +743,7 @@ export default function BrandsVertical({ initialBrand = "krispy-kreme" }: { init
       </div>
     </>}
 
-    {tab === "pricing-lab" && selectedBrand === "piwen" && <PiwenPricingLab/>}
+    {tab === "copilot" && selectedBrand === "piwen" && <PiwenPricingCopilot/>}\n    {tab === "pricing-lab" && selectedBrand === "piwen" && <PiwenPricingLab/>}
     {tab === "promotions" && selectedBrand === "piwen" && <PiwenPromoSimulator/>}
     {tab === "packs" && selectedBrand === "piwen" && <PiwenPackArchitecture/>}
     {tab === "profitability" && selectedBrand === "piwen" && <PiwenChannelProfitability/>}
