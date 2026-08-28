@@ -55,10 +55,10 @@ if (app.includes(bannerRaw)) {
   changed = true;
 }
 
-if (!app.includes('{view !== "downloads" && <section className={styles.filters}>')) {
+if (!app.includes('{view !== "downloads" && view !== "usage" && <section className={styles.filters}>')) {
   const globalFilters = /      <section className=\{styles\.filters\}>([\s\S]*?)<\/section>\n      \{renderView\(\)\}/;
   if (!globalFilters.test(app)) throw new Error("Global filters block not found for downloads cleanup");
-  app = app.replace(globalFilters, '      {view !== "downloads" && <section className={styles.filters}>$1</section>}\n      {renderView()}');
+  app = app.replace(globalFilters, '      {view !== "downloads" && view !== "usage" && <section className={styles.filters}>$1</section>}\n      {renderView()}');
   changed = true;
 }
 
