@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
+import { brandScopeAllows, enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -95,11 +95,12 @@ const PIWEN_PAYLOAD = {
 
 
 export async function GET(request: NextRequest) {
-  const authorization = await enterpriseAccess(request, "overview");
+  const authorization = await enterpriseAccess(request, "brand-panel");
   if (authorization.response) return authorization.response;
   if (!authorization.access) return NextResponse.json({ error: "No fue posible resolver el acceso enterprise." }, { status: 500 });
 
   const slug = request.nextUrl.searchParams.get("brand")?.trim().toLowerCase() || "krispy-kreme";
+  if (!brandScopeAllows(authorization.access, slug)) return NextResponse.json({ error: "Esta marca no está habilitada para tu cuenta." }, { status: 403 });
 
   if (slug === "piwen") {
     return NextResponse.json(PIWEN_PAYLOAD, { headers: { "cache-control": "private, max-age=60" } });
