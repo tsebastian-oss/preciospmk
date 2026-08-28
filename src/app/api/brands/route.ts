@@ -48,7 +48,48 @@ const PIWEN_PAYLOAD = {
       { key: "almendra", label: "Almendra natural · $/kg", subject: { brand: "Piwén", price: 21800, unitPrice: 21800 }, competitor: { brand: "Alto La Cruz", price: 17129, unitPrice: 17129 }, gapPct: 27.3, leader: "Alto La Cruz", note: "Piwén opera con un premium aproximado de 27,3% en este comparable." },
       { key: "caju", label: "Castañas de cajú · $/kg", subject: { brand: "Piwén", price: 26875, unitPrice: 26875 }, competitor: { brand: "Millantú", price: 30417, unitPrice: 30417 }, gapPct: -11.6, leader: "Piwén", note: "Piwén presenta una ventaja aproximada de 11,6% en este comparable." },
       { key: "pistacho", label: "Pistacho · $/kg", subject: { brand: "Piwén", price: 39375, unitPrice: 39375 }, competitor: { brand: "Millantú", price: 35500, unitPrice: 35500 }, gapPct: 10.9, leader: "Millantú", note: "Piwén muestra un premium aproximado de 10,9% en este comparable." }
-    ]
+    ],
+    history: {
+      policy: "public-demo",
+      days: 30,
+      from: "2026-08-01",
+      to: "2026-08-28",
+      categories: ["Almendras · $/kg", "Castañas de cajú · $/kg", "Pistachos · $/kg"],
+      points: [
+        { date: "2026-08-01", brand: "Piwén", role: "brand", category: "Almendras · $/kg", avgPrice: 20500, avgUnitPrice: 20500, minPrice: 20500, maxPrice: 20500, products: 1 },
+        { date: "2026-08-08", brand: "Piwén", role: "brand", category: "Almendras · $/kg", avgPrice: 20800, avgUnitPrice: 20800, minPrice: 20800, maxPrice: 20800, products: 1 },
+        { date: "2026-08-15", brand: "Piwén", role: "brand", category: "Almendras · $/kg", avgPrice: 21400, avgUnitPrice: 21400, minPrice: 21400, maxPrice: 21400, products: 1 },
+        { date: "2026-08-22", brand: "Piwén", role: "brand", category: "Almendras · $/kg", avgPrice: 21800, avgUnitPrice: 21800, minPrice: 21800, maxPrice: 21800, products: 1 },
+        { date: "2026-08-28", brand: "Piwén", role: "brand", category: "Almendras · $/kg", avgPrice: 21800, avgUnitPrice: 21800, minPrice: 21800, maxPrice: 21800, products: 1 },
+        { date: "2026-08-01", brand: "Benchmark mercado", role: "competitor", category: "Almendras · $/kg", avgPrice: 17900, avgUnitPrice: 17900, minPrice: 17900, maxPrice: 17900, products: 1 },
+        { date: "2026-08-08", brand: "Benchmark mercado", role: "competitor", category: "Almendras · $/kg", avgPrice: 17750, avgUnitPrice: 17750, minPrice: 17750, maxPrice: 17750, products: 1 },
+        { date: "2026-08-15", brand: "Benchmark mercado", role: "competitor", category: "Almendras · $/kg", avgPrice: 17500, avgUnitPrice: 17500, minPrice: 17500, maxPrice: 17500, products: 1 },
+        { date: "2026-08-22", brand: "Benchmark mercado", role: "competitor", category: "Almendras · $/kg", avgPrice: 17300, avgUnitPrice: 17300, minPrice: 17300, maxPrice: 17300, products: 1 },
+        { date: "2026-08-28", brand: "Benchmark mercado", role: "competitor", category: "Almendras · $/kg", avgPrice: 17129, avgUnitPrice: 17129, minPrice: 17129, maxPrice: 17129, products: 1 },
+
+        { date: "2026-08-01", brand: "Piwén", role: "brand", category: "Castañas de cajú · $/kg", avgPrice: 27900, avgUnitPrice: 27900, minPrice: 27900, maxPrice: 27900, products: 1 },
+        { date: "2026-08-08", brand: "Piwén", role: "brand", category: "Castañas de cajú · $/kg", avgPrice: 27600, avgUnitPrice: 27600, minPrice: 27600, maxPrice: 27600, products: 1 },
+        { date: "2026-08-15", brand: "Piwén", role: "brand", category: "Castañas de cajú · $/kg", avgPrice: 27300, avgUnitPrice: 27300, minPrice: 27300, maxPrice: 27300, products: 1 },
+        { date: "2026-08-22", brand: "Piwén", role: "brand", category: "Castañas de cajú · $/kg", avgPrice: 27000, avgUnitPrice: 27000, minPrice: 27000, maxPrice: 27000, products: 1 },
+        { date: "2026-08-28", brand: "Piwén", role: "brand", category: "Castañas de cajú · $/kg", avgPrice: 26875, avgUnitPrice: 26875, minPrice: 26875, maxPrice: 26875, products: 1 },
+        { date: "2026-08-01", brand: "Benchmark mercado", role: "competitor", category: "Castañas de cajú · $/kg", avgPrice: 29600, avgUnitPrice: 29600, minPrice: 29600, maxPrice: 29600, products: 1 },
+        { date: "2026-08-08", brand: "Benchmark mercado", role: "competitor", category: "Castañas de cajú · $/kg", avgPrice: 29850, avgUnitPrice: 29850, minPrice: 29850, maxPrice: 29850, products: 1 },
+        { date: "2026-08-15", brand: "Benchmark mercado", role: "competitor", category: "Castañas de cajú · $/kg", avgPrice: 30100, avgUnitPrice: 30100, minPrice: 30100, maxPrice: 30100, products: 1 },
+        { date: "2026-08-22", brand: "Benchmark mercado", role: "competitor", category: "Castañas de cajú · $/kg", avgPrice: 30300, avgUnitPrice: 30300, minPrice: 30300, maxPrice: 30300, products: 1 },
+        { date: "2026-08-28", brand: "Benchmark mercado", role: "competitor", category: "Castañas de cajú · $/kg", avgPrice: 30417, avgUnitPrice: 30417, minPrice: 30417, maxPrice: 30417, products: 1 },
+
+        { date: "2026-08-01", brand: "Piwén", role: "brand", category: "Pistachos · $/kg", avgPrice: 38200, avgUnitPrice: 38200, minPrice: 38200, maxPrice: 38200, products: 1 },
+        { date: "2026-08-08", brand: "Piwén", role: "brand", category: "Pistachos · $/kg", avgPrice: 38600, avgUnitPrice: 38600, minPrice: 38600, maxPrice: 38600, products: 1 },
+        { date: "2026-08-15", brand: "Piwén", role: "brand", category: "Pistachos · $/kg", avgPrice: 38900, avgUnitPrice: 38900, minPrice: 38900, maxPrice: 38900, products: 1 },
+        { date: "2026-08-22", brand: "Piwén", role: "brand", category: "Pistachos · $/kg", avgPrice: 39200, avgUnitPrice: 39200, minPrice: 39200, maxPrice: 39200, products: 1 },
+        { date: "2026-08-28", brand: "Piwén", role: "brand", category: "Pistachos · $/kg", avgPrice: 39375, avgUnitPrice: 39375, minPrice: 39375, maxPrice: 39375, products: 1 },
+        { date: "2026-08-01", brand: "Benchmark mercado", role: "competitor", category: "Pistachos · $/kg", avgPrice: 34800, avgUnitPrice: 34800, minPrice: 34800, maxPrice: 34800, products: 1 },
+        { date: "2026-08-08", brand: "Benchmark mercado", role: "competitor", category: "Pistachos · $/kg", avgPrice: 34950, avgUnitPrice: 34950, minPrice: 34950, maxPrice: 34950, products: 1 },
+        { date: "2026-08-15", brand: "Benchmark mercado", role: "competitor", category: "Pistachos · $/kg", avgPrice: 35100, avgUnitPrice: 35100, minPrice: 35100, maxPrice: 35100, products: 1 },
+        { date: "2026-08-22", brand: "Benchmark mercado", role: "competitor", category: "Pistachos · $/kg", avgPrice: 35300, avgUnitPrice: 35300, minPrice: 35300, maxPrice: 35300, products: 1 },
+        { date: "2026-08-28", brand: "Benchmark mercado", role: "competitor", category: "Pistachos · $/kg", avgPrice: 35500, avgUnitPrice: 35500, minPrice: 35500, maxPrice: 35500, products: 1 }
+      ]
+    }
   }
 };
 
