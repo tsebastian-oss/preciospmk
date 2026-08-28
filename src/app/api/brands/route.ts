@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { brandScopeAllows, enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
+import { BODEGAS_DON_LUIS_PAYLOAD } from "@/lib/demo-bodegas-don-luis";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -104,6 +105,10 @@ export async function GET(request: NextRequest) {
 
   if (slug === "piwen") {
     return NextResponse.json(PIWEN_PAYLOAD, { headers: { "cache-control": "private, max-age=60" } });
+  }
+
+  if (slug === "bodegas-don-luis") {
+    return NextResponse.json(BODEGAS_DON_LUIS_PAYLOAD, { headers: { "cache-control": "private, max-age=60" } });
   }
 
   try {
