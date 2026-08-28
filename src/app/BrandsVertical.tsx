@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import styles from "./BrandsVertical.module.css";
 
 type Source = {
@@ -266,7 +266,7 @@ function renderCopilotInline(text: string) {
 
 function CopilotMarkdown({ content }: { content: string }) {
   const lines = content.replace(/\r/g, "").split("\n");
-  const blocks: JSX.Element[] = [];
+  const blocks: ReactNode[] = [];
   let index = 0;
   let blockKey = 0;
 
