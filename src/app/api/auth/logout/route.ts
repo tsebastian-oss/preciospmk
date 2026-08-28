@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
 
   const response = NextResponse.json({ ok: true }, { headers: { "cache-control": "no-store" } });
   const secure = process.env.NODE_ENV === "production";
-  for (const name of ["mgp_access_token", "mgp_refresh_token", "mgp_organization_id"]) {
+  for (const name of ["mgp_access_token", "mgp_refresh_token", "mgp_organization_id", "mgp_client_brand"]) {
     response.cookies.set(name, "", {
       httpOnly: true,
       secure,

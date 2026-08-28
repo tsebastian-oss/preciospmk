@@ -33,7 +33,7 @@ export default function LoginPage() {
       });
       const payload = await response.json() as { error?: string };
       if (!response.ok) throw new Error(payload.error || "No fue posible iniciar sesión");
-      window.location.href = "/onboarding";
+      window.location.href = "/entry";
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Error de autenticación");
     } finally {
@@ -57,8 +57,8 @@ export default function LoginPage() {
 
         <form onSubmit={submit}>
           <label>
-            Correo electrónico
-            <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required />
+            Usuario o correo
+            <input type="text" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="username" required />
           </label>
           <label>
             Contraseña

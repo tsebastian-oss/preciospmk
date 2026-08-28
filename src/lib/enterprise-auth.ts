@@ -186,6 +186,24 @@ export function scopeAllows(access: EnterpriseAccessContext, dimension: "retaile
   return allowed.length === 0 || allowed.some((item) => item.localeCompare(value, "es", { sensitivity: "base" }) === 0);
 }
 
+function normalizedBrandKey(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("es-CL")
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+export function brandScopeAllows(access: EnterpriseAccessContext, value: string | null | undefined) {
+  if (access.isSaasAdmin) return true;
+  const requested = normalizedBrandKey(value ?? "");
+  if (!requested) return false;
+  const allowed = access.brands ?? [];
+  if (access.organizationType === "brand" && allowed.length === 0) return false;
+  if (allowed.length === 0) return true;
+  return allowed.some((item) => normalizedBrandKey(item) === requested);
+}
+
 export function enterpriseJson<T>(result: RpcResult<T>, fallback: T | null = null) {
   if (result.response) return result.response;
   return NextResponse.json(result.data ?? fallback);
