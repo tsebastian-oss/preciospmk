@@ -114,6 +114,12 @@ function chatIsTableDivider(line: string) {
   return cells.length > 1 && cells.every(cell => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, "")));
 }
 
+function chatNumericValue(value: string) {
+  const clean = value.replace(/\*\*/g, "").replace(/[^0-9.,-]/g, "").replace(/,/g, ".");
+  const match = clean.match(/-?\d+(?:\.\d+)?/);
+  return match ? Number(match[0]) : Number.NaN;
+}
+
 function ChatMarkdown({ text }: { text: string }) {
   const lines = String(text || "").replace(/\r\n/g, "\n").trim().split("\n");
   const blocks = [];
@@ -139,9 +145,21 @@ function ChatMarkdown({ text }: { text: string }) {
         rows.push(chatTableCells(lines[index]));
         index += 1;
       }
+      const priceColumn = headers.findIndex(header => /precio promedio|precio por botella|precio vigente/i.test(header));
+      const chainColumn = headers.findIndex(header => /cadena/i.test(header));
+      const comparablePrices = priceColumn >= 0 ? rows.map(row => chatNumericValue(row[priceColumn] || "")) : [];
+      const validPrices = comparablePrices.filter(value => Number.isFinite(value));
+      const bestPrice = validPrices.length ? Math.min(...validPrices) : null;
       blocks.push(<div className={styles.chatTableWrap} key={"table-" + key++}><table className={styles.chatTable}>
-        <thead><tr>{headers.map((header, cellIndex) => <th key={cellIndex}>{chatInline(header)}</th>)}</tr></thead>
-        <tbody>{rows.map((row, rowIndex) => <tr key={rowIndex}>{headers.map((_, cellIndex) => <td key={cellIndex}>{chatInline(row[cellIndex] || "")}</td>)}</tr>)}</tbody>
+        <thead><tr>{headers.map((header, cellIndex) => <th key={cellIndex} className={/precio|sku|rango|promoción|descuento|%/i.test(header) ? styles.chatNumericHead : ""}>{chatInline(header)}</th>)}</tr></thead>
+        <tbody>{rows.map((row, rowIndex) => {
+          const rowPrice = priceColumn >= 0 ? chatNumericValue(row[priceColumn] || "") : Number.NaN;
+          const isLeader = bestPrice != null && Number.isFinite(rowPrice) && Math.abs(rowPrice - bestPrice) < 0.001;
+          return <tr key={rowIndex} className={isLeader ? styles.chatLeaderRow : ""}>{headers.map((header, cellIndex) => <td key={cellIndex} className={/precio|sku|rango|promoción|descuento|%/i.test(header) ? styles.chatNumericCell : ""}>
+            {chatInline(row[cellIndex] || "")}
+            {isLeader && cellIndex === chainColumn && <span className={styles.chatBestBadge}>MEJOR PRECIO</span>}
+          </td>)}</tr>;
+        })}</tbody>
       </table></div>);
       continue;
     }
@@ -152,7 +170,7 @@ function ChatMarkdown({ text }: { text: string }) {
         items.push((lines[index] || "").trim().replace(/^[-*+]\s+/, ""));
         index += 1;
       }
-      blocks.push(<ul key={"ul-" + key++}>{items.map((item, itemIndex) => <li key={itemIndex}>{chatInline(item)}</li>)}</ul>);
+      blocks.push(<ul key={"ul-" + key++}>{items.map((item, itemIndex) => <li key={itemIndex} className={/^advertencia\s*:/i.test(item.replace(/\*\*/g, "")) ? styles.chatWarningItem : ""}>{chatInline(item)}</li>)}</ul>);
       continue;
     }
 
