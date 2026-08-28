@@ -2,9 +2,10 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import styles from "./UnifiedPlatformApp.module.css";
+import UsageAnalyticsPanel from "./UsageAnalyticsPanel";
 
 type Numeric = number | string;
-type View = "overview" | "price-image" | "price-matching" | "competitive" | "optimizer" | "promotions" | "assortment" | "movements" | "basket" | "products" | "categories" | "retailers" | "downloads" | "alerts" | "scraping" | "settings";
+type View = "overview" | "price-image" | "price-matching" | "competitive" | "optimizer" | "promotions" | "assortment" | "movements" | "basket" | "products" | "categories" | "retailers" | "downloads" | "alerts" | "scraping" | "settings" | "usage";
 type RetailerType = "all" | "supermarket" | "department_store" | "pharmacy";
 type Filters = { retailerType: RetailerType; supermarket: string; category: string; brand: string; query: string; stock: "all" | "in" | "out"; period: number };
 type Summary = { total_products: Numeric; in_stock_products: Numeric; offers: Numeric; supermarkets: Numeric; average_price: Numeric; total_savings: Numeric; last_updated: string | null };
@@ -77,7 +78,10 @@ const COPY: Record<View, { title: string; description: string }> = {
   alerts: { title: "Alertas", description: "Prioriza alzas, bajas, brechas, quiebres y problemas de captura." },
   scraping: { title: "Scraping Status", description: "Controla la salud del pipeline, avance y actualización por retailer." },
   settings: { title: "Configuración", description: "Administra industria, preferencias visuales y comportamiento del dashboard." },
+  usage: { title: "Uso de la plataforma", description: "Revisa sesiones, tiempo activo, módulos utilizados, consultas IA y descargas por usuario y cliente." },
 };
+
+const ADMIN_MENU: MenuGroup = { label: "Administración", items: [{ view: "usage", label: "Uso de la plataforma", icon: "◎" }] };
 
 const DEFAULT_FILTERS: Filters = { retailerType: "all", supermarket: "", category: "", brand: "", query: "", stock: "all", period: 30 };
 const SERIES_COLORS = ["#2563eb", "#10b981", "#8b5cf6", "#f59e0b", "#06b6d4", "#ec4899", "#64748b", "#14b8a6"];
@@ -126,6 +130,7 @@ export default function UnifiedPlatformApp() {
   const [exportEnd, setExportEnd] = useState(dateInput(new Date()));
   const [exportJobs, setExportJobs] = useState<ExportJob[]>([]);
   const [generatingExport, setGeneratingExport] = useState(false);
+  const [isSaasAdmin, setIsSaasAdmin] = useState(false);
 
   const loadCore = useCallback(async (quiet = false) => {
     if (!quiet) setLoadingCore(true);
@@ -219,6 +224,23 @@ export default function UnifiedPlatformApp() {
       setCascadeOptions(null);
     }
   }, [filters.retailerType, filters.supermarket, filters.category, filters.brand]);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/enterprise/context", { cache: "no-store" })
+      .then(async (response) => response.ok ? response.json() as Promise<{ isSaasAdmin?: boolean }> : null)
+      .then((data) => {
+        if (!active) return;
+        const allowed = Boolean(data?.isSaasAdmin);
+        setIsSaasAdmin(allowed);
+        if (!allowed && window.location.hash === "#usage") {
+          setView("overview");
+          window.history.replaceState(null, "", "#overview");
+        }
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     const initial = window.location.hash.replace("#", "") as View;
@@ -352,14 +374,17 @@ export default function UnifiedPlatformApp() {
     }
   }
 
+  const visibleMenu = isSaasAdmin ? [...MENU, ADMIN_MENU] : MENU;
   const activeCopy = COPY[view];
-  const groupLabel = MENU.find((group) => group.items.some((item) => item.view === view))?.label ?? "MGP Intelligence";
+  const groupLabel = visibleMenu.find((group) => group.items.some((item) => item.view === view))?.label ?? "MGP Intelligence";
 
   const renderTrend = () => <div className={styles.trendWrap}>{trendChart.series.length ? <svg viewBox={`0 0 ${trendChart.width} ${trendChart.height}`} className={styles.trendSvg}>{[0, 1, 2, 3, 4].map((index) => { const value = trendChart.maximum - index * (trendChart.maximum - trendChart.minimum) / 4; const y = trendChart.y(value); return <g key={index}><line x1={trendChart.margin.left} x2={trendChart.width - trendChart.margin.right} y1={y} y2={y}/><text x={trendChart.margin.left - 10} y={y + 4}>{value.toFixed(0)}</text></g>; })}{trendChart.series.map((series) => <path key={series.id} d={trendChart.path(series.id)} stroke={series.color}/>)}{trendChart.dates.filter((_, index) => index === 0 || index === trendChart.dates.length - 1 || index % Math.max(1, Math.ceil(trendChart.dates.length / 6)) === 0).map((date) => { const index = trendChart.dates.indexOf(date); return <text key={date} className={styles.xLabel} x={trendChart.x(index)} y={trendChart.height - 12}>{new Intl.DateTimeFormat("es-CL", { day: "2-digit", month: "short" }).format(new Date(`${date}T12:00:00`)).replace(".", "")}</text>; })}</svg> : <Empty label="Selecciona series con datos para construir la tendencia."/>}<footer>{trendChart.series.map((series) => <span key={series.id}><i style={{ background: series.color }}/>{series.label}</span>)}</footer></div>;
 
   const renderProducts = (promotions: boolean) => <section className={styles.workspace}><Toolbar><strong>{promotions ? "Promociones activas" : "Catálogo de productos"}</strong><select value={productSort} onChange={(event) => setProductSort(event.target.value)}><option value="updated_desc">Más recientes</option><option value="price_asc">Menor precio</option><option value="price_desc">Mayor precio</option><option value="name_asc">Nombre A–Z</option></select><span>{number(products.total)} resultados</span></Toolbar><article className={styles.card}>{loadingProducts ? <Loading/> : !products.products.length ? <Empty label="No hay productos con los filtros seleccionados."/> : <div className={styles.tableWrap}><table><thead><tr><th>Producto</th><th>Cadena</th><th>Categoría</th><th>Precio</th>{promotions && <th>Ahorro</th>}<th>Stock</th><th>Actualización</th><th/></tr></thead><tbody>{products.products.map((product) => <tr key={product.id}><td><strong>{product.name}</strong><small>{product.brand || `SKU ${product.external_id}`}</small></td><td><span className={styles.storeBadge}>{product.supermarket}</span></td><td>{product.smart_category || product.category || "Sin categoría"}</td><td><strong>{money(productPrice(product))}</strong>{numeric(product.regular_price) > productPrice(product) && <del>{money(product.regular_price)}</del>}</td>{promotions && <td><b className={styles.discount}>-{numeric(product.discount_pct).toFixed(0)}%</b></td>}<td><span className={product.in_stock ? styles.inStock : styles.outStock}>{product.in_stock ? "Disponible" : "Sin stock"}</span></td><td>{displayDate(product.observed_at)}</td><td><a href={product.url} target="_blank" rel="noreferrer">↗</a></td></tr>)}</tbody></table></div>}</article><Pagination page={productPage} totalPages={products.totalPages} setPage={setProductPage}/></section>;
 
   const renderView = () => {
+    if (view === "usage") return isSaasAdmin ? <UsageAnalyticsPanel /> : <Empty label="Este módulo está disponible solo para administradores SaaS."/>;
+
     if (view === "overview") {
       const maxVariation = Math.max(2, ...(pulse?.data ?? []).map((item) => Math.abs(item.variationPct ?? 0)));
       return <><section className={styles.metrics}><Metric label="SKUs monitoreados" value={loadingCore ? "—" : number(summary?.total_products)} detail="Catálogo consolidado" tone="purple"/><Metric label="Retailers activos" value={loadingCore ? "—" : number(retailers.length)} detail="Fuentes visibles"/><Metric label="Observaciones del día" value={loadingCore ? "—" : number(trendChart.currentObservations)} detail="Actualización continua"/><Metric label="Variación ponderada" value={loadingCore ? "—" : percentage(weightedVariation)} detail="Mismos SKU vs. ayer" tone="green"/><Metric label="Matches detectados" value={loadingCore ? "—" : number(matches.total)} detail="Tres supermercados" tone="purple"/><Metric label="Cobertura de stock" value={loadingCore ? "—" : `${stockCoverage.toFixed(1)}%`} detail="SKU disponibles" tone="green"/></section><section className={styles.overviewGrid}><article className={`${styles.card} ${styles.variationCard}`}><CardHead title="Variación ponderada por cadena" subtitle="Mismos SKU contra el día anterior" action="Ver detalle" onAction={() => navigate("movements")}/><div className={styles.barChart}><div className={styles.barAxis}><span>+{maxVariation.toFixed(0)}%</span><span>0%</span><span>-{maxVariation.toFixed(0)}%</span></div><div className={styles.barGrid}><i/><i/><i/></div><div className={styles.barItems}>{retailers.map((retailer) => { const variation = pulseMap.get(retailer.supermarket.toLocaleLowerCase("es-CL"))?.variationPct ?? null; const height = variation === null ? 2 : Math.max(6, Math.abs(variation) / maxVariation * 46); return <div key={retailer.supermarket}><b>{variation === null ? "—" : percentage(variation)}</b><span><i className={variation === null ? styles.noBar : variation >= 0 ? styles.upBar : styles.downBar} style={{ height: `${height}%`, top: variation !== null && variation < 0 ? "50%" : `${50 - height}%` }}/></span><small>{retailer.supermarket.replace("Farmacias ", "")}</small></div>; })}</div></div></article><article className={`${styles.card} ${styles.matchSummary}`}><CardHead title="Price Matching" subtitle="Cobertura completa en tres cadenas" action="Abrir módulo" onAction={() => navigate("price-matching")}/><div className={styles.ringRow}><Ring value={compact(matches.total)} label="Matches" color="#2563eb"/><Ring value={`${Math.max(0, ...matches.matches.map((item) => numeric(item.savings_pct))).toFixed(0)}%`} label="Mayor ahorro" color="#10b981"/><Ring value={money(Math.max(0, ...matches.matches.map((item) => numeric(item.price_gap))))} label="Mayor brecha" color="#8b5cf6"/></div><div className={styles.miniTable}>{matches.matches.slice(0, 5).map((match) => <button key={match.match_key} onClick={() => navigate("price-matching")}><span><strong>{match.canonical_name}</strong><small>{match.canonical_brand || match.category || "Sin marca"}</small></span><b>{money(match.best_price)}</b><em>{money(match.price_gap)}</em></button>)}</div></article><aside className={styles.sideRail}><QuickAction title="Descarga de bases" copy="Exporta Excel o CSV con filtros." button="Configurar descarga" onClick={() => navigate("downloads")}/><QuickAction title="IA / Insights" copy="Prioriza brechas, alzas y oportunidades." button="Abrir Competitive AI" onClick={() => navigate("competitive")}/><article className={styles.card}><CardHead title="Estado del scraping" subtitle={`${crawlProgress.toFixed(0)}% del ciclo`}/><div className={styles.statusList}>{retailers.slice(0, 6).map((item) => <div key={item.supermarket}><span><i/>{item.supermarket}</span><b>Operativo</b><small>{displayDate(item.last_updated)}</small></div>)}</div></article></aside><article className={`${styles.card} ${styles.overviewTrend}`}><CardHead title="Evolución de precios promedio" subtitle="Índice base 100 por categoría y marca" action="Configurar series" onAction={() => navigate("movements")}/>{renderTrend()}</article></section></>;
@@ -435,12 +460,12 @@ export default function UnifiedPlatformApp() {
   return <div className={styles.app}>
     <aside className={`${styles.sidebar} ${mobileOpen ? styles.mobileOpen : ""}`}>
       <button className={styles.brand} onClick={() => navigate("overview")}><span className={styles.logo}><i/><i/><i/></span><span><strong>MGP Intelligence</strong><small>Commerce Decision Platform</small></span></button>
-      <nav className={styles.navigation}>{MENU.map((group) => <section key={group.label} className={styles.navGroup}><h3>{group.label}</h3>{group.items.map((item) => <button key={item.view} className={view === item.view ? styles.activeNav : ""} onClick={() => navigate(item.view)}><i>{item.icon}</i><span>{item.label}</span>{item.view === "alerts" && alerts.length > 0 && <b>{alerts.length}</b>}</button>)}</section>)}</nav>
+      <nav className={styles.navigation}>{visibleMenu.map((group) => <section key={group.label} className={styles.navGroup}><h3>{group.label}</h3>{group.items.map((item) => <button key={item.view} className={view === item.view ? styles.activeNav : ""} onClick={() => navigate(item.view)}><i>{item.icon}</i><span>{item.label}</span>{item.view === "alerts" && alerts.length > 0 && <b>{alerts.length}</b>}</button>)}</section>)}</nav>
       <div className={styles.account}><div><span>MG</span><div><strong>MGP Team</strong><small>Administrador</small></div></div><hr/><small>Plan Enterprise</small><p>{number(summary?.total_products)} SKU monitoreados</p><div><i style={{ width: `${Math.min(100, stockCoverage)}%` }}/></div><strong><em/> Pipeline operativo</strong></div>
     </aside>
 
     <main className={styles.main}>
-      <header className={styles.topbar}><button className={styles.menuButton} onClick={() => setMobileOpen((current) => !current)}>☰</button><div className={styles.pageTitle}><span>{groupLabel}</span><h1>{activeCopy.title}</h1><p>{activeCopy.description}</p></div><label className={styles.search}><span>⌕</span><input value={filters.query} onChange={(event) => updateFilter("query", event.target.value)} placeholder="Buscar productos, marcas o categorías…"/></label><button className={styles.headerControl}><span>▣</span> Últimos {filters.period} días</button><button className={styles.headerControl}><span>▱</span> {filterOptions?.industrySlug || "Todas las industrias"}</button></header>
+      <header className={styles.topbar}><button className={styles.menuButton} onClick={() => setMobileOpen((current) => !current)}>☰</button><div className={styles.pageTitle}><span>{groupLabel}</span><h1>{activeCopy.title}</h1><p>{activeCopy.description}</p></div>{view !== "usage" && <><label className={styles.search}><span>⌕</span><input value={filters.query} onChange={(event) => updateFilter("query", event.target.value)} placeholder="Buscar productos, marcas o categorías…"/></label><button className={styles.headerControl}><span>▣</span> Últimos {filters.period} días</button><button className={styles.headerControl}><span>▱</span> {filterOptions?.industrySlug || "Todas las industrias"}</button></>}</header>
       {notice && <div className={styles.notice}>{notice}<button onClick={() => setNotice("")}>×</button></div>}
       <section className={styles.filters}><div className={styles.typeFilter}><span>Tipo de retailer</span><div>{(["all", "supermarket", "department_store", "pharmacy"] as RetailerType[]).map((type) => <button key={type} className={filters.retailerType === type ? styles.selected : ""} onClick={() => updateFilter("retailerType", type)}>{type === "all" ? "Todos" : type === "supermarket" ? "Supermercados" : type === "department_store" ? "Multitiendas" : "Farmacias"}</button>)}</div></div><label><span>Cadena</span><select value={filters.supermarket} onChange={(event) => updateFilter("supermarket", event.target.value)}><option value="">Todas</option>{chainFilterOptions.map((item) => <option key={item.value} value={item.value}>{item.value} ({number(item.products)})</option>)}</select></label><label><span>Categoría</span><select value={filters.category} onChange={(event) => updateFilter("category", event.target.value)}><option value="">Todas</option>{categoryFilterOptions.map((item) => <option key={item.value} value={item.value}>{item.value} ({number(item.products)})</option>)}</select></label><label><span>Marca</span><select value={filters.brand} onChange={(event) => updateFilter("brand", event.target.value)}><option value="">Todas</option>{brandFilterOptions.map((item) => <option key={item.value} value={item.value}>{item.value} ({number(item.products)})</option>)}</select></label><label><span>Stock</span><select value={filters.stock} onChange={(event) => updateFilter("stock", event.target.value as Filters["stock"])}><option value="all">Todo</option><option value="in" disabled={cascadeOptions ? cascadeOptions.stock.in <= 0 : false}>Disponible{cascadeOptions ? ` (${number(cascadeOptions.stock.in)})` : ""}</option><option value="out" disabled={cascadeOptions ? cascadeOptions.stock.out <= 0 : false}>Sin stock{cascadeOptions ? ` (${number(cascadeOptions.stock.out)})` : ""}</option></select></label><label><span>Período</span><select value={filters.period} onChange={(event) => updateFilter("period", Number(event.target.value))}><option value={7}>7 días</option><option value={30}>30 días</option><option value={90}>90 días</option></select></label><button className={styles.clear} onClick={clearFilters}>⌫ Limpiar</button></section>
       {renderView()}
