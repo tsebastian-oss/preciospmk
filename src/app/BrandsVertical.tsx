@@ -139,6 +139,7 @@ type Payload = {
 type Tab = "overview" | "competition" | "products" | "retailers" | "listings";
 
 const BRAND_OPTIONS = [
+  { slug: "piwen", name: "Piwén", detail: "Frutos secos · Pricing demo" },
   { slug: "krispy-kreme", name: "Krispy Kreme", detail: "vs Dunkin · QSR" },
   { slug: "little-caesars", name: "Little Caesars", detail: "vs Papa Johns · QSR" },
   { slug: "victorinox", name: "Victorinox", detail: "Retail intelligence" },
@@ -225,8 +226,8 @@ function PriceHistoryChart({ history, category, subjectBrand, competitorBrand }:
   </div>;
 }
 
-export default function BrandsVertical() {
-  const [selectedBrand, setSelectedBrand] = useState("krispy-kreme");
+export default function BrandsVertical({ initialBrand = "krispy-kreme" }: { initialBrand?: string }) {
+  const [selectedBrand, setSelectedBrand] = useState(initialBrand);
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -234,6 +235,10 @@ export default function BrandsVertical() {
   const [query, setQuery] = useState("");
   const [source, setSource] = useState("");
   const [historyCategory, setHistoryCategory] = useState("");
+
+  useEffect(() => {
+    setSelectedBrand(initialBrand);
+  }, [initialBrand]);
 
   useEffect(() => {
     let active = true;
