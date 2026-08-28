@@ -28,5 +28,6 @@ export default function EnterpriseAdminQuickLinks() {
       <a href="/admin/ai" style={linkStyle}>IA ADMIN</a>
       <a href="/admin/notifications" style={linkStyle}>EMAIL ADMIN</a>
     </div>
+    <a href="/admin/usage" style={{ ...linkStyle, color: "#93c5fd", borderColor: "rgba(59,130,246,.3)", background: "rgba(59,130,246,.08)" }}>USO / ANALYTICS</a>
   </div>, target);
 }

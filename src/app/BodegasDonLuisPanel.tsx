@@ -2,6 +2,7 @@
 
 import { Fragment, FormEvent, useEffect, useMemo, useState } from "react";
 import styles from "./BodegasDonLuisPanel.module.css";
+import { trackUsageEvent } from "@/lib/usage-client";
 
 type BdlPayload = {
   currency?: string;
@@ -370,6 +371,7 @@ function ChatView() {
     setInput("");
     setLoading(true);
     setError("");
+    trackUsageEvent("chat_submit", { module: "bodegas-don-luis-chat", metadata: { existingConversation: Boolean(conversationId) } });
     try {
       const response = await fetch("/api/brands/bodegas-don-luis/chat", {
         method: "POST",
@@ -517,7 +519,7 @@ export default function BodegasDonLuisPanel({ payload, locked = false }: { paylo
       </div>
     </header>
 
-    <nav className={styles.tabs}>{nav.map(([key,label]) => <button key={key} className={tab === key ? styles.activeTab : ""} onClick={() => setTab(key)}>{label}</button>)}</nav>
+    <nav className={styles.tabs}>{nav.map(([key,label]) => <button key={key} data-usage-action="module_view" data-usage-module={"bodegas-don-luis-" + key} className={tab === key ? styles.activeTab : ""} onClick={() => setTab(key)}>{label}</button>)}</nav>
 
     {tab === "overview" && <div className={styles.stack}>
       <section className={styles.kpis}>
@@ -545,7 +547,7 @@ export default function BodegasDonLuisPanel({ payload, locked = false }: { paylo
       </section>
 
       <section className={styles.panel}>
-        <div className={styles.panelTitle}><div><span>COBERTURA</span><h2>Estado del monitoreo por cadena</h2></div><button onClick={() => setTab("chains")}>Ver matriz →</button></div>
+        <div className={styles.panelTitle}><div><span>COBERTURA</span><h2>Estado del monitoreo por cadena</h2></div><button data-usage-action="module_view" data-usage-module="bodegas-don-luis-chains" onClick={() => setTab("chains")}>Ver matriz →</button></div>
         {matrixError ? <div className={styles.error}>{matrixError}</div> : <div className={styles.retailerRows}>
           {(matrix?.retailers || payload.sources.map(source => ({ name: source.retailer_name, domain: source.domain, skuCount: source.listings, observedAt: source.last_crawled_at || "" }))).map(retailer => <div key={retailer.name}>
             <div><strong>{retailer.name}</strong><span>{retailer.domain}</span></div>
@@ -583,12 +585,12 @@ export default function BodegasDonLuisPanel({ payload, locked = false }: { paylo
     {tab === "downloads" && <div className={styles.stack}>
       <section className={styles.downloadHero}>
         <div><span>DATA EXPORT</span><h2>Descarga la base censada en Excel</h2><p>Incluye cadena, categoría, marca, producto, SKU fuente, precio actual y regular, descuento, stock, formato, precio por litro, URL y timestamp.</p></div>
-        <a href="/api/brands/bodegas-don-luis/export">Descargar base completa ↓</a>
+        <a data-usage-action="download" data-usage-module="bodegas-don-luis-downloads" data-usage-label="Base completa" href="/api/brands/bodegas-don-luis/export">Descargar base completa ↓</a>
       </section>
       <section className={styles.downloadGrid}>
         {CATEGORIES.map(category => {
           const count = categoryTotals.find(item => item.category === category)?.sku || 0;
-          return <article key={category}><span>EXCEL · {category.toUpperCase()}</span><h3>Base de {category}</h3><strong>{matrixLoading ? "…" : number(count)} <small>SKU-cadena</small></strong><p>Último precio vigente por producto y cadena.</p><a href={"/api/brands/bodegas-don-luis/export?category=" + encodeURIComponent(category)}>Descargar {category} ↓</a></article>;
+          return <article key={category}><span>EXCEL · {category.toUpperCase()}</span><h3>Base de {category}</h3><strong>{matrixLoading ? "…" : number(count)} <small>SKU-cadena</small></strong><p>Último precio vigente por producto y cadena.</p><a data-usage-action="download" data-usage-module="bodegas-don-luis-downloads" data-usage-label={"Base " + category} href={"/api/brands/bodegas-don-luis/export?category=" + encodeURIComponent(category)}>Descargar {category} ↓</a></article>;
         })}
       </section>
     </div>}
