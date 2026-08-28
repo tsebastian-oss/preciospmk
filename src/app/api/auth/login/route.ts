@@ -5,6 +5,7 @@ const DEFAULT_PUBLISHABLE_KEY = "sb_publishable_4FrGlw8owGm5EtwMs9V5zQ_oBrH0c0-"
 
 const USERNAME_EMAIL_MAP: Record<string, string> = {
   mazokin13: "mazokin13@mgp-retail.internal",
+  bodegasdonluis: "m.echave@bodegasdonluis.pe",
 };
 
 export async function POST(request: NextRequest) {
