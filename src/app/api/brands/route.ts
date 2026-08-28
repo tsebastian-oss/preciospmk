@@ -108,6 +108,22 @@ export async function GET(request: NextRequest) {
   }
 
   if (slug === "bodegas-don-luis") {
+    try {
+      const payloadResult = await enterpriseRpc<Record<string, unknown>>(request, "brands_vertical_payload_base", { p_slug: slug });
+      const snapshotResult = await enterpriseRpc<Record<string, unknown>>(request, "brands_peru_liquor_snapshot", { p_slug: slug });
+      const payload = payloadResult.response ? null : payloadResult.data;
+      const live = snapshotResult.response ? null : snapshotResult.data;
+
+      if (payload && payload.brand) {
+        return NextResponse.json(
+          { ...BODEGAS_DON_LUIS_PAYLOAD, ...payload, currency: "PEN", live: live ?? BODEGAS_DON_LUIS_PAYLOAD.live },
+          { headers: { "cache-control": "private, max-age=15, stale-while-revalidate=60" } },
+        );
+      }
+    } catch (error) {
+      console.error("bodegas-don-luis-live-payload", error);
+    }
+
     return NextResponse.json(BODEGAS_DON_LUIS_PAYLOAD, { headers: { "cache-control": "private, max-age=60" } });
   }
 
