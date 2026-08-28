@@ -575,9 +575,9 @@ export default function BrandsVertical({ initialBrand = "krispy-kreme" }: { init
       {history && activeHistoryCategory && <article className={`${styles.panel} ${styles.historyPanel}`}>
         <div className={styles.historyHeader}>
           <div>
-            <div className={styles.badgeRow}><span className={styles.officialBadge}>HISTÓRICO OFICIAL</span><span className={styles.historyWindow}>Últimos {history.days} días</span></div>
-            <h2>Evolución de precios por categoría</h2>
-            <p>El gráfico usa sólo observaciones guardadas desde los sitios oficiales. No mezcla precios de Rappi, Uber Eats ni locales spot.</p>
+            <div className={styles.badgeRow}><span className={styles.officialBadge}>{history.policy === "public-demo" ? "HISTÓRICO DEMO" : "HISTÓRICO OFICIAL"}</span><span className={styles.historyWindow}>Últimos {history.days} días</span></div>
+            <h2>{selectedBrand === "piwen" ? "Historial de precios vs competencia" : "Evolución de precios por categoría"}</h2>
+            <p>{history.policy === "public-demo" ? "Serie demostrativa construida para visualizar cómo Super Precios seguirá la evolución de Piwén frente al benchmark. Al conectar capturas diarias, este mismo gráfico se alimenta con observaciones reales." : "El gráfico usa sólo observaciones guardadas desde los sitios oficiales. No mezcla precios de Rappi, Uber Eats ni locales spot."}</p>
           </div>
           <label>
             <span>Categoría</span>
