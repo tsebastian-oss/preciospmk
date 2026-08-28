@@ -235,20 +235,21 @@ async function runAgent(request: NextRequest, messages: Message[]) {
 
   for (let round=0; round<4; round++) {
     const response = await openAi(input,true);
-    const calls = (response.output ?? []).filter(item => item?.type === "function_call").slice(0,4);
+    const calls = (response.output ?? []).filter(item => item?.type === "function_call");
     if (!calls.length) {
       const answer = outputText(response);
       if (!answer) throw new Error(response.incomplete_details?.reason || "El asistente no generó una respuesta.");
       return { answer, model:response.model || OPENAI_MODEL, toolsUsed:[...new Set(used)] };
     }
 
-    const outputs: any[] = [];
-    for (const call of calls) {
+    const outputs = await Promise.all(calls.map(async (call, index) => {
       const name = String(call?.name || "");
       used.push(name);
-      const data = await executeTool(request,name,safeArgs(call?.arguments));
-      outputs.push({ type:"function_call_output", call_id:String(call?.call_id || ""), output:compact(data) });
-    }
+      const data = index < 12
+        ? await executeTool(request,name,safeArgs(call?.arguments))
+        : { error:"tool_call_limit_exceeded" };
+      return { type:"function_call_output", call_id:String(call?.call_id || ""), output:compact(data) };
+    }));
     input = [...input, ...(response.output ?? []), ...outputs];
   }
 
