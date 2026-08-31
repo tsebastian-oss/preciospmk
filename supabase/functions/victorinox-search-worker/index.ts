@@ -37,13 +37,13 @@ Busca exhaustivamente en MercadoLibre Chile publicaciones actuales de productos 
  const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(`openai_${r.status}:${j?.error?.message||""}`);
  const text=outputText(j);if(!text)return[];const rows=JSON.parse(text)?.listings??[];
  return rows.filter((x:any)=>x&&typeof x.title==="string"&&validUrl(mode,String(x.product_url||""))).map((x:any)=>({
-  title:String(x.title).slice(0,500),product_url:String(x.product_url),
+  title:cleanText(String(x.title)).slice(0,500),product_url:cleanText(String(x.product_url)),
   current_price:Number(x.current_price)>0?Number(x.current_price):null,
   regular_price:Number(x.regular_price)>0?Number(x.regular_price):null,
   in_stock:typeof x.in_stock==="boolean"?x.in_stock:null,
-  seller_name:typeof x.seller_name==="string"?x.seller_name.slice(0,160):null,
+  seller_name:typeof x.seller_name==="string"?cleanText(x.seller_name).slice(0,160):null,
   category:category(String(x.title),String(x.category||"")),
-  source_freshness:typeof x.source_freshness==="string"?x.source_freshness.slice(0,80):null
+  source_freshness:typeof x.source_freshness==="string"?cleanText(x.source_freshness).slice(0,80):null
  }));
 }
 async function getSource(brandId:string,mode:"official"|"marketplace"){const domain=mode==="official"?"victorinoxstore.cl":"mercadolibre.cl";const retailer=mode==="official"?"Victorinox Store Chile":"Mercado Libre";const type=mode==="official"?"official":"marketplace";const{data,error}=await supabase.from("brands_vertical_sources").select("id").eq("brand_id",brandId).eq("domain",domain).maybeSingle();if(error)throw error;if(data?.id){await supabase.from("brands_vertical_sources").update({retailer_name:retailer,source_type:type,active:true}).eq("id",data.id);return data.id as string;}const ins=await supabase.from("brands_vertical_sources").insert({brand_id:brandId,retailer_name:retailer,domain,source_type:type,search_url:mode==="official"?"https://www.victorinoxstore.cl/":"https://listado.mercadolibre.cl/victorinox",priority:mode==="official"?130:115,active:true}).select("id").single();if(ins.error)throw ins.error;return ins.data.id as string;}
