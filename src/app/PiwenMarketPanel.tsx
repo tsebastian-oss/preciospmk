@@ -48,6 +48,41 @@ type Position = {
   marketBrands: number;
 };
 
+type MarketplaceListing = {
+  id: string;
+  retailer: string;
+  brand: string;
+  role?: string;
+  name: string;
+  family: string;
+  grams: number | null;
+  format: string;
+  currentPrice: number | null;
+  regularPrice: number | null;
+  pricePerKg: number | null;
+  promotionPct: number | null;
+  inStock: boolean | null;
+  seller?: string | null;
+  observedAt: string | null;
+  url: string;
+  verification?: string;
+  sourceFreshness?: string | null;
+};
+
+type MarketplaceSnapshot = {
+  status: string;
+  source: string;
+  domain: string;
+  lastCrawledAt: string | null;
+  lastStatus: string | null;
+  observedAt: string | null;
+  products: number;
+  pricedProducts: number;
+  inStockProducts: number;
+  brands: number;
+  listings: MarketplaceListing[];
+};
+
 type Payload = {
   source: "clickhouse";
   generatedAt: string;
@@ -62,10 +97,11 @@ type Payload = {
   listings: Listing[];
   insights: string[];
   note: string;
+  marketplace?: MarketplaceSnapshot | null;
   error?: string;
 };
 
-type Tab = "overview" | "brands" | "products" | "formats" | "detail" | "downloads";
+type Tab = "overview" | "brands" | "products" | "formats" | "detail" | "marketplace" | "downloads";
 
 const money = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
 const number = new Intl.NumberFormat("es-CL");
@@ -202,6 +238,7 @@ export default function PiwenMarketPanel() {
         ["products","Por producto"],
         ["formats","Por formato"],
         ["detail","Detalle SKU"],
+        ["marketplace","MercadoLibre"],
         ["downloads","Descargas"],
       ] as [Tab,string][]).map(([key,label]) => <button key={key} className={tab===key?styles.active:""} onClick={()=>{setTab(key);trackUsageEvent("tab_view",{module:"piwen-market",metadata:{tab:key}})}}>{label}</button>)}
     </nav>
@@ -235,7 +272,7 @@ export default function PiwenMarketPanel() {
       </section>
     </>}
 
-    {tab !== "overview" && tab !== "downloads" && <section className={styles.filters}>
+    {tab !== "overview" && tab !== "downloads" && tab !== "marketplace" && <section className={styles.filters}>
       <label><span>Familia</span><select value={family} onChange={e=>setFamily(e.target.value)}><option value="">Todas</option>{payload.scope.families.map(x=><option key={x}>{x}</option>)}</select></label>
       {(tab === "brands" || tab === "detail") && <label><span>Marca</span><select value={brand} onChange={e=>setBrand(e.target.value)}><option value="">Todas</option>{brandOptions.map(x=><option key={x}>{x}</option>)}</select></label>}
       {tab === "detail" && <label><span>Retailer</span><select value={retailer} onChange={e=>setRetailer(e.target.value)}><option value="">Todos</option>{payload.scope.retailers.map(x=><option key={x}>{x}</option>)}</select></label>}
@@ -246,6 +283,31 @@ export default function PiwenMarketPanel() {
     {tab === "brands" && <section className={styles.panel}><div className={styles.panelTitle}><div><span>MARCA</span><h2>Competencia resumida por marca</h2><p>Surtido, cobertura, promoción y nivel de precio por kilo.</p></div></div><RowTable rows={visibleBrandRows} dimension="Marca"/></section>}
     {tab === "products" && <section className={styles.panel}><div className={styles.panelTitle}><div><span>PRODUCTO</span><h2>Mercado resumido por familia</h2><p>Almendras, castañas de cajú, pistachos, nueces, maní, mixes y categorías adyacentes.</p></div></div><RowTable rows={(payload.byProduct??[]).filter(x=>!family||x.key===family)} dimension="Producto"/></section>}
     {tab === "formats" && <section className={styles.panel}><div className={styles.panelTitle}><div><span>FORMATO</span><h2>Arquitectura de packs</h2><p>Permite comparar cómo cambia el $/kg entre gramajes y detectar escalones de precio incoherentes.</p></div></div><RowTable rows={(payload.byFormat??[]).filter(x=>!family||x.key.startsWith(family+" · "))} dimension="Formato"/></section>}
+
+    {tab === "marketplace" && <section className={styles.panel}>
+      <div className={styles.panelTitle}>
+        <div><span>MARKETPLACE · MERCADOLIBRE CHILE</span><h2>Piwén, Alto La Cruz y Millantú</h2><p>Publicaciones detectadas en MercadoLibre, separadas del censo de supermercados para no mezclar canales.</p></div>
+        <div className={styles.liveBox}>
+          <span><i/> MARKETPLACE</span>
+          <strong>{payload.marketplace ? `${number.format(payload.marketplace.products)} publicaciones · ${number.format(payload.marketplace.pricedProducts)} con precio` : "Sin snapshot"}</strong>
+          <small>Última captura {date(payload.marketplace?.lastCrawledAt)}</small>
+        </div>
+      </div>
+      {!payload.marketplace?.listings?.length ? <div className={styles.empty}>No hay publicaciones de MercadoLibre cargadas.</div> : <div className={styles.tableWrap}><table className={styles.table}>
+        <thead><tr><th>Producto</th><th>Marca</th><th>Formato</th><th>Precio</th><th>$/kg</th><th>Stock</th><th>Seller</th><th>Observado</th></tr></thead>
+        <tbody>{payload.marketplace.listings.map(row => <tr key={row.id+"-"+row.brand}>
+          <td><a href={row.url} target="_blank" rel="noreferrer"><strong>{row.name}</strong></a><small>{row.family}{row.sourceFreshness ? " · evidencia "+row.sourceFreshness : ""}</small></td>
+          <td><strong>{row.brand}</strong></td>
+          <td>{row.format}</td>
+          <td><strong>{clp(row.currentPrice)}</strong>{row.regularPrice && row.currentPrice && row.regularPrice>row.currentPrice ? <small>Ref. {clp(row.regularPrice)}</small> : null}</td>
+          <td>{clp(row.pricePerKg)}</td>
+          <td>{row.inStock === true ? "Disponible" : row.inStock === false ? "No disponible" : "Sin confirmar"}</td>
+          <td>{row.seller || "—"}</td>
+          <td>{date(row.observedAt)}</td>
+        </tr>)}</tbody>
+      </table></div>}
+      <div className={styles.note}>MercadoLibre se monitorea como canal marketplace independiente. Cuando una publicación está fuera de stock, se conserva en la base para mantener trazabilidad histórica.</div>
+    </section>}
 
     {tab === "downloads" && <PiwenDownloads/>}
 
