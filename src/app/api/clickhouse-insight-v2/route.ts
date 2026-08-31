@@ -2,10 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { enterpriseAccess } from "@/lib/enterprise-auth";
 import { clickHouseConfigured } from "@/lib/clickhouse";
 import { clickHouseInsight } from "@/lib/clickhouse-insights";
-import { clickHouseInsightV2, insightV2BrandOptions, type InsightV2Mode } from "@/lib/clickhouse-insights-v2";
-import { fullHistoryProductOptions } from "@/lib/clickhouse-full-history-products";
+import {
+  clickHouseInsightV2,
+  insightV2BrandOptions,
+  insightV2ProductOptions,
+  type InsightV2Mode,
+} from "@/lib/clickhouse-insights-v2";
 import { fullHistoryEvolution } from "@/lib/clickhouse-full-history-evolution";
-import { fullHistoryAlerts } from "@/lib/clickhouse-full-history-alerts";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -41,13 +44,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         {
           source: "clickhouse",
-          products: await fullHistoryProductOptions(
+          products: await insightV2ProductOptions(
             authorization.access,
             params.get("brand") ?? "",
             days(params.get("days")),
           ),
         },
-        { headers: { "cache-control": "private, max-age=60, stale-while-revalidate=180" } },
+        { headers: { "cache-control": "private, max-age=120, stale-while-revalidate=300" } },
       );
     }
 
@@ -58,7 +61,10 @@ export async function GET(request: NextRequest) {
       days: days(params.get("days")),
     };
 
-    if (mode === "price-evolution") {
+    // The aggregated evolution view uses the compact daily table so opening
+    // the screen does not scan the full raw observation history. Only an
+    // explicitly selected SKU needs the raw history path.
+    if (mode === "price-evolution" && filters.productId) {
       return NextResponse.json(
         {
           source: "clickhouse",
@@ -66,19 +72,7 @@ export async function GET(request: NextRequest) {
           generatedAt: new Date().toISOString(),
           ...await fullHistoryEvolution(authorization.access, filters),
         },
-        { headers: { "cache-control": "private, max-age=20, stale-while-revalidate=90" } },
-      );
-    }
-
-    if (mode === "price-alerts") {
-      return NextResponse.json(
-        {
-          source: "clickhouse",
-          mode,
-          generatedAt: new Date().toISOString(),
-          ...await fullHistoryAlerts(authorization.access, filters),
-        },
-        { headers: { "cache-control": "private, max-age=20, stale-while-revalidate=90" } },
+        { headers: { "cache-control": "private, max-age=30, stale-while-revalidate=120" } },
       );
     }
 
@@ -90,7 +84,7 @@ export async function GET(request: NextRequest) {
           page: Number(params.get("page") ?? 1),
           pageSize: Number(params.get("pageSize") ?? 60),
         }),
-        { headers: { "cache-control": "private, max-age=20, stale-while-revalidate=90" } },
+        { headers: { "cache-control": "private, max-age=30, stale-while-revalidate=120" } },
       );
     }
 
@@ -101,7 +95,7 @@ export async function GET(request: NextRequest) {
         product: null,
         days: days(params.get("days")),
       }),
-      { headers: { "cache-control": "private, max-age=30, stale-while-revalidate=120" } },
+      { headers: { "cache-control": "private, max-age=60, stale-while-revalidate=180" } },
     );
   } catch (error) {
     console.error("clickhouse-insight-v2", error);
