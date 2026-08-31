@@ -150,6 +150,57 @@ function percentileIndex(subject: number | null, market: number | null) {
   return rounded(subject / market * 100, 1);
 }
 
+export function piwenMarketFallback() {
+  const subject: PiwenMarketListing[] = SUBJECT.map(row => ({
+    ...row,
+    format: row.grams >= 1000 && row.grams % 1000 === 0 ? `${row.grams / 1000} kg` : `${row.grams} g`,
+    regularPrice: row.regularPrice,
+    pricePerKg: rounded(row.currentPrice * 1000 / row.grams),
+    promotionPct: null,
+    inStock: true,
+  }));
+
+  return {
+    source: "clickhouse" as const,
+    generatedAt: new Date().toISOString(),
+    lastObservedAt: subject.map(row => row.observedAt).filter((value): value is string => Boolean(value)).sort().at(-1) ?? null,
+    scope: {
+      market: "Chile",
+      retailers: ["Piwén.cl"],
+      families: [...new Set(subject.map(row => row.family))].sort(),
+    },
+    kpis: {
+      competitorBrands: 0,
+      marketSkus: 0,
+      retailers: 1,
+      families: new Set(subject.map(row => row.family)).size,
+      formats: new Set(subject.map(row => row.format)).size,
+      promotedSkus: 0,
+    },
+    subject,
+    piwenPosition: subject.map(item => ({
+      family: item.family,
+      product: item.name,
+      format: item.format,
+      piwenPrice: item.currentPrice,
+      piwenPricePerKg: item.pricePerKg,
+      marketMedianPerKg: null,
+      priceIndex: null,
+      marketSkuCount: 0,
+      marketBrands: 0,
+    })),
+    byBrand: [] as PiwenSummaryRow[],
+    byProduct: [] as PiwenSummaryRow[],
+    byFormat: [] as PiwenSummaryRow[],
+    listings: [] as PiwenMarketListing[],
+    insights: [
+      "La conexión al histórico competitivo está tardando más de lo normal. Se muestran temporalmente las referencias propias de Piwén mientras el mercado se actualiza.",
+    ],
+    note: "Modo de continuidad: el panel permanece disponible aunque ClickHouse esté lento. Reintenta en unos segundos para completar el mercado competitivo.",
+    degraded: true,
+  };
+}
+
 export async function piwenMarketIntelligence(_access: EnterpriseAccessContext) {
   const rows = await clickHouseQuery<RawRow>(`
     SELECT
