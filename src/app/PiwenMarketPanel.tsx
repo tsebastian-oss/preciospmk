@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import styles from "./PiwenMarketPanel.module.css";
 import { trackUsageEvent } from "@/lib/usage-client";
+import PiwenHistoryCharts from "./PiwenHistoryCharts";
+import PiwenDownloads from "./PiwenDownloads";
 
 type SummaryRow = {
   key: string;
@@ -63,7 +65,7 @@ type Payload = {
   error?: string;
 };
 
-type Tab = "overview" | "brands" | "products" | "formats" | "detail";
+type Tab = "overview" | "brands" | "products" | "formats" | "detail" | "downloads";
 
 const money = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
 const number = new Intl.NumberFormat("es-CL");
@@ -200,6 +202,7 @@ export default function PiwenMarketPanel() {
         ["products","Por producto"],
         ["formats","Por formato"],
         ["detail","Detalle SKU"],
+        ["downloads","Descargas"],
       ] as [Tab,string][]).map(([key,label]) => <button key={key} className={tab===key?styles.active:""} onClick={()=>{setTab(key);trackUsageEvent("tab_view",{module:"piwen-market",metadata:{tab:key}})}}>{label}</button>)}
     </nav>
 
@@ -224,13 +227,15 @@ export default function PiwenMarketPanel() {
         </article>
       </section>
 
+<PiwenHistoryCharts/>
+
       <section className={styles.panel}>
         <div className={styles.panelTitle}><div><span>TOP COMPETIDORES</span><h2>Marcas con mayor surtido observable</h2><p>Ordenadas por cantidad de SKU comparables.</p></div></div>
         <RowTable rows={payload.byBrand.slice(0,15)} dimension="Marca"/>
       </section>
     </>}
 
-    {tab !== "overview" && <section className={styles.filters}>
+    {tab !== "overview" && tab !== "downloads" && <section className={styles.filters}>
       <label><span>Familia</span><select value={family} onChange={e=>setFamily(e.target.value)}><option value="">Todas</option>{payload.scope.families.map(x=><option key={x}>{x}</option>)}</select></label>
       {(tab === "brands" || tab === "detail") && <label><span>Marca</span><select value={brand} onChange={e=>setBrand(e.target.value)}><option value="">Todas</option>{brandOptions.map(x=><option key={x}>{x}</option>)}</select></label>}
       {tab === "detail" && <label><span>Retailer</span><select value={retailer} onChange={e=>setRetailer(e.target.value)}><option value="">Todos</option>{payload.scope.retailers.map(x=><option key={x}>{x}</option>)}</select></label>}
@@ -241,6 +246,8 @@ export default function PiwenMarketPanel() {
     {tab === "brands" && <section className={styles.panel}><div className={styles.panelTitle}><div><span>MARCA</span><h2>Competencia resumida por marca</h2><p>Surtido, cobertura, promoción y nivel de precio por kilo.</p></div></div><RowTable rows={visibleBrandRows} dimension="Marca"/></section>}
     {tab === "products" && <section className={styles.panel}><div className={styles.panelTitle}><div><span>PRODUCTO</span><h2>Mercado resumido por familia</h2><p>Almendras, castañas de cajú, pistachos, nueces, maní, mixes y categorías adyacentes.</p></div></div><RowTable rows={(payload.byProduct??[]).filter(x=>!family||x.key===family)} dimension="Producto"/></section>}
     {tab === "formats" && <section className={styles.panel}><div className={styles.panelTitle}><div><span>FORMATO</span><h2>Arquitectura de packs</h2><p>Permite comparar cómo cambia el $/kg entre gramajes y detectar escalones de precio incoherentes.</p></div></div><RowTable rows={(payload.byFormat??[]).filter(x=>!family||x.key.startsWith(family+" · "))} dimension="Formato"/></section>}
+
+    {tab === "downloads" && <PiwenDownloads/>}
 
     {tab === "detail" && <section className={styles.panel}>
       <div className={styles.panelTitle}><div><span>EVIDENCIA</span><h2>Detalle competitivo por SKU</h2><p>{visibleListings.length} productos visibles con precio normalizado.</p></div></div>
