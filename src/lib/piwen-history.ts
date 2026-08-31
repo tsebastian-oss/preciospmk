@@ -163,7 +163,7 @@ export async function piwenHistoryIntelligence(_access: EnterpriseAccessContext)
     pricePerKg: round(median(bucket.prices) ?? 0),
     skuCount: bucket.products.size,
     retailers: bucket.retailers.size,
-    source: "market_census",
+    source: "market_census" as const,
   })).filter((point) => point.pricePerKg > 0);
 
   const points = [...PIWEN_REFERENCE, ...marketPoints].sort((a, b) =>
