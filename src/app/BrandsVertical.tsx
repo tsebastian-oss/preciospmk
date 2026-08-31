@@ -686,12 +686,13 @@ export default function BrandsVertical({ initialBrand = "krispy-kreme", locked =
     return (payload?.products || []).filter(item => !q || `${item.name} ${item.sku || ""} ${item.ean || ""} ${item.category || ""}`.toLowerCase().includes(q));
   }, [payload, query]);
 
+  // Dedicated client panels own their data loading. Do not block them behind
+  // the legacy generic Brands/ClickHouse request.
+  if (selectedBrand === "piwen") return <PiwenMarketPanel/>;
+  if (selectedBrand === "victorinox") return <VictorinoxMarketPanel/>;
+
   if (loading) return <section className={styles.shell}><div className={styles.state}>Actualizando inteligencia competitiva…</div></section>;
   if (error || !payload) return <section className={styles.shell}><div className={styles.error}>{error || "Brands no está disponible."}</div></section>;
-
-  if (selectedBrand === "piwen") return <PiwenMarketPanel/>;
-
-  if (selectedBrand === "victorinox") return <VictorinoxMarketPanel/>;
 
   if (selectedBrand === "bodegas-don-luis") return <BodegasDonLuisPanel payload={payload} locked={locked}/>;
 
