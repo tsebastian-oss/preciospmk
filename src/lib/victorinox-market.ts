@@ -55,33 +55,36 @@ function categoryFor(brand: string, text: string) {
   const b = normalize(brand);
   const t = normalize(text);
 
+  const watchAccessory = /correa|pulsera|strap|bateria|battery|repuesto|protector|estuche para reloj|watch case/.test(t);
+  const watchSignal = /\breloj(?:es)?\b|\bwatch(?:es)?\b|chronograph|cronograf|quartz|cuarzo|automatico|automatic/.test(t);
+
+  const pocketAccessory = /aceite.*multiherr|cadena.*navaj|cordon.*navaj|lanyard.*navaj|multiclip.*navaj|alfiler.*repuesto|repuesto.*navaj|afilador.*multiherr|funda.*navaj|estuche.*navaj|multiherramientas para navajas|navaja.*juguete/.test(t);
+  const pocketSignal = /navaj|cortapluma|swiss army knife|spartan|climber|huntsman|cadet|classic sd|explorer|rambler|fieldmaster|swisstool|swiss champ|swisschamp|ranger ?grip|cybertool|work champ|outrider|super tinker|hiker|camper|sportsman|recruit|sentinel|evoke|hunter pro|wine master|mountaineer|handyman|minichamp|swiss lite/.test(t);
+
+  const kitchenAccessory = /pelador|rallador|tabla de corte|tijera|cuchara|tenedor|afilador|soporte.*cuchill|pala para pizza|cortador de pizza|cortador de queso|abrelatas|esp[áa]tula|olla|sarten|sartén|bateria de cocina|batería de cocina|cubierto|vajilla/.test(t);
+  const knifeSignal = /cuchill|cuchiller|\bknife\b|santoku|mondador|fibrox|\bchef\b|trinchar|filetear|pan y pasteleria|pan y pastelería|tomate y de mesa|bistec/.test(t);
+
   if (b !== "victorinox") {
-    if (WATCH.has(b)) return "Relojes";
+    if (WATCH.has(b)) return watchSignal && !watchAccessory ? "Relojes" : null;
     if (TRAVEL.has(b)) return "Equipo de viaje";
-    if (TOOLS.has(b)) return "Navajas y multiherramientas";
-    if (KNIVES.has(b)) return "Cuchillos";
+    if (TOOLS.has(b)) {
+      const leathermanSignal = pocketSignal || /multiherr|herramient|wave|skeletool|signal|rebar|surge|wingman|charge|free p|\barc\b|\bbond\b|\bcurl\b|\bmicra\b|\brev\b/.test(t);
+      return leathermanSignal && !pocketAccessory ? "Navajas y multiherramientas" : null;
+    }
+    if (KNIVES.has(b)) return knifeSignal && !kitchenAccessory ? "Cuchillos" : null;
     return null;
   }
 
-  // Victorinox is multi-category. Never infer "Relojes" from the word
-  // "Victorinox" itself: the old /inox/ signal classified almost the whole
-  // catalog as watches and collapsed the median.
-  const watchAccessory = /correa|pulsera|strap|bateria|battery|repuesto|protector|estuche para reloj|watch case/.test(t);
-  const watchSignal = /\breloj(?:es)?\b|\bwatch(?:es)?\b|chronograph|cronograf|quartz|cuarzo|automatico|automatic/.test(t);
   if (watchSignal && !watchAccessory) return "Relojes";
 
   if (/maleta|equipaje|mochila|bolso|trolley|carry[- ]?on|spinner|luggage|suitcase|travel gear|necesser|neceser|billetera|pasaporte/.test(t)) {
     return "Equipo de viaje";
   }
 
-  const pocketAccessory = /aceite.*multiherr|cadena.*navaj|lanyard.*navaj|multiclip.*navaj|alfiler.*repuesto|repuesto.*navaj|afilador.*multiherr|funda.*navaj|estuche.*navaj/.test(t);
-  const pocketSignal = /navaj|cortapluma|swiss army knife|spartan|climber|huntsman|cadet|classic sd|explorer|rambler|fieldmaster|swisstool|swiss champ|swisschamp|ranger ?grip|cybertool|work champ|outrider|super tinker|hiker|camper|sportsman|recruit|sentinel|evoke|hunter pro|wine master|mountaineer|handyman|minichamp|swiss lite/.test(t);
   if (pocketSignal && !pocketAccessory) {
     return "Navajas y multiherramientas";
   }
 
-  const kitchenAccessory = /pelador|rallador|tabla de corte|tijera|cuchara|tenedor|afilador|soporte.*cuchill|pala para pizza|cortador de pizza|cortador de queso|abrelatas|esp[áa]tula/.test(t);
-  const knifeSignal = /cuchill|cuchiller|\bknife\b|santoku|mondador|fibrox|\bchef\b|trinchar|filetear|pan y pasteleria|pan y pastelería|tomate y de mesa|bistec/.test(t);
   if (knifeSignal && !kitchenAccessory) {
     return "Cuchillos";
   }
