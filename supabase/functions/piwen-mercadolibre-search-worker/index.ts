@@ -92,6 +92,19 @@ async function chooseModel(apiKey:string){
   return "gpt-4.1";
 }
 async function webSearch(apiKey:string, model:string, target:Target):Promise<AiRow[]>{
+  const anchors = target.brand==="Piwén" ? [
+    "https://www.mercadolibre.cl/tienda/piwen",
+    "https://www.mercadolibre.cl/piwen-almendra-natural-1-kilo-sin-sal-frutos-secos/p/MLC37030161",
+    "https://www.mercadolibre.cl/piwen-castanas-de-caju-sin-sal-1-kilo-anacardos-snack-frutos-secos-saludables/p/MLC37056337",
+    "https://www.mercadolibre.cl/pistachos-salado-con-cascara-piwen-de-1-kg/p/MLC65495393"
+  ] : target.brand==="Alto La Cruz" ? [
+    "https://www.mercadolibre.cl/almendras-tostadas-enteras-700g-frutos-secos-alto-la-cruz/p/MLC65359625",
+    "https://www.mercadolibre.cl/mix-frutos-secos-pistacho-almendras-avellanas-chilena-y-mas-happy-hour-alto-la-cruz-linea-colors-450g/p/MLC65358406"
+  ] : [
+    "https://www.mercadolibre.cl/almendras-saladas-millantu-doy-pack-80-g/p/MLC26334548",
+    "https://www.mercadolibre.cl/pistachos-salados-millantu-doy-pack-150-g/p/MLC29360995",
+    "https://www.mercadolibre.cl/castana-de-caju-salada-80-gr-pack-8-unidades-millantu/up/MLCU1799155379"
+  ];
   const prompt=`Busca exhaustivamente en MercadoLibre Chile (mercadolibre.cl) publicaciones de frutos secos de la marca "${target.brand}".
 REQUISITOS:
 - Solo devuelve publicaciones cuyo producto sea realmente de la marca ${target.brand}; evita homónimos (por ejemplo lugares llamados Millantú o marcas de papel).
@@ -102,6 +115,8 @@ REQUISITOS:
 - grams es peso neto total del producto o pack en gramos, solo si se puede determinar.
 - No inventes ningún precio, URL, vendedor, peso ni disponibilidad.
 - source_freshness describe brevemente la antigüedad de la evidencia encontrada (por ejemplo "hoy", "3 días", "último mes").
+- Empieza verificando estas URL conocidas y luego busca publicaciones adicionales de la misma marca:
+${anchors.join("\n")}
 La respuesta debe contener solo la estructura solicitada.`;
 
   const response=await fetch("https://api.openai.com/v1/responses",{
@@ -112,7 +127,7 @@ La respuesta debe contener solo la estructura solicitada.`;
       input:prompt,
       store:false,
       tools:[{type:"web_search_preview",search_context_size:"high",user_location:{type:"approximate",country:"CL",timezone:"America/Santiago"}}],
-      tool_choice:"auto",
+      tool_choice:{type:"web_search_preview"},
       max_output_tokens:3500,
       text:{format:{
         type:"json_schema",
