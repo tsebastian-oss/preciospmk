@@ -5,6 +5,8 @@ import styles from "./PiwenMarketPanel.module.css";
 import { trackUsageEvent } from "@/lib/usage-client";
 import PiwenHistoryCharts from "./PiwenHistoryCharts";
 import PiwenDownloads from "./PiwenDownloads";
+import PiwenMarketCopilot from "./PiwenMarketCopilot";
+import PiwenPriceMatrix, { type MatrixListing } from "./PiwenPriceMatrix";
 
 type SummaryRow = {
   key: string;
@@ -101,7 +103,7 @@ type Payload = {
   error?: string;
 };
 
-type Tab = "overview" | "brands" | "products" | "formats" | "detail" | "marketplace" | "downloads";
+type Tab = "overview" | "copilot" | "brands" | "products" | "formats" | "matrix" | "marketplace" | "downloads";
 
 const money = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
 const number = new Intl.NumberFormat("es-CL");
@@ -205,6 +207,29 @@ export default function PiwenMarketPanel() {
     }).sort((a,b)=>b.skuCount-a.skuCount);
   }, [payload, visibleListings, family, retailer]);
 
+  const matrixRows = useMemo<MatrixListing[]>(() => {
+    if (!payload) return [];
+    const supermarketRows: MatrixListing[] = [...payload.subject, ...payload.listings].map(row => ({
+      id: row.id,
+      retailer: row.retailer,
+      brand: row.brand,
+      family: row.family,
+      currentPrice: row.currentPrice,
+      pricePerKg: row.pricePerKg,
+      inStock: row.inStock,
+    }));
+    const marketplaceRows: MatrixListing[] = (payload.marketplace?.listings ?? []).map(row => ({
+      id: row.id,
+      retailer: row.retailer || "MercadoLibre Chile",
+      brand: row.brand,
+      family: row.family,
+      currentPrice: row.currentPrice,
+      pricePerKg: row.pricePerKg,
+      inStock: row.inStock,
+    }));
+    return [...supermarketRows, ...marketplaceRows];
+  }, [payload]);
+
   if (loading) return <section className={styles.shell}><div className={styles.state}><i/>Cargando mercado competitivo de Piwén…</div></section>;
   if (error || !payload) return <section className={styles.shell}><div className={styles.error}>{error || "Piwén no está disponible."}<button onClick={()=>void load()}>Reintentar</button></div></section>;
 
@@ -234,10 +259,11 @@ export default function PiwenMarketPanel() {
     <nav className={styles.tabs}>
       {([
         ["overview","Resumen"],
+        ["copilot","AI Copilot"],
         ["brands","Por marca"],
         ["products","Por producto"],
         ["formats","Por formato"],
-        ["detail","Detalle SKU"],
+        ["matrix","Matriz competitiva"],
         ["marketplace","MercadoLibre"],
         ["downloads","Descargas"],
       ] as [Tab,string][]).map(([key,label]) => <button key={key} className={tab===key?styles.active:""} onClick={()=>{setTab(key);trackUsageEvent("tab_view",{module:"piwen-market",metadata:{tab:key}})}}>{label}</button>)}
@@ -272,17 +298,18 @@ export default function PiwenMarketPanel() {
       </section>
     </>}
 
-    {tab !== "overview" && tab !== "downloads" && tab !== "marketplace" && <section className={styles.filters}>
+    {tab !== "overview" && tab !== "copilot" && tab !== "downloads" && tab !== "marketplace" && tab !== "matrix" && <section className={styles.filters}>
       <label><span>Familia</span><select value={family} onChange={e=>setFamily(e.target.value)}><option value="">Todas</option>{payload.scope.families.map(x=><option key={x}>{x}</option>)}</select></label>
-      {(tab === "brands" || tab === "detail") && <label><span>Marca</span><select value={brand} onChange={e=>setBrand(e.target.value)}><option value="">Todas</option>{brandOptions.map(x=><option key={x}>{x}</option>)}</select></label>}
-      {tab === "detail" && <label><span>Retailer</span><select value={retailer} onChange={e=>setRetailer(e.target.value)}><option value="">Todos</option>{payload.scope.retailers.map(x=><option key={x}>{x}</option>)}</select></label>}
-      {tab === "detail" && <label className={styles.search}><span>Buscar</span><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Producto, marca, formato…"/></label>}
+      {tab === "brands" && <label><span>Marca</span><select value={brand} onChange={e=>setBrand(e.target.value)}><option value="">Todas</option>{brandOptions.map(x=><option key={x}>{x}</option>)}</select></label>}
       <button onClick={()=>{setFamily("");setBrand("");setRetailer("");setQuery("")}}>Limpiar</button>
     </section>}
 
+    {tab === "copilot" && <PiwenMarketCopilot/>}
     {tab === "brands" && <section className={styles.panel}><div className={styles.panelTitle}><div><span>MARCA</span><h2>Competencia resumida por marca</h2><p>Surtido, cobertura, promoción y nivel de precio por kilo.</p></div></div><RowTable rows={visibleBrandRows} dimension="Marca"/></section>}
     {tab === "products" && <section className={styles.panel}><div className={styles.panelTitle}><div><span>PRODUCTO</span><h2>Mercado resumido por familia</h2><p>Almendras, castañas de cajú, pistachos, nueces, maní, mixes y categorías adyacentes.</p></div></div><RowTable rows={(payload.byProduct??[]).filter(x=>!family||x.key===family)} dimension="Producto"/></section>}
     {tab === "formats" && <section className={styles.panel}><div className={styles.panelTitle}><div><span>FORMATO</span><h2>Arquitectura de packs</h2><p>Permite comparar cómo cambia el $/kg entre gramajes y detectar escalones de precio incoherentes.</p></div></div><RowTable rows={(payload.byFormat??[]).filter(x=>!family||x.key.startsWith(family+" · "))} dimension="Formato"/></section>}
+    {tab === "matrix" && <PiwenPriceMatrix rows={matrixRows}/>}
+
 
     {tab === "marketplace" && <section className={styles.panel}>
       <div className={styles.panelTitle}>
@@ -310,21 +337,6 @@ export default function PiwenMarketPanel() {
     </section>}
 
     {tab === "downloads" && <PiwenDownloads/>}
-
-    {tab === "detail" && <section className={styles.panel}>
-      <div className={styles.panelTitle}><div><span>EVIDENCIA</span><h2>Detalle competitivo por SKU</h2><p>{visibleListings.length} productos visibles con precio normalizado.</p></div></div>
-      <div className={styles.tableWrap}><table className={styles.table}>
-        <thead><tr><th>Producto</th><th>Marca</th><th>Retailer</th><th>Formato</th><th>Precio</th><th>$/kg</th><th>Promo</th><th>Observado</th></tr></thead>
-        <tbody>{visibleListings.slice(0,300).map(row=><tr key={row.id}>
-          <td><a href={row.url} target="_blank" rel="noreferrer"><strong>{row.name}</strong></a><small>{row.family}</small></td>
-          <td>{row.brand}</td><td>{row.retailer}</td><td>{row.format}</td>
-          <td><strong>{clp(row.currentPrice)}</strong>{row.regularPrice && row.regularPrice>row.currentPrice ? <small>Ref. {clp(row.regularPrice)}</small>:null}</td>
-          <td><strong>{clp(row.pricePerKg)}</strong></td>
-          <td>{row.promotionPct ? `-${row.promotionPct.toFixed(1)}%` : "—"}</td>
-          <td>{date(row.observedAt)}</td>
-        </tr>)}</tbody>
-      </table></div>
-    </section>}
 
     <footer className={styles.footer}>MGP Super Precios · universo competitivo dinámico · precios normalizados por kilo · Piwén Chile</footer>
   </section>;
