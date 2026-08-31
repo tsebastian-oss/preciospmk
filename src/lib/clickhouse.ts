@@ -10,6 +10,34 @@ const CLICKHOUSE_USER = (process.env.CLICKHOUSE_USER ?? "").trim();
 const CLICKHOUSE_PASSWORD = process.env.CLICKHOUSE_PASSWORD ?? "";
 const CLICKHOUSE_DATABASE = (process.env.CLICKHOUSE_DATABASE ?? "pricing_analytics").trim();
 const CLICKHOUSE_ENABLED = (process.env.CLICKHOUSE_ENABLED ?? "").trim().toLowerCase() === "true";
+const CLICKHOUSE_MAX_CONCURRENCY = Math.max(
+  1,
+  Math.min(4, Number(process.env.CLICKHOUSE_MAX_CONCURRENCY ?? 2) || 2),
+);
+const CLICKHOUSE_CACHE_TTL_MS = Math.max(
+  0,
+  Math.min(60_000, Number(process.env.CLICKHOUSE_CACHE_TTL_MS ?? 12_000) || 12_000),
+);
+const CLICKHOUSE_CACHE_MAX_ENTRIES = 24;
+
+class ClickHouseHttpError extends Error {
+  status: number;
+  constructor(status: number) {
+    super(`ClickHouse query failed (${status})`);
+    this.name = "ClickHouseHttpError";
+    this.status = status;
+  }
+}
+
+type CacheEntry = {
+  expiresAt: number;
+  value: unknown[];
+};
+
+const resultCache = new Map<string, CacheEntry>();
+const inflight = new Map<string, Promise<unknown[]>>();
+let activeQueries = 0;
+const waiters: Array<() => void> = [];
 
 function configured() {
   return CLICKHOUSE_ENABLED
@@ -35,11 +63,52 @@ function queryUrl(params: ClickHouseParams) {
   return url;
 }
 
+function queryKey(sql: string, params: ClickHouseParams) {
+  const normalizedParams = Object.keys(params)
+    .sort()
+    .map((key) => [key, params[key].type, params[key].value]);
+  return `${sql.trim()}::${JSON.stringify(normalizedParams)}`;
+}
+
+async function acquireQuerySlot() {
+  if (activeQueries < CLICKHOUSE_MAX_CONCURRENCY) {
+    activeQueries += 1;
+    return;
+  }
+  await new Promise<void>((resolve) => waiters.push(resolve));
+  activeQueries += 1;
+}
+
+function releaseQuerySlot() {
+  activeQueries = Math.max(0, activeQueries - 1);
+  waiters.shift()?.();
+}
+
+function transient(error: unknown) {
+  if (error instanceof Error && error.name === "AbortError") return true;
+  if (error instanceof ClickHouseHttpError) {
+    return [408, 425, 429, 500, 502, 503, 504].includes(error.status);
+  }
+  return false;
+}
+
+function pruneCache(now = Date.now()) {
+  for (const [key, entry] of resultCache) {
+    if (entry.expiresAt <= now) resultCache.delete(key);
+  }
+  while (resultCache.size > CLICKHOUSE_CACHE_MAX_ENTRIES) {
+    const first = resultCache.keys().next().value as string | undefined;
+    if (!first) break;
+    resultCache.delete(first);
+  }
+}
+
 async function executeQueryAttempt<T>(
   sql: string,
   params: ClickHouseParams,
   timeoutMs: number,
 ): Promise<T[]> {
+  await acquireQuerySlot();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -59,7 +128,7 @@ async function executeQueryAttempt<T>(
     const text = await response.text();
     const embeddedException = text.includes("__exception__");
     if (!response.ok || embeddedException) {
-      throw new Error(`ClickHouse query failed (${response.status})`);
+      throw new ClickHouseHttpError(response.status);
     }
 
     const body = text.trim();
@@ -70,6 +139,30 @@ async function executeQueryAttempt<T>(
       .map((line) => JSON.parse(line) as T);
   } finally {
     clearTimeout(timeout);
+    releaseQuerySlot();
+  }
+}
+
+async function executeWithRetry<T>(
+  sql: string,
+  params: ClickHouseParams,
+  timeoutMs: number,
+): Promise<T[]> {
+  try {
+    return await executeQueryAttempt<T>(sql, params, timeoutMs);
+  } catch (error) {
+    if (!transient(error)) throw error;
+
+    const retryTimeoutMs = Math.max(25_000, timeoutMs * 2);
+    console.warn("ClickHouse transient failure; retrying with backoff", {
+      timeoutMs,
+      retryTimeoutMs,
+      status: error instanceof ClickHouseHttpError ? error.status : undefined,
+      kind: error instanceof Error ? error.name : "unknown",
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 650));
+    return executeQueryAttempt<T>(sql, params, retryTimeoutMs);
   }
 }
 
@@ -80,29 +173,42 @@ export async function clickHouseQuery<T>(
 ): Promise<T[]> {
   if (!configured()) throw new Error("ClickHouse is not configured");
 
-  try {
-    return await executeQueryAttempt<T>(sql, params, timeoutMs);
-  } catch (error) {
-    const aborted = error instanceof Error && error.name === "AbortError";
-    if (!aborted) throw error;
+  const key = queryKey(sql, params);
+  const now = Date.now();
+  pruneCache(now);
 
-    // ClickHouse Cloud can take longer than the normal query timeout to wake
-    // from idle. Retry once with a larger window so aggressive idling keeps
-    // costs low without making the first dashboard/chat request fail.
-    const retryTimeoutMs = Math.max(20_000, timeoutMs * 2);
-    console.warn("ClickHouse query timed out; retrying after possible cold start", {
-      timeoutMs,
-      retryTimeoutMs,
-    });
-    return executeQueryAttempt<T>(sql, params, retryTimeoutMs);
+  const cached = resultCache.get(key);
+  if (cached && cached.expiresAt > now) {
+    return cached.value as T[];
   }
+
+  const existing = inflight.get(key);
+  if (existing) return existing as Promise<T[]>;
+
+  const promise = executeWithRetry<T>(sql, params, timeoutMs)
+    .then((rows) => {
+      if (CLICKHOUSE_CACHE_TTL_MS > 0) {
+        resultCache.set(key, {
+          expiresAt: Date.now() + CLICKHOUSE_CACHE_TTL_MS,
+          value: rows,
+        });
+        pruneCache();
+      }
+      return rows;
+    })
+    .finally(() => {
+      inflight.delete(key);
+    });
+
+  inflight.set(key, promise as Promise<unknown[]>);
+  return promise;
 }
 
 export async function clickHousePing() {
   const result = await clickHouseQuery<{ ok: number; database_name: string }>(
     "SELECT 1 AS ok, currentDatabase() AS database_name",
     {},
-    3_000,
+    4_000,
   );
   return result[0] ?? null;
 }
