@@ -7,6 +7,7 @@ const USERNAME_EMAIL_MAP: Record<string, string> = {
   mazokin13: "mazokin13@mgp-retail.internal",
   bodegasdonluis: "m.echave@bodegasdonluis.pe",
   piwen2026: "piwen@mgp-retail.internal",
+  victorinox2026: "victorinox@mgp-retail.internal",
 };
 
 type SupabaseLoginPayload = {
