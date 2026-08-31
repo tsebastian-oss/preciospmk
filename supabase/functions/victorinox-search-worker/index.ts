@@ -7,8 +7,9 @@ const BRAND_SLUG="victorinox";
 type Runtime={enabled?:boolean;api_key?:string|null;model?:string|null};
 type Row={title:string;product_url:string;current_price:number|null;regular_price:number|null;in_stock:boolean|null;seller_name:string|null;category:string;source_freshness:string|null};
 
-function norm(v:string){return v.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\s+/g," ").trim();}
-function sourceKey(url:string){const m=url.match(/(MLCU?\d+)/i);if(m?.[1])return m[1].toUpperCase();return "web-"+crypto.subtle?crypto.randomUUID():String(Date.now());}
+function cleanText(v:string){return v.replace(/\\u0000/g,"").replace(/\u0000/g,"").trim();}
+function norm(v:string){return cleanText(v).normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/\s+/g," ").trim();}
+function sourceKey(url:string){const m=url.match(/(MLCU?\d+)/i);if(m?.[1])return m[1].toUpperCase();return "web-"+crypto.randomUUID();}
 function outputText(r:any){return typeof r?.output_text==="string"?r.output_text.trim():(r?.output??[]).flatMap((x:any)=>x?.content??[]).filter((x:any)=>x?.type==="output_text"&&typeof x.text==="string").map((x:any)=>x.text).join("\n").trim();}
 async function runtime(){for(let i=0;i<4;i++){const{data,error}=await supabase.rpc("get_ai_runtime_config_service");if(data)return data as Runtime;await new Promise(r=>setTimeout(r,350*(i+1)));if(i===3)throw new Error(error?.message||"runtime_config_error");}throw new Error("runtime_config_error");}
 async function model(apiKey:string){try{const r=await fetch("https://api.openai.com/v1/models",{headers:{authorization:`Bearer ${apiKey}`},signal:AbortSignal.timeout(8000)});const j=await r.json();const ids=new Set<string>((j?.data??[]).map((x:any)=>String(x.id)));for(const id of ["gpt-5.6","gpt-5.5","gpt-5.1","gpt-5","gpt-4.1"])if(ids.has(id))return id;}catch{}return"gpt-4.1";}
