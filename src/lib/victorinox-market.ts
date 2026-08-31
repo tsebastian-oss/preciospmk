@@ -54,16 +54,34 @@ function normalize(value: string) {
 function categoryFor(brand: string, text: string) {
   const b = normalize(brand);
   const t = normalize(text);
+
   if (b !== "victorinox") {
     if (WATCH.has(b)) return "Relojes";
     if (TRAVEL.has(b)) return "Equipo de viaje";
     if (TOOLS.has(b)) return "Navajas y multiherramientas";
     if (KNIVES.has(b)) return "Cuchillos";
+    return null;
   }
-  if (/reloj|watch|chrono|automatic|quartz|inox/.test(t)) return "Relojes";
-  if (/maleta|equipaje|mochila|bolso|trolley|carry|spinner|luggage|travel|necesser|billetera|pasaporte/.test(t)) return "Equipo de viaje";
-  if (/navaj|multiherr|swiss army|spartan|climber|huntsman|cadet|classic sd|explorer|rambler|fieldmaster|swisstool/.test(t)) return "Navajas y multiherramientas";
-  if (/cuchill|cuchiller|knife|santoku|mondador|fibrox|chef|afilador|pelador|tijera|rallador|tabla de corte|swiss classic|rosewood/.test(t)) return "Cuchillos";
+
+  // Victorinox is multi-category. Never infer "Relojes" from the word
+  // "Victorinox" itself: the old /inox/ signal classified almost the whole
+  // catalog as watches and collapsed the median.
+  const watchAccessory = /correa|pulsera|strap|bateria|battery|repuesto|protector|estuche para reloj|watch case/.test(t);
+  const watchSignal = /\breloj(?:es)?\b|\bwatch(?:es)?\b|chronograph|cronograf|quartz|cuarzo|automatico|automatic/.test(t);
+  if (watchSignal && !watchAccessory) return "Relojes";
+
+  if (/maleta|equipaje|mochila|bolso|trolley|carry[- ]?on|spinner|luggage|suitcase|travel gear|necesser|neceser|billetera|pasaporte/.test(t)) {
+    return "Equipo de viaje";
+  }
+
+  if (/navaj|multiherr|swiss army knife|spartan|climber|huntsman|cadet|classic sd|explorer|rambler|fieldmaster|swisstool/.test(t)) {
+    return "Navajas y multiherramientas";
+  }
+
+  if (/cuchill|cuchiller|knife|santoku|mondador|fibrox|\bchef\b|afilador|pelador|tijera|rallador|tabla de corte|swiss classic|rosewood/.test(t)) {
+    return "Cuchillos";
+  }
+
   return null;
 }
 
