@@ -1,0 +1,70 @@
+.support{
+  position:fixed;
+  right:24px;
+  bottom:24px;
+  z-index:120;
+  display:flex;
+  align-items:center;
+  gap:10px;
+  min-height:54px;
+  padding:8px 14px 8px 9px;
+  border:1px solid rgba(255,255,255,.14);
+  border-radius:16px;
+  background:rgba(17,24,39,.94);
+  color:#fff;
+  text-decoration:none;
+  box-shadow:0 18px 45px rgba(0,0,0,.34);
+  backdrop-filter:blur(14px);
+  transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease;
+}
+.support:hover{
+  transform:translateY(-2px);
+  border-color:rgba(37,211,102,.58);
+  box-shadow:0 22px 52px rgba(0,0,0,.42),0 0 0 1px rgba(37,211,102,.08);
+}
+.icon{
+  width:38px;
+  height:38px;
+  flex:0 0 38px;
+  display:grid;
+  place-items:center;
+  border-radius:12px;
+  background:#25D366;
+  box-shadow:0 8px 22px rgba(37,211,102,.24);
+}
+.icon svg{
+  width:23px;
+  height:23px;
+  fill:#fff;
+}
+.copy{
+  display:flex;
+  flex-direction:column;
+  gap:2px;
+  line-height:1.1;
+}
+.copy strong{
+  font-size:11px;
+  font-weight:800;
+  letter-spacing:-.01em;
+}
+.copy small{
+  font-size:9px;
+  color:#aeb8c7;
+}
+@media(max-width:640px){
+  .support{
+    right:14px;
+    bottom:14px;
+    min-height:50px;
+    padding:6px;
+    border-radius:15px;
+  }
+  .icon{
+    width:38px;
+    height:38px;
+  }
+  .copy{
+    display:none;
+  }
+}
