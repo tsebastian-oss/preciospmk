@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import styles from "./BrandsVertical.module.css";
 import BodegasDonLuisPanel from "./BodegasDonLuisPanel";
 import PiwenMarketPanel from "./PiwenMarketPanel";
+import VictorinoxMarketPanel from "./VictorinoxMarketPanel";
 
 type Source = {
   id: string;
@@ -689,6 +690,8 @@ export default function BrandsVertical({ initialBrand = "krispy-kreme", locked =
   if (error || !payload) return <section className={styles.shell}><div className={styles.error}>{error || "Brands no está disponible."}</div></section>;
 
   if (selectedBrand === "piwen") return <PiwenMarketPanel/>;
+
+  if (selectedBrand === "victorinox") return <VictorinoxMarketPanel/>;
 
   if (selectedBrand === "bodegas-don-luis") return <BodegasDonLuisPanel payload={payload} locked={locked}/>;
 
