@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { brandScopeAllows, enterpriseAccess } from "@/lib/enterprise-auth";
+import { brandScopeAllows, enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
 import { clickHouseConfigured } from "@/lib/clickhouse";
 import { piwenMarketIntelligence } from "@/lib/piwen-market";
 import { piwenHistoryIntelligence } from "@/lib/piwen-history";
@@ -72,8 +72,47 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const payload = await piwenMarketIntelligence(authorization.access);
-    const allRows = [...payload.subject, ...payload.listings];
+    const [payload, marketplaceResult] = await Promise.all([
+      piwenMarketIntelligence(authorization.access),
+      enterpriseRpc<{ listings?: Array<Record<string, unknown>> }>(
+        request,
+        "brands_piwen_marketplace_snapshot",
+        { p_slug: "piwen" },
+      ),
+    ]);
+    const marketRows = [...payload.subject, ...payload.listings].map((row) => ({
+      brand: row.brand,
+      retailer: row.retailer,
+      name: row.name,
+      family: row.family,
+      format: row.format,
+      grams: row.grams,
+      currentPrice: row.currentPrice,
+      regularPrice: row.regularPrice,
+      pricePerKg: row.pricePerKg,
+      promotionPct: row.promotionPct,
+      inStock: row.inStock,
+      observedAt: row.observedAt,
+      url: row.url,
+      dataType: row.brand === "Piwén" ? "Referencia Piwén" : "Censo supermercados",
+    }));
+    const marketplaceRows = marketplaceResult.response ? [] : (marketplaceResult.data?.listings ?? []).map((raw) => ({
+      brand: String(raw.brand ?? ""),
+      retailer: String(raw.retailer ?? "MercadoLibre Chile"),
+      name: String(raw.name ?? ""),
+      family: String(raw.family ?? ""),
+      format: String(raw.format ?? "Sin formato"),
+      grams: raw.grams ?? null,
+      currentPrice: raw.currentPrice ?? null,
+      regularPrice: raw.regularPrice ?? null,
+      pricePerKg: raw.pricePerKg ?? null,
+      promotionPct: raw.promotionPct ?? null,
+      inStock: raw.inStock ?? null,
+      observedAt: raw.observedAt ?? null,
+      url: String(raw.url ?? ""),
+      dataType: "MercadoLibre Chile",
+    }));
+    const allRows = [...marketRows, ...marketplaceRows];
     const rows = family ? allRows.filter((row) => row.family === family) : allRows;
     const body = csv(
       ["Marca", "Retailer", "Producto", "Familia", "Formato", "Gramos", "Precio actual", "Precio regular", "Precio por kg", "Promocion %", "Stock", "Observado", "URL", "Tipo dato"],
@@ -88,10 +127,10 @@ export async function GET(request: NextRequest) {
         row.regularPrice,
         row.pricePerKg,
         row.promotionPct,
-        row.inStock ? "Disponible" : "Sin stock",
+        row.inStock === true ? "Disponible" : row.inStock === false ? "Sin stock" : "Sin confirmar",
         row.observedAt,
         row.url,
-        row.brand === "Piwén" ? "Referencia Piwén" : "Censo mercado",
+        row.dataType,
       ]),
     );
     const familySuffix = family ? "-" + slug(family) : "-completa";
