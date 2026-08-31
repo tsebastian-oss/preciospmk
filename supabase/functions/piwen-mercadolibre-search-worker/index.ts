@@ -60,6 +60,28 @@ function outputText(r:any){
       .filter((x:any)=>x?.type==="output_text"&&typeof x.text==="string")
       .map((x:any)=>x.text).join("\n").trim();
 }
+async function workerToken(){
+  let lastError:string|null=null;
+  for(let attempt=0;attempt<4;attempt++){
+    const {data,error}=await supabase.from("qsr_worker_config").select("token").eq("id",1).single();
+    if(data?.token) return {token:String(data.token),error:null};
+    lastError=error?.message??"token_not_found";
+    await new Promise(resolve=>setTimeout(resolve,350*(attempt+1)));
+  }
+  return {token:null,error:lastError};
+}
+
+async function runtimeConfig(){
+  let lastError:string|null=null;
+  for(let attempt=0;attempt<4;attempt++){
+    const {data,error}=await supabase.rpc("get_ai_runtime_config_service");
+    if(data) return {data:data as Runtime,error:null};
+    lastError=error?.message??"runtime_config_not_found";
+    await new Promise(resolve=>setTimeout(resolve,450*(attempt+1)));
+  }
+  return {data:null,error:lastError};
+}
+
 async function chooseModel(apiKey:string){
   try{
     const r=await fetch("https://api.openai.com/v1/models",{headers:{authorization:`Bearer ${apiKey}`},signal:AbortSignal.timeout(8000)});
@@ -201,9 +223,9 @@ async function run(onlyBrand?:string){
   if(bErr||!subject) throw new Error("brand_not_found:piwen");
   const sourceId=await ensureSource(subject.id);
 
-  const {data:runtime,error:rErr}=await supabase.rpc("get_ai_runtime_config_service");
-  const cfg=(runtime??{}) as Runtime;
-  if(rErr||!cfg.enabled||!cfg.api_key) throw new Error("ai_runtime_unavailable");
+  const runtime=await runtimeConfig();
+  const cfg=(runtime.data??{}) as Runtime;
+  if(runtime.error||!cfg.enabled||!cfg.api_key) throw new Error("ai_runtime_unavailable:"+String(runtime.error??"missing_config"));
   const model=await chooseModel(cfg.api_key);
 
   const targets=onlyBrand?TARGETS.filter(x=>norm(x.brand)===norm(onlyBrand)):TARGETS;
@@ -239,13 +261,13 @@ async function run(onlyBrand?:string){
 Deno.serve(async(request:Request)=>{
   if(request.method!=="POST") return Response.json({error:"method_not_allowed"},{status:405});
   const token=request.headers.get("x-marketplace-worker-token");
-  const {data:config,error:authError}=await supabase.from("qsr_worker_config").select("token").eq("id",1).single();
-  if(!token||!config?.token||token!==config.token) return Response.json({
+  const expected=await workerToken();
+  if(!token||!expected.token||token!==expected.token) return Response.json({
     error:"unauthorized",
-    reason:!token?"missing_header":authError?"config_error":!config?.token?"config_missing":"token_mismatch",
+    reason:!token?"missing_header":expected.error?"config_error":!expected.token?"config_missing":"token_mismatch",
     suppliedLength:token?.length??0,
-    expectedLength:config?.token?.length??0,
-    configError:authError?.message??null
+    expectedLength:expected.token?.length??0,
+    configError:expected.error
   },{status:401});
   const body=await request.json().catch(()=>({}));
   try{return Response.json({ok:true,observedAt:new Date().toISOString(),result:await run(typeof body.brand==="string"?body.brand:undefined)});}
