@@ -1,27 +1,12 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 
-type Target = {
-  slug: string;
-  retailer: string;
-  timeoutMs: number;
-};
-
-type Result = {
-  slug: string;
-  retailer: string;
-  status: number;
-  ok: boolean;
-  durationMs: number;
-  body: unknown;
-};
-
-type DispatchRequest = {
-  only?: "automotive";
-};
+type Target = { slug: string; retailer: string; timeoutMs: number };
+type Result = { slug: string; retailer: string; status: number; ok: boolean; durationMs: number; body: unknown };
+type DispatchRequest = { only?: "automotive" | "lider" | "falabella" };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-const MAX_CONCURRENCY = 2;
+const DB_PROBE_TIMEOUT_MS = 3500;
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -31,6 +16,35 @@ function json(body: unknown, status = 200) {
       "cache-control": "no-store",
     },
   });
+}
+
+async function databaseHealthy() {
+  if (!SUPABASE_URL || !SERVICE_ROLE) return { ok: false, reason: "missing_supabase_credentials", durationMs: 0 };
+  const started = Date.now();
+  try {
+    const response = await fetch(
+      `${SUPABASE_URL}/rest/v1/catalog_crawl_runs?select=id&order=id.desc&limit=1`,
+      {
+        method: "GET",
+        headers: {
+          apikey: SERVICE_ROLE,
+          Authorization: `Bearer ${SERVICE_ROLE}`,
+        },
+        signal: AbortSignal.timeout(DB_PROBE_TIMEOUT_MS),
+      },
+    );
+    return {
+      ok: response.ok,
+      reason: response.ok ? "healthy" : `db_probe_http_${response.status}`,
+      durationMs: Date.now() - started,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      reason: error instanceof Error ? error.message : String(error),
+      durationMs: Date.now() - started,
+    };
+  }
 }
 
 async function invoke(target: Target): Promise<Result> {
@@ -46,13 +60,9 @@ async function invoke(target: Target): Promise<Result> {
       body: "{}",
       signal: AbortSignal.timeout(target.timeoutMs),
     });
-    const text = await response.text();
-    let body: unknown = text;
-    try {
-      body = JSON.parse(text);
-    } catch {
-      // Keep plain-text error responses for observability.
-    }
+    const raw = await response.text();
+    let body: unknown = raw;
+    try { body = JSON.parse(raw); } catch {}
     return {
       slug: target.slug,
       retailer: target.retailer,
@@ -73,20 +83,6 @@ async function invoke(target: Target): Promise<Result> {
   }
 }
 
-async function runPool(targets: Target[]): Promise<Result[]> {
-  const results: Result[] = [];
-  let cursor = 0;
-  async function worker() {
-    while (true) {
-      const index = cursor++;
-      if (index >= targets.length) return;
-      results[index] = await invoke(targets[index]);
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(MAX_CONCURRENCY, targets.length) }, () => worker()));
-  return results;
-}
-
 Deno.serve(async (request: Request) => {
   if (request.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
@@ -97,41 +93,56 @@ Deno.serve(async (request: Request) => {
   } catch {
     return json({ error: "invalid_request_body" }, 400);
   }
-  if (input.only && input.only !== "automotive") return json({ error: "unsupported_dispatch_target" }, 400);
 
-  const automotiveTarget: Target = { slug: "automotive-crawl-worker", retailer: "Automotriz", timeoutMs: 125_000 };
-  const minute = new Date().getUTCMinutes();
-  const targets: Target[] = input.only === "automotive" ? [automotiveTarget] : [
-    { slug: "catalog-crawl-worker", retailer: "Jumbo/Santa Isabel", timeoutMs: 55_000 },
-    { slug: "lider-crawl-worker", retailer: "Lider", timeoutMs: 55_000 },
-    { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
-    { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
-    { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 125_000 },
-    { slug: "falabella-listing-worker", retailer: "Falabella", timeoutMs: 125_000 },
-    { slug: "falabella-listing-worker", retailer: "Falabella", timeoutMs: 125_000 },
-    { slug: "falabella-listing-worker", retailer: "Falabella", timeoutMs: 125_000 },
-    { slug: "pharmacy-crawl-worker", retailer: "Salcobrand/Cruz Verde/Ahumada", timeoutMs: 125_000 },
-    { slug: "home-improvement-crawl-worker", retailer: "Easy/Sodimac", timeoutMs: 125_000 },
-    { slug: "home-improvement-crawl-worker", retailer: "Easy/Sodimac", timeoutMs: 125_000 },
-    automotiveTarget,
-  ];
+  if (input.only && !["automotive", "lider", "falabella"].includes(input.only)) {
+    return json({ error: "unsupported_dispatch_target" }, 400);
+  }
 
-  if (!input.only && minute % 5 === 0) {
-    targets.push({ slug: "lider-discovery-worker", retailer: "Lider discovery", timeoutMs: 55_000 });
-    targets.push({ slug: "jumbo-price-refresh-worker", retailer: "Jumbo price refresh", timeoutMs: 55_000 });
+  const health = await databaseHealthy();
+  if (!health.ok) {
+    return json({
+      ok: true,
+      skipped: true,
+      reason: "database_backpressure",
+      health,
+      dispatched: 0,
+    });
+  }
+
+  const automotive: Target = { slug: "automotive-crawl-worker", retailer: "Automotriz", timeoutMs: 70_000 };
+  const liderDiscovery: Target = { slug: "lider-discovery-worker", retailer: "Lider discovery", timeoutMs: 50_000 };
+  const liderProduct: Target = { slug: "lider-crawl-worker", retailer: "Lider", timeoutMs: 50_000 };
+  const falabella: Target = { slug: "falabella-listing-worker", retailer: "Falabella", timeoutMs: 70_000 };
+
+  let target: Target;
+  if (input.only === "automotive") target = automotive;
+  else if (input.only === "lider") target = liderDiscovery;
+  else if (input.only === "falabella") target = falabella;
+  else {
+    const rotation: Target[] = [
+      { slug: "catalog-crawl-worker", retailer: "Jumbo/Santa Isabel", timeoutMs: 50_000 },
+      liderDiscovery,
+      liderProduct,
+      { slug: "department-store-crawl-worker-v4", retailer: "Paris", timeoutMs: 70_000 },
+      falabella,
+      { slug: "pharmacy-crawl-worker", retailer: "Salcobrand/Cruz Verde/Ahumada", timeoutMs: 70_000 },
+      { slug: "home-improvement-crawl-worker", retailer: "Easy/Sodimac", timeoutMs: 70_000 },
+      automotive,
+      { slug: "jumbo-price-refresh-worker", retailer: "Jumbo price refresh", timeoutMs: 50_000 },
+    ];
+    const slot = Math.floor(Date.now() / 60_000) % rotation.length;
+    target = rotation[slot];
   }
 
   const started = Date.now();
-  const results = await runPool(targets);
-  const failures = results.filter((item) => !item.ok);
+  const result = await invoke(target);
   return json({
-    ok: failures.length === 0,
-    scope: input.only ?? "all",
-    dispatched: targets.length,
-    succeeded: results.length - failures.length,
-    failed: failures.length,
+    ok: result.ok,
+    skipped: false,
+    dispatched: 1,
+    concurrency: 1,
     durationMs: Date.now() - started,
-    concurrency: MAX_CONCURRENCY,
-    results,
-  }, failures.length === results.length ? 502 : 200);
+    result,
+    health,
+  }, result.ok ? 200 : 502);
 });
