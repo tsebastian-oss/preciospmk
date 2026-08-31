@@ -239,8 +239,14 @@ async function run(onlyBrand?:string){
 Deno.serve(async(request:Request)=>{
   if(request.method!=="POST") return Response.json({error:"method_not_allowed"},{status:405});
   const token=request.headers.get("x-marketplace-worker-token");
-  const {data:config}=await supabase.from("qsr_worker_config").select("token").eq("id",1).single();
-  if(!token||!config?.token||token!==config.token) return Response.json({error:"unauthorized"},{status:401});
+  const {data:config,error:authError}=await supabase.from("qsr_worker_config").select("token").eq("id",1).single();
+  if(!token||!config?.token||token!==config.token) return Response.json({
+    error:"unauthorized",
+    reason:!token?"missing_header":authError?"config_error":!config?.token?"config_missing":"token_mismatch",
+    suppliedLength:token?.length??0,
+    expectedLength:config?.token?.length??0,
+    configError:authError?.message??null
+  },{status:401});
   const body=await request.json().catch(()=>({}));
   try{return Response.json({ok:true,observedAt:new Date().toISOString(),result:await run(typeof body.brand==="string"?body.brand:undefined)});}
   catch(error){return Response.json({ok:false,error:error instanceof Error?error.message:String(error)},{status:500});}
