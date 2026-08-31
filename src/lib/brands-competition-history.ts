@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { enterpriseAccess } from "@/lib/enterprise-auth";
+import { brandScopeAllows, enterpriseAccess } from "@/lib/enterprise-auth";
 import { clickHouseConfigured, clickHouseQuery, type ClickHouseParams } from "@/lib/clickhouse";
 
 type Numeric = number | string;
@@ -29,9 +29,12 @@ function n(value: Numeric | null | undefined) { const parsed = Number(value ?? 0
 function median(values: number[]) { if (!values.length) return 0; const s = [...values].sort((a,b)=>a-b), m = Math.floor(s.length/2); return s.length%2?s[m]:(s[m-1]+s[m])/2; }
 function round1(value: number) { return Math.round(value * 10) / 10; }
 
-export async function handleBrandsCompetitionHistory(request: NextRequest) {
-  const auth = await enterpriseAccess(request, "overview");
+async function handleCompetitionHistory(request: NextRequest, moduleName: "overview" | "brand-panel", requireVictorinoxScope = false) {
+  const auth = await enterpriseAccess(request, moduleName);
   if (auth.response) return auth.response;
+  if (requireVictorinoxScope && (!auth.access || !brandScopeAllows(auth.access, "victorinox"))) {
+    return NextResponse.json({ error: "Victorinox no está habilitado para esta cuenta." }, { status: 403 });
+  }
   if (!clickHouseConfigured()) return NextResponse.json({ error: "ClickHouse no configurado" }, { status: 503 });
   const requested = Number(request.nextUrl.searchParams.get("days") || 90);
   const days = [30, 90, 180].includes(requested) ? requested : 90;
@@ -81,4 +84,13 @@ export async function handleBrandsCompetitionHistory(request: NextRequest) {
     console.error("brands competition history", error);
     return NextResponse.json({ error: "No fue posible calcular la evolución competitiva" }, { status: 503 });
   }
+}
+
+
+export async function handleBrandsCompetitionHistory(request: NextRequest) {
+  return handleCompetitionHistory(request, "overview", false);
+}
+
+export async function handleVictorinoxCompetitionHistory(request: NextRequest) {
+  return handleCompetitionHistory(request, "brand-panel", true);
 }
