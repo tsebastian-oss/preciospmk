@@ -664,11 +664,20 @@ export default function BrandsVertical({ initialBrand = "krispy-kreme", locked =
 
   useEffect(() => {
     let active = true;
-    setLoading(true);
     setError("");
     setSource("");
     setQuery("");
     setHistoryCategory("");
+
+    // Piwén and Victorinox have dedicated endpoints/components. Avoid firing
+    // the legacy generic Brands request in the background because it adds
+    // unnecessary ClickHouse load and can fail independently of the client panel.
+    if (selectedBrand === "piwen" || selectedBrand === "victorinox") {
+      setLoading(false);
+      return () => { active = false; };
+    }
+
+    setLoading(true);
     fetch(`/api/brands?brand=${encodeURIComponent(selectedBrand)}`, { credentials: "same-origin", cache: "no-store" })
       .then(async response => { if (!response.ok) throw new Error((await response.json().catch(() => null))?.error || "brands_failed"); return await response.json() as Payload; })
       .then(value => { if (active) setPayload(value); })
