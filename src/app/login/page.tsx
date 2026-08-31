@@ -4,6 +4,8 @@ import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import styles from "./login.module.css";
 
+type LoginResponse = { ok?: boolean; error?: string };
+
 export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -13,9 +15,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
-    if (query.get("registered") === "1") {
-      setNotice("Cuenta creada. Revisa tu correo y confirma tu dirección antes de ingresar. El enlace te llevará directamente a configurar tu trial.");
-    } else if (query.get("confirmed") === "1") {
+    if (query.get("confirmed") === "1") {
       setNotice("Correo confirmado correctamente. Ya puedes ingresar con tu contraseña.");
     }
   }, []);
@@ -31,8 +31,26 @@ export default function LoginPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      const payload = await response.json() as { error?: string };
-      if (!response.ok) throw new Error(payload.error || "No fue posible iniciar sesión");
+
+      const raw = await response.text();
+      let payload: LoginResponse = {};
+      if (raw) {
+        try {
+          payload = JSON.parse(raw) as LoginResponse;
+        } catch {
+          payload = {};
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          payload.error ||
+            (response.status >= 500
+              ? "El servicio de acceso está temporalmente no disponible. Intenta nuevamente en unos segundos."
+              : "No fue posible iniciar sesión")
+        );
+      }
+
       window.location.href = "/entry";
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Error de autenticación");
@@ -72,9 +90,6 @@ export default function LoginPage() {
         </form>
 
         <small className={styles.notice}>El acceso y las consultas quedan restringidos a usuarios autenticados.</small>
-        <div style={{ marginTop: 18, paddingTop: 18, borderTop: "1px solid rgba(255,255,255,.08)", textAlign: "center", fontSize: 12, color: "#a1a1aa" }}>
-          ¿Aún no tienes cuenta? <Link href="/registro" style={{ color: "#c084fc", fontWeight: 850 }}>Crear una cuenta trial</Link>
-        </div>
       </section>
     </main>
   );
