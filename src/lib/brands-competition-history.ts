@@ -7,14 +7,23 @@ type HistoryRow = { category: string; brand: string; date: string; median_price:
 
 const WATCH = ["victorinox", "tissot", "seiko", "citizen"];
 const LUGGAGE = ["victorinox", "samsonite", "american tourister", "saxoline"];
+const TOOLS = ["victorinox", "leatherman"];
 const KNIVES = ["victorinox", "arcos", "global", "zwilling", "tramontina", "wusthof", "wüsthof"];
-const ALL = [...new Set([...WATCH, ...LUGGAGE, ...KNIVES])];
+const ALL = [...new Set([...WATCH, ...LUGGAGE, ...TOOLS, ...KNIVES])];
 const quoted = (values: string[]) => values.map((value) => `'${value.replaceAll("'", "''")}'`).join(",");
 
 const watchSignal = "(positionCaseInsensitiveUTF8(txt,'reloj')>0 OR positionCaseInsensitiveUTF8(txt,'watch')>0)";
 const luggageSignal = "(positionCaseInsensitiveUTF8(txt,'maleta')>0 OR positionCaseInsensitiveUTF8(txt,'equipaje')>0 OR positionCaseInsensitiveUTF8(txt,'luggage')>0 OR positionCaseInsensitiveUTF8(txt,'suitcase')>0 OR positionCaseInsensitiveUTF8(txt,'spinner')>0 OR positionCaseInsensitiveUTF8(txt,'trolley')>0 OR positionCaseInsensitiveUTF8(txt,'carry-on')>0 OR positionCaseInsensitiveUTF8(txt,'carry on')>0)";
-const knifeSignal = "(positionCaseInsensitiveUTF8(txt,'cuchill')>0 OR positionCaseInsensitiveUTF8(txt,'cuchiller')>0 OR positionCaseInsensitiveUTF8(txt,'knife')>0 OR positionCaseInsensitiveUTF8(txt,'santoku')>0 OR positionCaseInsensitiveUTF8(txt,'mondador')>0 OR positionCaseInsensitiveUTF8(txt,'paring')>0)";
-const categoryExpr = `multiIf(b IN (${quoted(WATCH)}) AND ${watchSignal},'Relojes',b IN (${quoted(LUGGAGE)}) AND ${luggageSignal},'Maletas',b IN (${quoted(KNIVES)}) AND ${knifeSignal},'Cuchillos','')`;
+const pocketSignal = "(positionCaseInsensitiveUTF8(txt,'navaj')>0 OR positionCaseInsensitiveUTF8(txt,'cortapluma')>0 OR positionCaseInsensitiveUTF8(txt,'swisstool')>0 OR positionCaseInsensitiveUTF8(txt,'swiss champ')>0 OR positionCaseInsensitiveUTF8(txt,'spartan')>0 OR positionCaseInsensitiveUTF8(txt,'huntsman')>0 OR positionCaseInsensitiveUTF8(txt,'classic sd')>0 OR positionCaseInsensitiveUTF8(txt,'ranger grip')>0 OR positionCaseInsensitiveUTF8(txt,'cybertool')>0 OR positionCaseInsensitiveUTF8(txt,'work champ')>0 OR positionCaseInsensitiveUTF8(txt,'skeletool')>0 OR positionCaseInsensitiveUTF8(txt,'leatherman wave')>0 OR positionCaseInsensitiveUTF8(txt,'leatherman signal')>0 OR positionCaseInsensitiveUTF8(txt,'leatherman surge')>0 OR positionCaseInsensitiveUTF8(txt,'leatherman rebar')>0)";
+const pocketAccessory = "(positionCaseInsensitiveUTF8(txt,'aceite')>0 OR positionCaseInsensitiveUTF8(txt,'cadena para navaj')>0 OR positionCaseInsensitiveUTF8(txt,'cordón para navaj')>0 OR positionCaseInsensitiveUTF8(txt,'cordon para navaj')>0 OR positionCaseInsensitiveUTF8(txt,'lanyard')>0 OR positionCaseInsensitiveUTF8(txt,'multiclip')>0 OR positionCaseInsensitiveUTF8(txt,'alfiler repuesto')>0 OR positionCaseInsensitiveUTF8(txt,'multiherramientas para navajas')>0 OR positionCaseInsensitiveUTF8(txt,'juguete')>0)";
+const knifeSignal = "(positionCaseInsensitiveUTF8(txt,'cuchill')>0 OR positionCaseInsensitiveUTF8(txt,'cuchiller')>0 OR positionCaseInsensitiveUTF8(txt,'knife')>0 OR positionCaseInsensitiveUTF8(txt,'santoku')>0 OR positionCaseInsensitiveUTF8(txt,'mondador')>0 OR positionCaseInsensitiveUTF8(txt,'paring')>0 OR positionCaseInsensitiveUTF8(txt,'chef')>0 OR positionCaseInsensitiveUTF8(txt,'trinchar')>0 OR positionCaseInsensitiveUTF8(txt,'filetear')>0)";
+const knifeAccessory = "(positionCaseInsensitiveUTF8(txt,'pelador')>0 OR positionCaseInsensitiveUTF8(txt,'rallador')>0 OR positionCaseInsensitiveUTF8(txt,'tabla de corte')>0 OR positionCaseInsensitiveUTF8(txt,'tijera')>0 OR positionCaseInsensitiveUTF8(txt,'cuchara')>0 OR positionCaseInsensitiveUTF8(txt,'tenedor')>0 OR positionCaseInsensitiveUTF8(txt,'afilador')>0 OR positionCaseInsensitiveUTF8(txt,'soporte')>0 OR positionCaseInsensitiveUTF8(txt,'olla')>0 OR positionCaseInsensitiveUTF8(txt,'sarten')>0 OR positionCaseInsensitiveUTF8(txt,'sartén')>0)";
+const categoryExpr = `multiIf(
+  b IN (${quoted(WATCH)}) AND ${watchSignal},'Relojes',
+  b IN (${quoted(LUGGAGE)}) AND ${luggageSignal},'Equipo de viaje',
+  b IN (${quoted(TOOLS)}) AND ${pocketSignal} AND NOT ${pocketAccessory},'Navajas y multiherramientas',
+  b IN (${quoted(KNIVES)}) AND ${knifeSignal} AND NOT ${knifeAccessory},'Cuchillos',
+  '')`;
 
 function n(value: Numeric | null | undefined) { const parsed = Number(value ?? 0); return Number.isFinite(parsed) ? parsed : 0; }
 function median(values: number[]) { if (!values.length) return 0; const s = [...values].sort((a,b)=>a-b), m = Math.floor(s.length/2); return s.length%2?s[m]:(s[m-1]+s[m])/2; }
@@ -52,7 +61,7 @@ export async function handleBrandsCompetitionHistory(request: NextRequest) {
       ORDER BY category,price_date,brand
     `, params, 9_000);
 
-    const categories = ["Relojes", "Maletas", "Cuchillos"].map((category) => {
+    const categories = ["Relojes", "Equipo de viaje", "Navajas y multiherramientas", "Cuchillos"].map((category) => {
       const byDate = new Map<string, HistoryRow[]>();
       rows.forEach((row) => { if(row.category!==category)return; const value=byDate.get(row.date)??[]; value.push(row); byDate.set(row.date,value); });
       const points = [...byDate.entries()].sort(([a],[b])=>a.localeCompare(b)).flatMap(([date, day]) => {
