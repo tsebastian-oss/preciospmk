@@ -8,6 +8,23 @@ const USERNAME_EMAIL_MAP: Record<string, string> = {
   bodegasdonluis: "m.echave@bodegasdonluis.pe",
 };
 
+type SupabaseLoginPayload = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  error?: string;
+  error_description?: string;
+  msg?: string;
+  message?: string;
+};
+
+function temporaryAccessError() {
+  return NextResponse.json(
+    { error: "El servicio de acceso está temporalmente no disponible. Intenta nuevamente en unos segundos." },
+    { status: 503 }
+  );
+}
+
 export async function POST(request: NextRequest) {
   const supabaseUrl = process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? DEFAULT_SUPABASE_URL;
   const apiKey = process.env.SUPABASE_ANON_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? process.env.SUPABASE_PUBLISHABLE_KEY ?? DEFAULT_PUBLISHABLE_KEY;
@@ -27,23 +44,38 @@ export async function POST(request: NextRequest) {
   }
 
   const email = USERNAME_EMAIL_MAP[identifier] ?? identifier;
-  const response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
-    method: "POST",
-    headers: {
-      apikey: apiKey,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ email, password }),
-    cache: "no-store",
-  });
 
-  const payload = await response.json() as {
-    access_token?: string;
-    refresh_token?: string;
-    expires_in?: number;
-  };
+  let response: Response;
+  try {
+    response = await fetch(`${supabaseUrl}/auth/v1/token?grant_type=password`, {
+      method: "POST",
+      headers: {
+        apikey: apiKey,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ email, password }),
+      cache: "no-store",
+      signal: AbortSignal.timeout(12_000),
+    });
+  } catch {
+    return temporaryAccessError();
+  }
+
+  const raw = await response.text();
+  let payload: SupabaseLoginPayload = {};
+
+  if (raw) {
+    try {
+      payload = JSON.parse(raw) as SupabaseLoginPayload;
+    } catch {
+      if (response.ok) return temporaryAccessError();
+    }
+  } else if (response.ok) {
+    return temporaryAccessError();
+  }
 
   if (!response.ok || !payload.access_token) {
+    if (response.status >= 500) return temporaryAccessError();
     return NextResponse.json({ error: "Usuario o contraseña incorrectos" }, { status: 401 });
   }
 
@@ -56,6 +88,7 @@ export async function POST(request: NextRequest) {
     path: "/",
     maxAge: Math.max(60, payload.expires_in ?? 3600),
   });
+
   if (payload.refresh_token) {
     result.cookies.set("mgp_refresh_token", payload.refresh_token, {
       httpOnly: true,
@@ -65,5 +98,6 @@ export async function POST(request: NextRequest) {
       maxAge: 60 * 60 * 24 * 30,
     });
   }
+
   return result;
 }
