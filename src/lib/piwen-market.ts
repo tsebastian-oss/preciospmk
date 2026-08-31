@@ -162,30 +162,17 @@ export async function piwenMarketIntelligence(_access: EnterpriseAccessContext) 
       s.in_stock AS in_stock,
       toString(s.observed_at) AS observed_at,
       p.url AS url
-    FROM products AS p FINAL
-    INNER JOIN product_latest_price_state AS s FINAL ON s.product_id = p.id
+    FROM products AS p
+    INNER JOIN product_latest_price_state AS s ON s.product_id = p.id
     WHERE p.retailer_type = 'supermarket'
-      AND (
-        positionCaseInsensitiveUTF8(p.name, 'almendr') > 0
-        OR positionCaseInsensitiveUTF8(p.name, 'pistach') > 0
-        OR positionCaseInsensitiveUTF8(p.name, 'cajú') > 0
-        OR positionCaseInsensitiveUTF8(p.name, 'caju') > 0
-        OR positionCaseInsensitiveUTF8(p.name, 'cashew') > 0
-        OR positionCaseInsensitiveUTF8(p.name, 'nuez') > 0
-        OR positionCaseInsensitiveUTF8(p.name, 'maní') > 0
-        OR positionCaseInsensitiveUTF8(p.name, 'mani') > 0
-        OR positionCaseInsensitiveUTF8(p.name, 'avellana') > 0
-        OR positionCaseInsensitiveUTF8(p.name, 'frutos secos') > 0
-        OR positionCaseInsensitiveUTF8(p.name, 'semilla') > 0
-        OR positionCaseInsensitiveUTF8(p.name, 'cranber') > 0
-        OR positionCaseInsensitiveUTF8(p.name, 'pasa') > 0
-        OR positionCaseInsensitiveUTF8(p.name, 'ciruela deshidrat') > 0
-        OR positionCaseInsensitiveUTF8(p.name, 'damasco deshidrat') > 0
-      )
+      AND s.observed_at >= now() - INTERVAL 60 DAY
+      AND multiSearchAnyCaseInsensitiveUTF8(
+        p.name,
+        ['almendr','pistach','cajú','caju','cashew','nuez','maní','mani','avellana','frutos secos','semilla','cranber','pasa','ciruela deshidrat','damasco deshidrat']
+      ) > 0
       AND if(toFloat64(ifNull(s.offer_price, 0)) > 0, toFloat64(s.offer_price), toFloat64(ifNull(s.regular_price, 0))) > 0
-    ORDER BY s.observed_at DESC
-    LIMIT 3500
-  `, {}, 12_000);
+    LIMIT 2200
+  `, {}, 8_000);
 
   const market: PiwenMarketListing[] = [];
   const seen = new Set<string>();
