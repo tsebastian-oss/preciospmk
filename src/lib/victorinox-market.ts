@@ -74,11 +74,15 @@ function categoryFor(brand: string, text: string) {
     return "Equipo de viaje";
   }
 
-  if (/navaj|multiherr|swiss army knife|spartan|climber|huntsman|cadet|classic sd|explorer|rambler|fieldmaster|swisstool/.test(t)) {
+  const pocketAccessory = /aceite.*multiherr|cadena.*navaj|lanyard.*navaj|multiclip.*navaj|alfiler.*repuesto|repuesto.*navaj|afilador.*multiherr|funda.*navaj|estuche.*navaj/.test(t);
+  const pocketSignal = /navaj|cortapluma|swiss army knife|spartan|climber|huntsman|cadet|classic sd|explorer|rambler|fieldmaster|swisstool|swiss champ|swisschamp|ranger ?grip|cybertool|work champ|outrider|super tinker|hiker|camper|sportsman|recruit|sentinel|evoke|hunter pro|wine master|mountaineer|handyman|minichamp|swiss lite/.test(t);
+  if (pocketSignal && !pocketAccessory) {
     return "Navajas y multiherramientas";
   }
 
-  if (/cuchill|cuchiller|knife|santoku|mondador|fibrox|\bchef\b|afilador|pelador|tijera|rallador|tabla de corte|swiss classic|rosewood/.test(t)) {
+  const kitchenAccessory = /pelador|rallador|tabla de corte|tijera|cuchara|tenedor|afilador|soporte.*cuchill|pala para pizza|cortador de pizza|cortador de queso|abrelatas|esp[áa]tula/.test(t);
+  const knifeSignal = /cuchill|cuchiller|\bknife\b|santoku|mondador|fibrox|\bchef\b|trinchar|filetear|pan y pasteleria|pan y pastelería|tomate y de mesa|bistec/.test(t);
+  if (knifeSignal && !kitchenAccessory) {
     return "Cuchillos";
   }
 
