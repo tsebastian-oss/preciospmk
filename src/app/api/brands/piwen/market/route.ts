@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { brandScopeAllows, enterpriseAccess } from "@/lib/enterprise-auth";
+import { brandScopeAllows, enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
 import { clickHouseConfigured } from "@/lib/clickhouse";
 import { piwenMarketIntelligence } from "@/lib/piwen-market";
 
@@ -17,8 +17,12 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const payload = await piwenMarketIntelligence(authorization.access);
-    return NextResponse.json(payload, {
+    const [payload, marketplaceResult] = await Promise.all([
+      piwenMarketIntelligence(authorization.access),
+      enterpriseRpc<Record<string, unknown>>(request, "brands_piwen_marketplace_snapshot", { p_slug: "piwen" }),
+    ]);
+    const marketplace = marketplaceResult.response ? null : marketplaceResult.data ?? null;
+    return NextResponse.json({ ...payload, marketplace }, {
       headers: { "cache-control": "private, max-age=120, stale-while-revalidate=300" },
     });
   } catch (error) {
