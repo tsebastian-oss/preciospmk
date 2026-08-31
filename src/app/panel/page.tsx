@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import BrandsVertical from "../BrandsVertical";
+import WhatsAppSupport from "../WhatsAppSupport";
 import styles from "./panel.module.css";
 
 type PanelAccess = {
@@ -64,5 +65,6 @@ export default function ClientBrandPanelPage() {
     <section className={styles.content}>
       <BrandsVertical initialBrand={access.brandSlug} locked />
     </section>
+    <WhatsAppSupport brandName={access.brandName} organizationName={access.organizationName} />
   </main>;
 }
