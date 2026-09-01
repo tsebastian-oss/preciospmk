@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "MGP Starken Collector",
+  "version": "1.0.0",
+  "description": "Recolector dedicado de cotizaciones públicas Starken para MGP Pricing Intelligence.",
+  "permissions": [
+    "alarms",
+    "tabs",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.starken.cl/*",
+    "https://gateway.starken.cl/*",
+    "https://yfpixszkiakwzrqdcfbw.supabase.co/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "MGP Starken Collector"
+  }
+}
