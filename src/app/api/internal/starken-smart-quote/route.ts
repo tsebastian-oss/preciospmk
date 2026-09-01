@@ -5,6 +5,8 @@ export const revalidate = 0;
 export const maxDuration = 60;
 export const preferredRegion = "gru1";
 
+// Redeploy marker: Bright Data Browser API configured for production runtime.
+
 const TOKEN_SHA256 = "3baad96cf068bc2221726a3732e9012dd20e5474b6a8249a7bc62161427551c7";
 const OFFICIAL_BASE = "https://gateway.starken.cl/externo/integracion";
 const LEGACY_CITY_URL = "https://gateway.starken.cl/agency/city";
