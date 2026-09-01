@@ -7,6 +7,7 @@ export const preferredRegion = "gru1";
 
 const TOKEN_SHA256 = "3baad96cf068bc2221726a3732e9012dd20e5474b6a8249a7bc62161427551c7";
 const STARKEN_URL = "https://www.starken.cl/tarifa-simple";
+const PARTNER_URL = "https://www.starken.cl/somos-partner";
 const SIZES = ["XS", "S", "M", "L"] as const;
 type Size = typeof SIZES[number];
 type DeliveryType = "AGENCIA" | "DOMICILIO";
@@ -105,6 +106,35 @@ function dedupe(rates: BaseRate[]) {
   return [...out.values()];
 }
 
+function parsePartnerTiers(text: string) {
+  const normalized = String(text || "").replace(/\r/g, " ").replace(/\s+/g, " ");
+  const defs = [
+    { name: "Colina", fallbackMin: 3, fallbackPct: 10 },
+    { name: "Montaña", fallbackMin: 50, fallbackPct: 15 },
+    { name: "Cordillera", fallbackMin: 150, fallbackPct: 20 },
+  ];
+  return defs.map((tier) => {
+    const escaped = tier.name.replace(/[.*+?^$()|[\]{}]/g, "\\function dedupe(rates: BaseRate[]) {
+  const out = new Map<string, BaseRate>();
+  for (const rate of rates) {
+    if (!rate.zone || !rate.priceClp) continue;
+    const key = [rate.deliveryType, rate.zone, rate.size].join("|");
+    if (!out.has(key)) out.set(key, rate);
+  }
+  return [...out.values()];
+}
+");
+    const re = new RegExp(escaped + "[\\s\\S]{0,180}?\\+?([0-9]{1,4})\\s*Envíos? mensuales[\\s\\S]{0,120}?([0-9]{1,2})%\\s*de descuentos?", "i");
+    const match = normalized.match(re);
+    return {
+      name: tier.name,
+      minMonthlyShipments: match ? Number(match[1]) : tier.fallbackMin,
+      discountPct: match ? Number(match[2]) : tier.fallbackPct,
+      verifiedInPage: Boolean(match),
+    };
+  });
+}
+
 export async function POST(request: NextRequest) {
   if (!(await authorized(request))) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const body = await request.json().catch(() => ({}));
@@ -198,12 +228,32 @@ export async function POST(request: NextRequest) {
       }, { status: 502 });
     }
 
+    let partnerTiers = [
+      { name: "Colina", minMonthlyShipments: 3, discountPct: 10, verifiedInPage: false },
+      { name: "Montaña", minMonthlyShipments: 50, discountPct: 15, verifiedInPage: false },
+      { name: "Cordillera", minMonthlyShipments: 150, discountPct: 20, verifiedInPage: false },
+    ];
+    try {
+      await page.goto(PARTNER_URL, { waitUntil: "commit", timeout: 20_000 }).catch(async (error) => {
+        if (!page.url().includes("starken.cl")) throw error;
+      });
+      await page.getByText(/CATEGORÍAS DE BENEFICIOS/i).first().waitFor({ state: "visible", timeout: 20_000 }).catch(() => undefined);
+      await page.waitForTimeout(500);
+      const partnerText = await page.locator("body").innerText().catch(() => "");
+      partnerTiers = parsePartnerTiers(partnerText);
+    } catch {}
+
     return NextResponse.json({
       ok: true,
       sourceUrl: STARKEN_URL,
+      partnerSourceUrl: PARTNER_URL,
       observedAt: new Date().toISOString(),
       baseRates: unique,
-      diagnostics,
+      partnerTiers,
+      diagnostics: {
+        ...diagnostics,
+        partnerTiersVerified: partnerTiers.filter((tier) => tier.verifiedInPage).length,
+      },
     }, { headers: { "cache-control": "private, no-store, max-age=0" } });
   } catch (error) {
     return NextResponse.json({
