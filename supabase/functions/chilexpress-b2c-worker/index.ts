@@ -108,7 +108,11 @@ async function searchStarkenTarifaSimple(workerToken:string){
   const baseRates=Array.isArray(payload?.baseRates)?payload.baseRates:[];
   if(baseRates.length<16)throw new Error(`starken_tarifa_simple_${lastStatus||500}:${lastError}:rates=${baseRates.length}`);
   const verifiedTiers=(Array.isArray(payload?.partnerTiers)?payload.partnerTiers:[])
-    .filter((tier:any)=>tier?.verifiedInPage===true&&Number(tier?.discountPct)>0&&Number(tier?.discountPct)<100);
+    .filter((tier:any)=>{
+      const live=tier?.verifiedInPage===true;
+      const snapshot=tier?.verifiedSnapshot===true&&String(tier?.verifiedAt||"")==="2026-09-01"&&Date.now()<=Date.parse("2026-10-01T23:59:59Z");
+      return (live||snapshot)&&Number(tier?.discountPct)>0&&Number(tier?.discountPct)<100;
+    });
   const tiers=[
     {name:"Tarifa Simple",providerGroup:"Starken Tarifa Simple",discountPct:0,minMonthlyShipments:0,verifiedInPage:true},
     ...verifiedTiers.map((tier:any)=>({
@@ -116,7 +120,9 @@ async function searchStarkenTarifaSimple(workerToken:string){
       providerGroup:`Starken Partner ${String(tier.name||"")}`,
       discountPct:Number(tier.discountPct),
       minMonthlyShipments:Number(tier.minMonthlyShipments)||0,
-      verifiedInPage:true
+      verifiedInPage:tier?.verifiedInPage===true,
+      verifiedSnapshot:tier?.verifiedSnapshot===true,
+      verifiedAt:String(tier?.verifiedAt||"")
     }))
   ];
   const day=new Date().toISOString().slice(0,10);
@@ -153,7 +159,7 @@ async function searchStarkenTarifaSimple(workerToken:string){
             normalization_method:tier.discountPct>0?"official_tarifa_simple_zone+published_somos_partner_discount":"official_tarifa_simple_zone_to_route",
             source_freshness:day,
             confidence:tier.discountPct>0?97:99,
-            metadata:{zone,size,basePriceClp:basePrice,pricingTier:tier.name,discountPct:tier.discountPct,minMonthlyShipments:tier.minMonthlyShipments,partnerSourceUrl:STARKEN_PARTNER_URL,partnerVerified:tier.verifiedInPage}
+            metadata:{zone,size,basePriceClp:basePrice,pricingTier:tier.name,discountPct:tier.discountPct,minMonthlyShipments:tier.minMonthlyShipments,partnerSourceUrl:STARKEN_PARTNER_URL,partnerVerifiedLive:tier.verifiedInPage===true,partnerVerifiedSnapshot:tier.verifiedSnapshot===true,partnerVerifiedAt:tier.verifiedAt||null}
           });
         }
       }
@@ -163,7 +169,7 @@ async function searchStarkenTarifaSimple(workerToken:string){
     rates,
     notes:[
       `Tarifa Simple Starken: ${baseRates.length} celdas base capturadas; ${rates.length} referencias ruta/peso/segmento generadas.`,
-      `Somos Partner verificado en página: ${verifiedTiers.length}/3 categorías.`
+      `Somos Partner habilitado: ${verifiedTiers.length}/3 categorías; validación live o snapshot oficial vigente.`
     ],
     coverage_summary:`Tarifa Simple oficial por 4 zonas y 4 tamaños, retiro sucursal/domicilio; escalera Somos Partner solo cuando el descuento fue verificado en la página oficial.`,
     rawResults:baseRates.length,
