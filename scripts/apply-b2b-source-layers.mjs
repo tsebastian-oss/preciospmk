@@ -31,7 +31,7 @@ replaceOnce(
 );
 replaceOnce(
   'const PROVIDER_PRIORITY = ["Chilexpress", "Blue Express", "Starken", "CorreosChile"];',
-  'const PROVIDER_PRIORITY = ["Chilexpress", "Blue Express", "Starken", "CorreosChile"];\nconst PRICING_LAYERS: Array<{ key: PricingLayer; label: string; description: string }> = [\n  { key: "public", label: "Tarifa pública", description: "Tarifarios comerciales publicados por los couriers." },\n  { key: "b2b", label: "B2B observado", description: "Tarifas unitarias verificadas en ofertas, anexos y órdenes públicas." },\n  { key: "best", label: "Mejor precio observado", description: "Menor tarifa verificable por courier y perfil entre las capas disponibles." },\n];',
+  'const PROVIDER_PRIORITY = ["Chilexpress", "Blue Express", "Starken Tarifa Simple", "Starken Partner Colina", "Starken Partner Montaña", "Starken Partner Cordillera", "Starken", "CorreosChile"];\nconst PRICING_LAYERS: Array<{ key: PricingLayer; label: string; description: string }> = [\n  { key: "public", label: "Tarifa pública", description: "Tarifarios comerciales publicados por los couriers." },\n  { key: "b2b", label: "B2B observado", description: "Tarifas unitarias verificadas en ofertas, anexos y órdenes públicas." },\n  { key: "best", label: "Mejor precio observado", description: "Menor tarifa verificable por courier y perfil entre las capas disponibles." },\n];',
   "pricing layer constants",
 );
 replaceOnce(
