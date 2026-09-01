@@ -358,10 +358,9 @@ async function runResidentialBrowser(quotes: QuoteInput[], browserWs: string) {
       const current = page.url();
       if (!current.includes("starken.cl")) throw error;
     });
-    await page.waitForLoadState("domcontentloaded", { timeout: 12_000 }).catch(() => undefined);
     const formTitle = page.getByText(/Cotiza con Starken/i).first();
-    await formTitle.waitFor({ state: "visible", timeout: 18_000 });
-    await page.waitForTimeout(700);
+    await formTitle.waitFor({ state: "visible", timeout: 16_000 });
+    await page.waitForTimeout(250);
 
     const selects = page.locator("select");
     const inputs = page.locator("input");
