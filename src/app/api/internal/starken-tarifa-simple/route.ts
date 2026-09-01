@@ -106,6 +106,19 @@ function dedupe(rates: BaseRate[]) {
   return [...out.values()];
 }
 
+function htmlToText(html: string) {
+  return String(html || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&#43;/g, "+")
+    .replace(/&#37;/g, "%")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function parsePartnerTiers(text: string) {
   const normalized = String(text || "").replace(/\r/g, " ").replace(/\s+/g, " ");
   const lower = normalized.toLocaleLowerCase("es-CL");
@@ -232,10 +245,30 @@ export async function POST(request: NextRequest) {
         if (!page.url().includes("starken.cl")) throw error;
       });
       await page.getByText(/CATEGORÍAS DE BENEFICIOS/i).first().waitFor({ state: "visible", timeout: 20_000 }).catch(() => undefined);
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(750);
       const partnerText = await page.locator("body").innerText().catch(() => "");
       partnerTiers = parsePartnerTiers(partnerText);
     } catch {}
+
+    if (partnerTiers.filter((tier) => tier.verifiedInPage).length < 3) {
+      try {
+        const partnerResponse = await fetch(PARTNER_URL, {
+          cache: "no-store",
+          headers: {
+            accept: "text/html,application/xhtml+xml",
+            "user-agent": "Mozilla/5.0 (compatible; MGP-Pricing/1.0)",
+          },
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (partnerResponse.ok) {
+          const html = await partnerResponse.text();
+          const directTiers = parsePartnerTiers(htmlToText(html));
+          if (directTiers.filter((tier) => tier.verifiedInPage).length > partnerTiers.filter((tier) => tier.verifiedInPage).length) {
+            partnerTiers = directTiers;
+          }
+        }
+      } catch {}
+    }
 
     return NextResponse.json({
       ok: true,
