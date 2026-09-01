@@ -468,7 +468,8 @@ export async function POST(request: NextRequest) {
   }
 
   const officialToken = process.env.STARKEN_INTEGRATION_TOKEN?.trim() || "";
-  const browserWs = process.env.BRIGHTDATA_BROWSER_WS?.trim() || "";
+  const runtimeEndpoint = typeof body?.connectorEndpoint === "string" ? body.connectorEndpoint.trim() : "";
+  const browserWs = process.env.BRIGHTDATA_BROWSER_WS?.trim() || runtimeEndpoint;
   const attempts: string[] = [];
 
   if (officialToken) {
