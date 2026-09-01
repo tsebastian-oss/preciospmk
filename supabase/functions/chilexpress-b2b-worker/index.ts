@@ -53,6 +53,59 @@ function band(w:number|null){
   if(!w||w<=0)return "Sin peso"; if(w<=0.5)return "0–0,5 kg"; if(w<=1)return "0,5–1 kg";
   if(w<=3)return "1–3 kg"; if(w<=5)return "3–5 kg"; if(w<=10)return "5–10 kg"; if(w<=20)return "10–20 kg"; return "20+ kg";
 }
+function matrixWeightBand(w:number|null){
+  if(!w||w<=0)return "Sin peso"; if(w<=0.5)return "0–0,5 kg"; if(w<=1.5)return "0,5–1,5 kg";
+  if(w<=3)return "1,5–3 kg"; if(w<=6)return "3–6 kg"; if(w<=10)return "6–10 kg"; if(w<=15)return "10–15 kg"; if(w<=20)return "15–20 kg"; return "20+ kg";
+}
+function matrixProfileKey(service:string,origin:string,destination:string,w:number|null){
+  const parts=[service||"Courier"];
+  if(origin&&destination)parts.push(origin+" → "+destination);
+  if(w&&w>0)parts.push("Ref "+String(w).replace(".",",")+" kg");
+  else parts.push(matrixWeightBand(w));
+  return parts.join(" | ");
+}
+async function mirrorB2BToMatrix(rateRows:any[]){
+  const comparable=rateRows.map((row:any)=>{
+    const w=Number(row.weight_kg)>0?Number(row.weight_kg):null;
+    const delivery=clean(row.delivery_type||"").toUpperCase();
+    const service=delivery.includes("DOMICILIO")?"Domicilio estándar / express":clean(row.service_type)||"Courier";
+    const origin=clean(row.origin_label)||"Santiago Centro";
+    const destination=clean(row.destination_label)||"";
+    const price=Number(row.shipment_price_clp)||0;
+    return {
+      source_record_id:"cxb2bmirror:"+String(row.source_record_id),
+      source:"mercado_publico_annex",
+      source_kind:"mercado_publico_offer_rate",
+      source_url:clean(row.source_url)||null,
+      category:"courier",
+      provider_name:clean(row.provider_name)||clean(row.provider_group)||"Proveedor",
+      provider_group:clean(row.provider_group)||"Otros",
+      buyer_name:clean(row.buyer_name)||null,
+      service_type:service,
+      origin_label:origin,
+      destination_label:destination,
+      weight_kg:w,
+      distance_km:null,
+      shipment_price_clp:price,
+      price_per_kg_clp:w&&w>0?price/w:null,
+      price_per_km_clp:null,
+      price_per_kg_km_clp:null,
+      weight_band:matrixWeightBand(w),
+      distance_band:"Sin distancia",
+      profile_key:matrixProfileKey(service,origin,destination,w),
+      comparability_level:w&&w>0&&destination?"weight":"none",
+      confidence:Number(row.confidence)||80,
+      normalization_method:"dedicated_market_public_document+explicit_unit_rate",
+      process_date:String(row.observed_at||new Date().toISOString()).slice(0,10),
+      metadata:{...(row.metadata||{}),processId:row.process_id||null,priceBasis:row.price_basis||null,mirroredFrom:"chilexpress_b2b_rates",sourceLayer:"public-sector B2B observed"},
+      updated_at:new Date().toISOString()
+    };
+  }).filter((row:any)=>row.shipment_price_clp>0&&row.comparability_level!=="none");
+  if(!comparable.length)return 0;
+  const up=await sb.from("b2b_rate_comparables").upsert(comparable,{onConflict:"source_record_id"});
+  if(up.error)throw new Error("b2b_matrix_mirror:"+up.error.message);
+  return comparable.length;
+}
 async function download(target:any){
   const url="https://www.mercadopublico.cl/Portal/Modules/Site/AdvancedSearch/ViewAttachmentPurchaseOrder.aspx?qs="+encodeURIComponent(target.qs);
   const initial=await fetch(url,{headers:{"user-agent":"Mozilla/5.0",accept:"text/html"},redirect:"follow",signal:AbortSignal.timeout(15000)});
@@ -163,9 +216,14 @@ Deno.serve(async(req:Request)=>{
         delivery_type:clean(x.delivery_type)||null,origin_label:clean(x.origin)||null,destination_label:dest,weight_kg:w,weight_band:clean(x.weight_band)||band(w),shipment_price_clp:price,price_basis:clean(x.price_basis)||"shipment",
         confidence:Math.max(0,Math.min(100,Number(x.confidence)||80)),evidence:clean(x.evidence).slice(0,1500),observed_at:new Date().toISOString(),metadata:{regionOrZone:x.region_or_zone||null,collector:"chilexpress-b2b-worker-v1"}});
     }
-    if(rateRows.length){const up=await sb.from("chilexpress_b2b_rates").upsert(rateRows,{onConflict:"organization_id,source_record_id"});if(up.error)throw new Error(up.error.message);}
+    let matrixMirrored=0;
+    if(rateRows.length){
+      const up=await sb.from("chilexpress_b2b_rates").upsert(rateRows,{onConflict:"organization_id,source_record_id"});
+      if(up.error)throw new Error(up.error.message);
+      matrixMirrored=await mirrorB2BToMatrix(rateRows);
+    }
     const status=rateRows.length?"ok":"partial"; if(!rateRows.length) await sb.from("chilexpress_b2b_documents").update({status:"no_price"}).eq("id",docUp.data.id);
-    await sb.from("chilexpress_scrape_runs").update({status,finished_at:new Date().toISOString(),metrics:{model:m,target:targetKey,bytes:dl.bytes.length,candidateRates:rawRates.length,acceptedRates:rateRows.length,globalAmounts:(parsed?.global_amounts??[]).length},errors:rateRows.length?[]:["Document parsed but no high-confidence comparable unit rates were accepted"]}).eq("id",runId);
+    await sb.from("chilexpress_scrape_runs").update({status,finished_at:new Date().toISOString(),metrics:{model:m,target:targetKey,bytes:dl.bytes.length,candidateRates:rawRates.length,acceptedRates:rateRows.length,matrixMirrored,globalAmounts:(parsed?.global_amounts??[]).length},errors:rateRows.length?[]:["Document parsed but no high-confidence comparable unit rates were accepted"]}).eq("id",runId);
     return Response.json({ok:true,runId,mode,target:targetKey,status,candidates:rawRates.length,accepted:rateRows.length,documentId:docUp.data.id});
   }catch(e){
     const msg=e instanceof Error?e.message:String(e);
