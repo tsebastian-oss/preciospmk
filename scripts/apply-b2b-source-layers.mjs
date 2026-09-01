@@ -3,6 +3,11 @@ import fs from "node:fs";
 const path = "src/app/B2BPricing.tsx";
 let source = fs.readFileSync(path, "utf8");
 
+if (source.includes('import ChilexpressMarketPanel from "./ChilexpressMarketPanel";')) {
+  console.log("Dedicated Courier & Logistics workspace detected; generic B2B source-layer patch skipped");
+  process.exit(0);
+}
+
 function replaceOnce(from, to, label) {
   if (source.includes(to)) return;
   if (!source.includes(from)) throw new Error(`B2B source layers: missing ${label}`);
