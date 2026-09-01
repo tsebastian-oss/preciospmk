@@ -439,15 +439,36 @@ async function runResidentialBrowser(quotes: QuoteInput[], browserWs: string) {
       }
 
       const comboIndex = kind === "origin" ? 0 : 1;
-      let trigger = comboboxCount >= 2
-        ? comboboxes.nth(comboIndex)
-        : page.getByText(kind === "origin" ? "Seleccione origen" : "Seleccione destino", { exact: true }).first();
+      const directId = kind === "origin" ? "#origenForm" : "#destinoForm";
+      const directCombo = page.locator(directId).first();
+      let trigger = (await directCombo.count())
+        ? directCombo
+        : comboboxCount >= 2
+          ? comboboxes.nth(comboIndex)
+          : page.getByText(kind === "origin" ? "Seleccione origen" : "Seleccione destino", { exact: true }).first();
 
       if (!(await trigger.count())) {
         throw new Error(`ui_${kind}_trigger_missing`);
       }
 
-      await trigger.click({ timeout: 8_000 });
+      const isEditableCombo = await trigger.isEditable().catch(() => false);
+      if (isEditableCombo) {
+        await trigger.focus();
+        await trigger.fill(requestedLabel).catch(() => undefined);
+        await page.waitForTimeout(500);
+        const option = page.getByRole("option", { name: requestedLabel, exact: false }).first();
+        if ((await option.count()) && await option.isVisible().catch(() => false)) {
+          await option.click({ force: true, timeout: 5_000 });
+          return;
+        }
+        await trigger.press("ArrowDown").catch(() => undefined);
+        await page.waitForTimeout(120);
+        await trigger.press("Enter").catch(() => undefined);
+        await page.waitForTimeout(250);
+        return;
+      }
+
+      await trigger.click({ force: true, timeout: 5_000 });
       await page.waitForTimeout(300);
 
       const visibleCombos = page.locator('[role="combobox"]:visible');
@@ -455,6 +476,7 @@ async function runResidentialBrowser(quotes: QuoteInput[], browserWs: string) {
       if (visibleComboCount > 0) {
         const activeCombo = visibleCombos.last();
         if (await activeCombo.isEditable().catch(() => false)) {
+          await activeCombo.focus();
           await activeCombo.fill(requestedLabel).catch(() => undefined);
           await page.waitForTimeout(350);
         }
