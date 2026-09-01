@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const maxDuration = 60;
+export const preferredRegion = "gru1";
 
 const TOKEN_SHA256 = "3baad96cf068bc2221726a3732e9012dd20e5474b6a8249a7bc62161427551c7";
 const CITY_URL = "https://gateway.starken.cl/agency/city";
