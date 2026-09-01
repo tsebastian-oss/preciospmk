@@ -362,6 +362,8 @@ async function runResidentialBrowser(quotes: QuoteInput[], browserWs: string) {
     const inputs = page.locator("input");
     const selectCount = await selects.count();
     const inputCount = await inputs.count();
+    const comboboxes = page.locator('[role="combobox"]');
+    const comboboxCount = await comboboxes.count();
 
     const selectMeta: Array<{ index: number; context: string; options: Array<{ label: string; value: string }> }> = [];
     for (let i = 0; i < selectCount; i += 1) {
@@ -394,11 +396,16 @@ async function runResidentialBrowser(quotes: QuoteInput[], browserWs: string) {
     const destinationSelect = selectMeta.find((item) => /destino/i.test(item.context))?.index ?? 1;
 
     if (selectCount < 2) {
-      const title = await page.title().catch(() => "");
-      const body = await page.locator("body").innerText().catch(() => "");
-      throw new Error(
-        `ui_form_selects_missing:selects=${selectCount}:inputs=${inputCount}:url=${page.url()}:title=${title.slice(0,120)}:body=${body.replace(/\\s+/g," ").slice(0,500)}`
-      );
+      const originTrigger = page.getByText("Seleccione origen", { exact: true }).first();
+      const destinationTrigger = page.getByText("Seleccione destino", { exact: true }).first();
+      const hasCustomTriggers = (await originTrigger.count()) > 0 && (await destinationTrigger.count()) > 0;
+      if (comboboxCount < 2 && !hasCustomTriggers) {
+        const title = await page.title().catch(() => "");
+        const body = await page.locator("body").innerText().catch(() => "");
+        throw new Error(
+          `ui_origin_destination_controls_missing:selects=${selectCount}:comboboxes=${comboboxCount}:inputs=${inputCount}:url=${page.url()}:title=${title.slice(0,120)}:body=${body.replace(/\\s+/g," ").slice(0,500)}`
+        );
+      }
     }
 
     const findInputIndex = (label: RegExp, fallback: number) =>
@@ -410,20 +417,69 @@ async function runResidentialBrowser(quotes: QuoteInput[], browserWs: string) {
     const weightInput = findInputIndex(/peso|kilo/i, 3);
     const declaredInput = findInputIndex(/valor\s*declarado|declarado/i, 4);
 
-    async function choose(selectIndex: number, requested: string) {
-      const locator = selects.nth(selectIndex);
-      const options = await locator.locator("option").evaluateAll((nodes) =>
-        nodes.map((node) => ({
-          label: String((node as HTMLOptionElement).textContent || "").trim(),
-          value: String((node as HTMLOptionElement).value || ""),
-        }))
-      );
-      const target = norm(requested === "Santiago Centro" ? "Santiago" : requested);
-      const match = options.find((option) => norm(option.label) === target)
-        || options.find((option) => norm(option.label).includes(target))
-        || options.find((option) => target.includes(norm(option.label)) && norm(option.label).length > 3);
-      if (!match) throw new Error(`ui_city_not_found:${requested}`);
-      await locator.selectOption(match.value);
+    async function choose(kind: "origin" | "destination", requested: string) {
+      const requestedLabel = requested === "Santiago Centro" ? "Santiago" : requested;
+      const target = norm(requestedLabel);
+
+      if (selectCount >= 2) {
+        const selectIndex = kind === "origin" ? originSelect : destinationSelect;
+        const locator = selects.nth(selectIndex);
+        const options = await locator.locator("option").evaluateAll((nodes) =>
+          nodes.map((node) => ({
+            label: String((node as HTMLOptionElement).textContent || "").trim(),
+            value: String((node as HTMLOptionElement).value || ""),
+          }))
+        );
+        const match = options.find((option) => norm(option.label) === target)
+          || options.find((option) => norm(option.label).includes(target))
+          || options.find((option) => target.includes(norm(option.label)) && norm(option.label).length > 3);
+        if (!match) throw new Error(`ui_city_not_found:${requested}`);
+        await locator.selectOption(match.value);
+        return;
+      }
+
+      const comboIndex = kind === "origin" ? 0 : 1;
+      let trigger = comboboxCount >= 2
+        ? comboboxes.nth(comboIndex)
+        : page.getByText(kind === "origin" ? "Seleccione origen" : "Seleccione destino", { exact: true }).first();
+
+      if (!(await trigger.count())) {
+        throw new Error(`ui_${kind}_trigger_missing`);
+      }
+
+      await trigger.click({ timeout: 8_000 });
+      await page.waitForTimeout(300);
+
+      const visibleCombos = page.locator('[role="combobox"]:visible');
+      const visibleComboCount = await visibleCombos.count();
+      if (visibleComboCount > 0) {
+        const activeCombo = visibleCombos.last();
+        if (await activeCombo.isEditable().catch(() => false)) {
+          await activeCombo.fill(requestedLabel).catch(() => undefined);
+          await page.waitForTimeout(350);
+        }
+      }
+
+      const roleOption = page.getByRole("option", { name: requestedLabel, exact: false }).first();
+      if ((await roleOption.count()) && await roleOption.isVisible().catch(() => false)) {
+        await roleOption.click({ timeout: 8_000 });
+        return;
+      }
+
+      const exactText = page.getByText(requestedLabel, { exact: true }).last();
+      if ((await exactText.count()) && await exactText.isVisible().catch(() => false)) {
+        await exactText.click({ timeout: 8_000 });
+        return;
+      }
+
+      const fuzzyText = page.getByText(requestedLabel, { exact: false }).last();
+      if ((await fuzzyText.count()) && await fuzzyText.isVisible().catch(() => false)) {
+        await fuzzyText.click({ timeout: 8_000 });
+        return;
+      }
+
+      const visibleText = await page.locator("body").innerText().catch(() => "");
+      throw new Error(`ui_city_option_not_found:${requested}:body=${visibleText.replace(/\\s+/g," ").slice(0,350)}`);
     }
 
     async function fill(index: number, value: number) {
@@ -440,9 +496,9 @@ async function runResidentialBrowser(quotes: QuoteInput[], browserWs: string) {
 
     for (const input of quotes) {
       try {
-        await choose(originSelect, input.origin);
+        await choose("origin", input.origin);
         await page.waitForTimeout(250);
-        await choose(destinationSelect, input.destination);
+        await choose("destination", input.destination);
         await fill(heightInput, input.heightCm);
         await fill(lengthInput, input.lengthCm);
         await fill(widthInput, input.widthCm);
