@@ -12,6 +12,14 @@ const SIZES = ["XS", "S", "M", "L"] as const;
 type Size = typeof SIZES[number];
 type DeliveryType = "AGENCIA" | "DOMICILIO";
 type BaseRate = { zone: string; size: Size; deliveryType: DeliveryType; priceClp: number };
+type PartnerTier = {
+  name: string;
+  minMonthlyShipments: number;
+  discountPct: number;
+  verifiedInPage: boolean;
+  verifiedSnapshot?: boolean;
+  verifiedAt?: string;
+};
 
 async function sha256(value: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
@@ -119,7 +127,7 @@ function htmlToText(html: string) {
     .trim();
 }
 
-function parsePartnerTiers(text: string) {
+function parsePartnerTiers(text: string): PartnerTier[] {
   const normalized = String(text || "").replace(/\r/g, " ").replace(/\s+/g, " ");
   const lower = normalized.toLocaleLowerCase("es-CL");
   const defs = [
@@ -235,7 +243,7 @@ export async function POST(request: NextRequest) {
       }, { status: 502 });
     }
 
-    let partnerTiers = [
+    let partnerTiers: PartnerTier[] = [
       { name: "Colina", minMonthlyShipments: 3, discountPct: 10, verifiedInPage: false },
       { name: "Montaña", minMonthlyShipments: 50, discountPct: 15, verifiedInPage: false },
       { name: "Cordillera", minMonthlyShipments: 150, discountPct: 20, verifiedInPage: false },
