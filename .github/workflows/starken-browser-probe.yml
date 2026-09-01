@@ -26,7 +26,7 @@ jobs:
           npx playwright install --with-deps chromium
       - name: Quote Starken in browser context
         run: |
-          cat > /tmp/starken-probe.mjs <<'EOF'
+          cat > starken-probe.mjs <<'EOF'
           import { chromium } from "playwright";
 
           const browser = await chromium.launch({ headless: true });
@@ -110,4 +110,4 @@ jobs:
             await browser.close();
           }
           EOF
-          node /tmp/starken-probe.mjs
+          node starken-probe.mjs
