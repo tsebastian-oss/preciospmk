@@ -14,6 +14,13 @@ const PROVIDERS:Record<ProviderKey,{name:string;group:string;domains:string[];se
 
 const DESTINATIONS=["Santiago Centro","Rancagua","Valparaíso","Talca","Chillán","Concepción","La Serena","Copiapó","Temuco","Valdivia","Puerto Montt","Antofagasta","Iquique","Arica"];
 const WEIGHTS=[0.5,1,3,5,6,10,20];
+const STARKEN_PROFILES=[
+  {weightKg:0.5,heightCm:10,widthCm:10,lengthCm:20,label:"0–0,5 kg"},
+  {weightKg:1,heightCm:10,widthCm:15,lengthCm:25,label:"0,5–1 kg"},
+  {weightKg:3,heightCm:15,widthCm:20,lengthCm:30,label:"1–3 kg"},
+  {weightKg:5,heightCm:20,widthCm:30,lengthCm:40,label:"3–6 kg"},
+  {weightKg:10,heightCm:25,widthCm:25,lengthCm:60,label:"6–10 kg"}
+];
 
 function clean(v:string){return String(v??"").replace(/[\u0000-\u001f\u007f]/g,"").trim()}
 function canonicalDestination(v:string){
@@ -46,6 +53,51 @@ async function runtime(){const {data,error}=await sb.rpc("get_ai_runtime_config_
 async function model(apiKey:string,preferred?:string|null){if(preferred&&preferred!=="auto")return preferred;try{const r=await fetch("https://api.openai.com/v1/models",{headers:{authorization:`Bearer ${apiKey}`},signal:AbortSignal.timeout(8000)});const j=await r.json();const ids=new Set<string>((j?.data??[]).map((x:any)=>String(x.id)));for(const id of ["gpt-5.6","gpt-5.5","gpt-5.1","gpt-5","gpt-4.1"])if(ids.has(id))return id;}catch{}return "gpt-4.1"}
 async function digest(s:string){const h=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(s));return [...new Uint8Array(h)].map(b=>b.toString(16).padStart(2,"0")).join("").slice(0,24)}
 function weightBand(w:number|null){if(!w||w<=0)return"Sin peso";if(w<=0.5)return"0–0,5 kg";if(w<=1)return"0,5–1 kg";if(w<=3)return"1–3 kg";if(w<=6)return"3–6 kg";if(w<=10)return"6–10 kg";if(w<=20)return"10–20 kg";return"20+ kg"}
+
+async function searchStarkenDirect(workerToken:string){
+  const quotes:any[]=[];
+  for(const destination of DESTINATIONS){
+    for(const profile of STARKEN_PROFILES){
+      for(const deliveryType of ["DOMICILIO","AGENCIA"]){
+        quotes.push({origin:"Santiago",destination,weightKg:profile.weightKg,heightCm:profile.heightCm,widthCm:profile.widthCm,lengthCm:profile.lengthCm,deliveryType,packageType:"PAQUETE",service:"NORMAL",profileLabel:profile.label});
+      }
+    }
+  }
+  const results:any[]=[];
+  for(let i=0;i<quotes.length;i+=30){
+    const batch=quotes.slice(i,i+30);
+    const r=await fetch("https://preciospmk.vercel.app/api/internal/starken-smart-quote",{
+      method:"POST",
+      headers:{"content-type":"application/json","x-chilexpress-worker-token":workerToken},
+      body:JSON.stringify({quotes:batch}),
+      signal:AbortSignal.timeout(55_000)
+    });
+    const j=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(`starken_quote_proxy_${r.status}:${j?.error||"unknown"}`);
+    results.push(...(Array.isArray(j?.results)?j.results:[]));
+  }
+  const day=new Date().toISOString().slice(0,10);
+  const rates=results.filter((x:any)=>x?.ok&&Number(x?.priceClp)>0).map((x:any)=>({
+    origin:"Santiago Centro",
+    destination:canonicalDestination(String(x?.destination||x?.input?.destination||"")),
+    weight_kg:Number(x?.input?.weightKg)>0?Number(x.input.weightKg):null,
+    weight_band:String(x?.input?.profileLabel||weightBand(Number(x?.input?.weightKg)||null)),
+    service_type:String(x?.serviceType||"NORMAL"),
+    delivery_type:String(x?.deliveryType||x?.input?.deliveryType||"DOMICILIO"),
+    unit_price_clp:Number(x.priceClp),
+    source_url:"https://www.starken.cl/cotizador",
+    evidence:`Cotización interactiva oficial Starken ${String(x?.origin||"SANTIAGO")} → ${String(x?.destination||x?.input?.destination||"")}, ${Number(x?.input?.weightKg)||0} kg, ${String(x?.deliveryType||x?.input?.deliveryType||"")}: ${Math.round(Number(x.priceClp)).toLocaleString("es-CL")}`,
+    rate_explicit:true,
+    normalization_method:"official_interactive_quote",
+    source_freshness:day,
+    confidence:98,
+    dimensions:{heightCm:Number(x?.input?.heightCm)||null,widthCm:Number(x?.input?.widthCm)||null,lengthCm:Number(x?.input?.lengthCm)||null},
+    originCode:x?.originCode??null,
+    destinationCode:x?.destinationCode??null,
+    eta:x?.eta??null
+  }));
+  return {rates,notes:[`Cotizador oficial Starken: ${rates.length}/${quotes.length} escenarios con precio válido.`],coverage_summary:`Cotización directa de ${DESTINATIONS.length} destinos, ${STARKEN_PROFILES.length} perfiles de peso y entrega domicilio/agencia.`,rawResults:results.length};
+}
 
 async function searchRates(apiKey:string,modelName:string,key:ProviderKey){
   const p=PROVIDERS[key];
@@ -107,9 +159,15 @@ Deno.serve(async(req:Request)=>{
   if(run.error)return Response.json({error:run.error.message},{status:500});
   const runId=run.data.id as string;
   try{
-    const cfg=await runtime();if(!cfg.enabled||!cfg.api_key)throw new Error("ai_runtime_unavailable");
-    const m=await model(cfg.api_key,cfg.model);
-    const result=await searchRates(cfg.api_key,m,key);
+    let m="direct";
+    let result:any;
+    if(key==="starken"){
+      result=await searchStarkenDirect(supplied);
+    }else{
+      const cfg=await runtime();if(!cfg.enabled||!cfg.api_key)throw new Error("ai_runtime_unavailable");
+      m=await model(cfg.api_key,cfg.model);
+      result=await searchRates(cfg.api_key,m,key);
+    }
     const raw=Array.isArray(result?.rates)?result.rates:[];
     const valid=raw.filter((x:any)=>x?.rate_explicit===true&&Number(x?.unit_price_clp)>0&&hostOk(key,String(x?.source_url||""))&&String(x?.destination||"").trim()&&sourceEvidenceValid(key,x));
     const day=new Date().toISOString().slice(0,10);
@@ -126,7 +184,7 @@ Deno.serve(async(req:Request)=>{
         origin_label:clean(x.origin||"Santiago Centro")||"Santiago Centro",destination_label:canonicalDestination(x.destination),
         weight_kg:w,weight_band:clean(x.weight_band||"")||weightBand(w),shipment_price_clp:price,
         confidence:Math.max(0,Math.min(100,Number(x.confidence)||80)),evidence:clean(x.evidence).slice(0,1500),
-        observed_at:new Date().toISOString(),metadata:{normalizationMethod:x.normalization_method||"explicit_public_rate",sourceFreshness:x.source_freshness||null,collector:"chilexpress-b2c-worker-v1",coverageSummary:result?.coverage_summary||null}
+        observed_at:new Date().toISOString(),metadata:{normalizationMethod:x.normalization_method||"explicit_public_rate",sourceFreshness:x.source_freshness||null,collector:key==="starken"?"chilexpress-starken-smart-quoter-v1":"chilexpress-b2c-worker-v1",coverageSummary:result?.coverage_summary||null,dimensions:x.dimensions||null,originCode:x.originCode||null,destinationCode:x.destinationCode||null,eta:x.eta||null}
       });
     }
     let inserted=0;
