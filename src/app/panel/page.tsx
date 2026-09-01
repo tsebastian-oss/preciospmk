@@ -55,7 +55,7 @@ export default function ClientBrandPanelPage() {
     <header className={styles.topbar}>
       <div className={styles.identity}>
         <div className={styles.mark}>M</div>
-        <div><strong>MGP Price Intelligence</strong><span>Panel privado de marca</span></div>
+        <div><strong>MGP Price Intelligence</strong><span>{access.brandSlug === "chilexpress" ? "Panel privado de pricing" : "Panel privado de marca"}</span></div>
       </div>
       <div className={styles.account}>
         <div><strong>{access.brandName}</strong><span>{access.organizationName}</span></div>

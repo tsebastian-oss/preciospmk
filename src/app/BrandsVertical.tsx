@@ -5,6 +5,7 @@ import styles from "./BrandsVertical.module.css";
 import BodegasDonLuisPanel from "./BodegasDonLuisPanel";
 import PiwenMarketPanel from "./PiwenMarketPanel";
 import VictorinoxMarketPanel from "./VictorinoxMarketPanel";
+import ChilexpressMarketPanel from "./ChilexpressMarketPanel";
 
 type Source = {
   id: string;
@@ -672,7 +673,7 @@ export default function BrandsVertical({ initialBrand = "krispy-kreme", locked =
     // Piwén and Victorinox have dedicated endpoints/components. Avoid firing
     // the legacy generic Brands request in the background because it adds
     // unnecessary ClickHouse load and can fail independently of the client panel.
-    if (selectedBrand === "piwen" || selectedBrand === "victorinox") {
+    if (selectedBrand === "piwen" || selectedBrand === "victorinox" || selectedBrand === "chilexpress") {
       setLoading(false);
       return () => { active = false; };
     }
@@ -699,6 +700,7 @@ export default function BrandsVertical({ initialBrand = "krispy-kreme", locked =
   // the legacy generic Brands/ClickHouse request.
   if (selectedBrand === "piwen") return <PiwenMarketPanel/>;
   if (selectedBrand === "victorinox") return <VictorinoxMarketPanel/>;
+  if (selectedBrand === "chilexpress") return <ChilexpressMarketPanel/>;
 
   if (loading) return <section className={styles.shell}><div className={styles.state}>Actualizando inteligencia competitiva…</div></section>;
   if (error || !payload) return <section className={styles.shell}><div className={styles.error}>{error || "Brands no está disponible."}</div></section>;
