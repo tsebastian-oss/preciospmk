@@ -76,6 +76,7 @@ async function searchStarkenDirect(workerToken:string,triggerKind:string){
   }
   }
   const results:any[]=[];
+  let backend="unknown";
   for(let i=0;i<quotes.length;i+=30){
     const batch=quotes.slice(i,i+30);
     const r=await fetch("https://preciospmk.vercel.app/api/internal/starken-smart-quote",{
@@ -85,10 +86,22 @@ async function searchStarkenDirect(workerToken:string,triggerKind:string){
       signal:AbortSignal.timeout(55_000)
     });
     const j=await r.json().catch(()=>({}));
+    if(r.status===503&&j?.error==="starken_connector_not_configured"){
+      return {
+        rates:[],
+        notes:["Conector Starken listo; falta activar una credencial oficial de Starken o Browser API residencial."],
+        coverage_summary:"Conector técnico desplegado. Recolección pausada hasta configurar STARKEN_INTEGRATION_TOKEN o BRIGHTDATA_BROWSER_WS.",
+        rawResults:0,
+        backend:"connector_not_configured",
+        connectorConfigured:false
+      };
+    }
     if(!r.ok)throw new Error(`starken_quote_proxy_${r.status}:${j?.error||"unknown"}`);
+    backend=String(j?.backend||backend);
     results.push(...(Array.isArray(j?.results)?j.results:[]));
   }
   const day=new Date().toISOString().slice(0,10);
+  const sourceUrl=backend==="starken_official_api"?"https://developers.starken.cl/cotizaTusEnvios":"https://www.starken.cl/cotizador";
   const rates=results.filter((x:any)=>x?.ok&&Number(x?.priceClp)>0).map((x:any)=>({
     origin:canonicalDestination(String(x?.origin||x?.input?.origin||"")),
     destination:canonicalDestination(String(x?.destination||x?.input?.destination||"")),
@@ -97,18 +110,18 @@ async function searchStarkenDirect(workerToken:string,triggerKind:string){
     service_type:String(x?.serviceType||"NORMAL"),
     delivery_type:String(x?.deliveryType||x?.input?.deliveryType||"DOMICILIO"),
     unit_price_clp:Number(x.priceClp),
-    source_url:"https://www.starken.cl/cotizador",
-    evidence:`Cotización interactiva oficial Starken ${String(x?.origin||"SANTIAGO")} → ${String(x?.destination||x?.input?.destination||"")}, ${Number(x?.input?.weightKg)||0} kg, ${String(x?.deliveryType||x?.input?.deliveryType||"")}: ${Math.round(Number(x.priceClp)).toLocaleString("es-CL")}`,
+    source_url:sourceUrl,
+    evidence:`Cotización oficial Starken ${String(x?.origin||"SANTIAGO")} → ${String(x?.destination||x?.input?.destination||"")}, ${Number(x?.input?.weightKg)||0} kg, ${String(x?.deliveryType||x?.input?.deliveryType||"")}: ${Math.round(Number(x.priceClp)).toLocaleString("es-CL")}`,
     rate_explicit:true,
-    normalization_method:"official_interactive_quote",
+    normalization_method:backend==="starken_official_api"?"official_plugin_api_quote":"official_interactive_quote_residential_browser",
     source_freshness:day,
-    confidence:98,
+    confidence:backend==="starken_official_api"?99:98,
     dimensions:{heightCm:Number(x?.input?.heightCm)||null,widthCm:Number(x?.input?.widthCm)||null,lengthCm:Number(x?.input?.lengthCm)||null},
     originCode:x?.originCode??null,
     destinationCode:x?.destinationCode??null,
     eta:x?.eta??null
   }));
-  return {rates,notes:[`Cotizador oficial Starken: ${rates.length}/${quotes.length} escenarios con precio válido.`],coverage_summary:`Cotización directa de ${origins.length} origen(es) × ${destinations.length} destinos, ${STARKEN_PROFILES.length} perfiles de peso y entrega domicilio/agencia.`,rawResults:results.length};
+  return {rates,notes:[`Cotizador oficial Starken (${backend}): ${rates.length}/${quotes.length} escenarios con precio válido.`],coverage_summary:`Cotización directa de ${origins.length} origen(es) × ${destinations.length} destinos, ${STARKEN_PROFILES.length} perfiles de peso y entrega domicilio/agencia.`,rawResults:results.length,backend,connectorConfigured:true};
 }
 
 async function searchRates(apiKey:string,modelName:string,key:ProviderKey){
@@ -175,6 +188,7 @@ Deno.serve(async(req:Request)=>{
     let result:any;
     if(key==="starken"){
       result=await searchStarkenDirect(supplied,triggerKind);
+      m=String(result?.backend||"direct");
     }else{
       const cfg=await runtime();if(!cfg.enabled||!cfg.api_key)throw new Error("ai_runtime_unavailable");
       m=await model(cfg.api_key,cfg.model);
@@ -196,13 +210,16 @@ Deno.serve(async(req:Request)=>{
         origin_label:clean(x.origin||"Santiago Centro")||"Santiago Centro",destination_label:canonicalDestination(x.destination),
         weight_kg:w,weight_band:clean(x.weight_band||"")||weightBand(w),shipment_price_clp:price,
         confidence:Math.max(0,Math.min(100,Number(x.confidence)||80)),evidence:clean(x.evidence).slice(0,1500),
-        observed_at:new Date().toISOString(),metadata:{normalizationMethod:x.normalization_method||"explicit_public_rate",sourceFreshness:x.source_freshness||null,collector:key==="starken"?"chilexpress-starken-smart-quoter-v1":"chilexpress-b2c-worker-v1",coverageSummary:result?.coverage_summary||null,dimensions:x.dimensions||null,originCode:x.originCode||null,destinationCode:x.destinationCode||null,eta:x.eta||null}
+        observed_at:new Date().toISOString(),metadata:{normalizationMethod:x.normalization_method||"explicit_public_rate",sourceFreshness:x.source_freshness||null,collector:key==="starken"?"chilexpress-starken-smart-quoter-v2":"chilexpress-b2c-worker-v1",backend:key==="starken"?result?.backend||null:null,coverageSummary:result?.coverage_summary||null,dimensions:x.dimensions||null,originCode:x.originCode||null,destinationCode:x.destinationCode||null,eta:x.eta||null}
       });
     }
     let inserted=0;
     if(rows.length){const up=await sb.from("chilexpress_b2c_rates").upsert(rows,{onConflict:"organization_id,source_record_id"});if(up.error)throw new Error(up.error.message);inserted=rows.length}
     const status=inserted>0?"ok":"partial";
-    await sb.from("chilexpress_scrape_runs").update({status,finished_at:new Date().toISOString(),metrics:{provider:PROVIDERS[key].group,model:m,candidates:raw.length,accepted:inserted,coverageSummary:result?.coverage_summary||null,notes:(result?.notes??[]).slice(0,10)},errors:inserted?[]:["No explicit official public rates were accepted"]}).eq("id",runId);
+    const noDataError=key==="starken"&&result?.connectorConfigured===false
+      ?"Starken connector deployed but external credential is not configured"
+      :"No explicit official public rates were accepted";
+    await sb.from("chilexpress_scrape_runs").update({status,finished_at:new Date().toISOString(),metrics:{provider:PROVIDERS[key].group,model:m,backend:key==="starken"?result?.backend||null:null,connectorConfigured:key==="starken"?result?.connectorConfigured??null:null,candidates:raw.length,accepted:inserted,coverageSummary:result?.coverage_summary||null,notes:(result?.notes??[]).slice(0,10)},errors:inserted?[]:[noDataError]}).eq("id",runId);
     return Response.json({ok:true,runId,provider:PROVIDERS[key].group,status,candidates:raw.length,accepted:inserted,coverageSummary:result?.coverage_summary||null});
   }catch(e){
     const msg=e instanceof Error?e.message:String(e);
