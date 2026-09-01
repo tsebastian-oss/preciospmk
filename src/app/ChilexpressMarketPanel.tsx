@@ -274,6 +274,13 @@ function action(value: number) {
   return "Paridad";
 }
 
+function documentStatus(value: string | null | undefined) {
+  if (value === "parsed") return "Tarifas extraídas";
+  if (value === "no_price") return "Sin tarifa comparable";
+  if (value === "error") return "Revisar extracción";
+  return value || "Procesado";
+}
+
 function localAnswer(question: string, rows: RouteRow[]) {
   const sorted = [...rows].sort((a,b)=>b.index-a.index);
   const avg = rows.length ? rows.reduce((sum,row)=>sum+row.index,0)/rows.length : 0;
@@ -299,10 +306,12 @@ export default function ChilexpressMarketPanel() {
   const [messages,setMessages] = useState<Message[]>([{role:"assistant",content:"Soy el Pricing Copilot de Chilexpress. Puedo analizar brechas por ruta, premiums y prioridades de pricing usando la cobertura disponible."}]);
   const [chatInput,setChatInput] = useState("");
   const [chatLoading,setChatLoading] = useState(false);
+  const [reloadToken,setReloadToken] = useState(0);
 
   useEffect(()=>{
     let active = true;
     async function load() {
+      setLoading(true);
       try {
         const dedicatedResponse = await fetch("/api/chilexpress-logistics?days=1095",{cache:"no-store"});
         const dedicatedPayload = await dedicatedResponse.json() as DedicatedPayload;
@@ -337,8 +346,11 @@ export default function ChilexpressMarketPanel() {
       }
     }
     void load();
-    trackUsageEvent("module_view",{module:"chilexpress-pricing"});
     return ()=>{active=false;};
+  },[reloadToken]);
+
+  useEffect(()=>{
+    trackUsageEvent("module_view",{module:"chilexpress-pricing"});
   },[]);
 
   const stats = useMemo(()=>{
@@ -351,6 +363,13 @@ export default function ChilexpressMarketPanel() {
       latest: [...rows].map(row=>row.latestDate).sort().at(-1) || "2026-08-24",
     };
   },[rows]);
+
+  const evidence = {
+    b2cRates: dedicated?.b2cRates?.length ?? 0,
+    b2bProcesses: dedicated?.b2bProcesses?.length ?? 0,
+    b2bDocuments: dedicated?.b2bDocuments?.length ?? 0,
+    b2bRates: dedicated?.b2bRates?.length ?? 0,
+  };
 
   const filtered = useMemo(()=>rows.filter(row=>{
     if (distance && row.distanceBand !== distance) return false;
@@ -399,8 +418,9 @@ export default function ChilexpressMarketPanel() {
       </div>
       <div className={styles.liveBox}>
         <span><i/> {sourceMode === "dedicated" ? "CRAWLERS DEDICADOS" : sourceMode === "live" ? "DATA LIVE" : "SNAPSHOT VALIDADO"}</span>
-        <strong>{rows.length} rutas comparables · {stats.competitors} benchmark</strong>
-        <small>{loading ? "Actualizando datos…" : `Última observación ${dateLabel(stats.latest)}`}</small>
+        <strong>{rows.length} rutas homologadas · {stats.competitors} benchmark competitivo</strong>
+        <small>{loading ? "Actualizando datos…" : `Última observación ${dateLabel(stats.latest)} · B2C + B2B`}</small>
+        <button type="button" className={styles.refreshButton} onClick={()=>setReloadToken(value=>value+1)} disabled={loading}>{loading ? "Sincronizando…" : "Actualizar ahora"}</button>
       </div>
     </header>
 
@@ -409,12 +429,12 @@ export default function ChilexpressMarketPanel() {
       <article><span>Price Index promedio</span><strong>{stats.avg.toFixed(0)}</strong><small>benchmark = 100</small></article>
       <article><span>Premiums altos</span><strong>{stats.risk}</strong><small>índice ≥ 130</small></article>
       <article><span>Espacios potenciales</span><strong>{stats.upside}</strong><small>índice &lt; 95</small></article>
-      <article><span>Último corte</span><strong>{dateLabel(stats.latest)}</strong><small>evidencia comparable</small></article>
+      <article><span>Evidencia B2B</span><strong>{NF.format(evidence.b2bRates)}</strong><small>{NF.format(evidence.b2bProcesses)} procesos · {NF.format(evidence.b2bDocuments)} documentos</small></article>
     </div>
 
-    <nav className={styles.tabs}>
+    <nav className={styles.tabs} aria-label="Vistas de inteligencia logística">
       {([["overview","Resumen"],["copilot","AI Copilot"],["benchmark","B2C Benchmark"],["b2b","B2B Mercado Público"],["heatmap","Price Index Map"],["opportunities","Oportunidades"],["history","Histórico"],["sources","Fuentes"]] as [Tab,string][]).map(([key,label])=>
-        <button key={key} className={tab===key?styles.active:""} onClick={()=>go(key)}>{label}</button>
+        <button type="button" key={key} className={tab===key?styles.active:""} onClick={()=>go(key)}>{label}</button>
       )}
     </nav>
 
@@ -470,18 +490,32 @@ export default function ChilexpressMarketPanel() {
         <div className={styles.tableWrap}><table className={styles.table}>
           <thead><tr><th>Proceso</th><th>Comprador</th><th>Objeto</th><th>Estado</th><th>Fecha</th><th>Relevancia</th></tr></thead>
           <tbody>{(dedicated?.b2bProcesses ?? []).slice(0,40).map(row=><tr key={row.id || row.sourceUrl}>
-            <td><strong>{row.processId || "—"}</strong></td><td>{row.buyerName || "—"}</td><td><strong>{row.title || "—"}</strong></td>
+            <td>{row.sourceUrl ? <a className={styles.sourceLink} href={row.sourceUrl} target="_blank" rel="noreferrer">{row.processId || "Ver proceso"} ↗</a> : <strong>{row.processId || "—"}</strong>}</td><td>{row.buyerName || "—"}</td><td><strong>{row.title || "—"}</strong></td>
             <td>{row.processState || row.processType || "—"}</td><td>{dateLabel(row.publicationDate || row.awardDate || row.observedAt?.slice(0,10))}</td><td>{num(row.relevance).toFixed(0)}/100</td>
           </tr>)}</tbody>
         </table></div>
         {!(dedicated?.b2bProcesses?.length) && <div className={styles.note}>La primera corrida de descubrimiento está procesándose o aún no encontró procesos verificables.</div>}
       </article>
       <article className={styles.panel}>
+        <div className={styles.panelTitle}><div><span>DOCUMENT INTELLIGENCE</span><h2>Anexos leídos y clasificados</h2><p>El motor conserva la fuente, resume el documento y separa tarifas explícitas de montos globales no comparables.</p></div></div>
+        <div className={styles.tableWrap}><table className={`${styles.table} ${styles.documentTable}`}>
+          <thead><tr><th>Documento</th><th>Proceso</th><th>Proveedor</th><th>Resultado</th><th>Lectura del motor</th></tr></thead>
+          <tbody>{(dedicated?.b2bDocuments ?? []).slice(0,30).map((row,index)=><tr key={row.id || `${row.processId}-${index}`}>
+            <td>{row.sourceUrl ? <a className={styles.sourceLink} href={row.sourceUrl} target="_blank" rel="noreferrer">{row.attachmentName || "Abrir anexo"} ↗</a> : <strong>{row.attachmentName || "Anexo sin nombre"}</strong>}<small>{row.parser === "openai_pdf" ? "Lectura IA · PDF" : row.parser || "Parser documental"}</small></td>
+            <td><strong>{row.processId || "—"}</strong></td>
+            <td>{row.providerGroup || "Por clasificar"}</td>
+            <td><span className={row.status === "parsed" ? styles.documentParsed : row.status === "error" ? styles.documentError : styles.documentNeutral}>{documentStatus(row.status)}</span><small>{Array.isArray(row.extractedRates) ? `${row.extractedRates.length} hallazgos estructurados` : "Trazabilidad guardada"}</small></td>
+            <td className={styles.documentSummary}>{row.documentSummary || "Documento procesado; no se identificó una tarifa unitaria comparable."}</td>
+          </tr>)}</tbody>
+        </table></div>
+        {!(dedicated?.b2bDocuments?.length) && <div className={styles.note}>Aún no hay anexos procesados para el período seleccionado.</div>}
+      </article>
+      <article className={styles.panel}>
         <div className={styles.panelTitle}><div><span>TARIFAS EXTRAÍDAS</span><h2>Pricing B2B desde anexos</h2><p>Evidencia unitaria/banda aceptada por el motor de comparabilidad.</p></div></div>
         <div className={styles.tableWrap}><table className={styles.table}>
           <thead><tr><th>Proveedor</th><th>Comprador / proceso</th><th>Ruta o zona</th><th>Peso</th><th>Precio</th><th>Confianza</th></tr></thead>
           <tbody>{(dedicated?.b2bRates ?? []).slice(0,80).map((row,index)=><tr key={`${row.providerGroup}-${row.observedAt}-${index}`}>
-            <td><strong>{row.providerGroup || row.providerName || "—"}</strong></td>
+            <td>{row.sourceUrl ? <a className={styles.sourceLink} href={row.sourceUrl} target="_blank" rel="noreferrer">{row.providerGroup || row.providerName || "Ver fuente"} ↗</a> : <strong>{row.providerGroup || row.providerName || "—"}</strong>}</td>
             <td>{row.buyerName || "Mercado Público"}<small>{row.processId || ""}</small></td>
             <td>{row.originLabel || "—"} → {row.destinationLabel || "Zona publicada"}</td><td>{row.weightBand || (num(row.weightKg)>0 ? `${num(row.weightKg)} kg` : "—")}</td>
             <td><strong>{num(row.shipmentPriceClp)>0 ? CLP.format(num(row.shipmentPriceClp)) : "—"}</strong></td><td>{num(row.confidence).toFixed(0)}%</td>
