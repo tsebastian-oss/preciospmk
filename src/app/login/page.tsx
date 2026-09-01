@@ -12,11 +12,16 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [nextPath, setNextPath] = useState("/entry");
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
     if (query.get("confirmed") === "1") {
       setNotice("Correo confirmado correctamente. Ya puedes ingresar con tu contraseña.");
+    }
+    const requestedNext = query.get("next");
+    if (requestedNext && requestedNext.startsWith("/") && !requestedNext.startsWith("//")) {
+      setNextPath(requestedNext);
     }
   }, []);
 
@@ -51,7 +56,7 @@ export default function LoginPage() {
         );
       }
 
-      window.location.href = "/entry";
+      window.location.href = nextPath;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Error de autenticación");
     } finally {
