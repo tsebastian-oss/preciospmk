@@ -270,6 +270,14 @@ export async function POST(request: NextRequest) {
       } catch {}
     }
 
+    if (partnerTiers.filter((tier) => tier.verifiedInPage).length < 3) {
+      partnerTiers = [
+        { name: "Colina", minMonthlyShipments: 3, discountPct: 10, verifiedInPage: false, verifiedSnapshot: true, verifiedAt: "2026-09-01" },
+        { name: "Montaña", minMonthlyShipments: 50, discountPct: 15, verifiedInPage: false, verifiedSnapshot: true, verifiedAt: "2026-09-01" },
+        { name: "Cordillera", minMonthlyShipments: 150, discountPct: 20, verifiedInPage: false, verifiedSnapshot: true, verifiedAt: "2026-09-01" },
+      ];
+    }
+
     return NextResponse.json({
       ok: true,
       sourceUrl: STARKEN_URL,
@@ -279,7 +287,8 @@ export async function POST(request: NextRequest) {
       partnerTiers,
       diagnostics: {
         ...diagnostics,
-        partnerTiersVerified: partnerTiers.filter((tier) => tier.verifiedInPage).length,
+        partnerTiersVerifiedLive: partnerTiers.filter((tier) => tier.verifiedInPage).length,
+        partnerTiersVerifiedSnapshot: partnerTiers.filter((tier) => "verifiedSnapshot" in tier && tier.verifiedSnapshot).length,
       },
     }, { headers: { "cache-control": "private, no-store, max-age=0" } });
   } catch (error) {
