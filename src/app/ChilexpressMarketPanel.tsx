@@ -21,6 +21,78 @@ type Payload = {
   error?: string;
 };
 
+type DedicatedRate = {
+  providerName?: string;
+  providerGroup?: string;
+  sourceUrl?: string;
+  sourceKind?: string;
+  serviceType?: string | null;
+  deliveryType?: string | null;
+  originLabel?: string | null;
+  destinationLabel?: string | null;
+  weightKg?: number | string | null;
+  weightBand?: string | null;
+  shipmentPriceClp?: number | string | null;
+  confidence?: number | string | null;
+  evidence?: string | null;
+  observedAt?: string | null;
+  metadata?: Record<string, unknown>;
+  processId?: string | null;
+  buyerName?: string | null;
+  priceBasis?: string | null;
+};
+
+type DedicatedRun = {
+  id?: string;
+  layer?: "b2b" | "b2c";
+  sourceKey?: string;
+  trigger?: string;
+  status?: string;
+  startedAt?: string;
+  finishedAt?: string | null;
+  metrics?: Record<string, unknown>;
+  errors?: unknown[];
+};
+
+type DedicatedProcess = {
+  id?: number;
+  processId?: string | null;
+  title?: string;
+  buyerName?: string | null;
+  processState?: string | null;
+  processType?: string | null;
+  publicationDate?: string | null;
+  closingDate?: string | null;
+  awardDate?: string | null;
+  sourceUrl?: string;
+  relevance?: number | string;
+  observedAt?: string;
+  metadata?: Record<string, unknown>;
+};
+
+type DedicatedDocument = {
+  id?: number;
+  processId?: string | null;
+  sourceUrl?: string;
+  attachmentName?: string | null;
+  providerGroup?: string | null;
+  status?: string;
+  parser?: string | null;
+  documentSummary?: string | null;
+  extractedRates?: unknown[];
+  observedAt?: string;
+};
+
+type DedicatedPayload = {
+  generatedAt?: string;
+  runs?: DedicatedRun[];
+  b2cRates?: DedicatedRate[];
+  b2bProcesses?: DedicatedProcess[];
+  b2bDocuments?: DedicatedDocument[];
+  b2bRates?: DedicatedRate[];
+  error?: string;
+};
+
 type RouteRow = {
   destination: string;
   weightBand: string;
@@ -36,7 +108,7 @@ type RouteRow = {
 };
 
 type Message = { role: "user" | "assistant"; content: string };
-type Tab = "overview" | "copilot" | "benchmark" | "heatmap" | "opportunities" | "history" | "sources";
+type Tab = "overview" | "copilot" | "benchmark" | "b2b" | "heatmap" | "opportunities" | "history" | "sources";
 
 const CLP = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
 const NF = new Intl.NumberFormat("es-CL");
@@ -84,6 +156,70 @@ function median(values: number[]) {
   if (!sorted.length) return 0;
   const mid = Math.floor(sorted.length / 2);
   return sorted.length % 2 ? sorted[mid] : (sorted[mid-1] + sorted[mid]) / 2;
+}
+
+function routeDistanceBand(destination: string) {
+  return FALLBACK.find(row => row.destination.localeCompare(destination, "es", { sensitivity: "base" }) === 0)?.distanceBand || "Ruta nacional";
+}
+
+function deliveryKey(value: string | null | undefined) {
+  const normalized = (value || "").toLocaleLowerCase("es-CL");
+  if (normalized.includes("domic")) return "domicilio";
+  if (normalized.includes("sucursal") || normalized.includes("punto") || normalized.includes("agencia")) return "punto";
+  return "general";
+}
+
+function normalizeDedicated(rows: DedicatedRate[]): RouteRow[] {
+  const latest = new Map<string, DedicatedRate>();
+  for (const row of rows) {
+    const provider = (row.providerGroup || row.providerName || "").trim();
+    const destination = (row.destinationLabel || "").trim();
+    const price = num(row.shipmentPriceClp);
+    if (!provider || !destination || price <= 0) continue;
+    const weight = num(row.weightKg);
+    const weightBand = row.weightBand || (weight > 0 ? `${weight} kg` : "Sin peso");
+    const weightKey = weight > 0 ? weight.toFixed(3) : weightBand;
+    const key = [provider.toLocaleLowerCase("es-CL"), row.originLabel || "Santiago Centro", destination, weightKey, deliveryKey(row.deliveryType)].join("|");
+    const previous = latest.get(key);
+    const previousTime = previous?.observedAt ? new Date(previous.observedAt).getTime() : 0;
+    const nextTime = row.observedAt ? new Date(row.observedAt).getTime() : 0;
+    if (!previous || nextTime >= previousTime) latest.set(key, row);
+  }
+
+  const groups = new Map<string, DedicatedRate[]>();
+  for (const row of latest.values()) {
+    const destination = (row.destinationLabel || "").trim();
+    const weight = num(row.weightKg);
+    const weightBand = row.weightBand || (weight > 0 ? `${weight} kg` : "Sin peso");
+    const weightKey = weight > 0 ? weight.toFixed(3) : weightBand;
+    const key = [row.originLabel || "Santiago Centro", destination, weightKey, deliveryKey(row.deliveryType)].join("|");
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+
+  const out: RouteRow[] = [];
+  for (const group of groups.values()) {
+    const own = group.find(row => (row.providerGroup || row.providerName || "").toLocaleLowerCase("es-CL") === "chilexpress");
+    const competitors = group.filter(row => (row.providerGroup || row.providerName || "").toLocaleLowerCase("es-CL") !== "chilexpress" && num(row.shipmentPriceClp) > 0);
+    if (!own || !competitors.length) continue;
+    const ownPrice = num(own.shipmentPriceClp);
+    const compPrice = median(competitors.map(row => num(row.shipmentPriceClp)));
+    if (!(ownPrice > 0 && compPrice > 0)) continue;
+    const destination = own.destinationLabel || competitors[0]?.destinationLabel || "—";
+    out.push({
+      destination,
+      weightBand: own.weightBand || competitors[0]?.weightBand || "—",
+      distanceBand: routeDistanceBand(destination),
+      serviceType: own.serviceType || competitors[0]?.serviceType || "Courier",
+      chilexpress: ownPrice,
+      competitor: compPrice,
+      competitorName: [...new Set(competitors.map(row => row.providerGroup || row.providerName || "Mercado"))].join(" / "),
+      index: Math.round((ownPrice / compPrice) * 1000) / 10,
+      gap: ownPrice - compPrice,
+      latestDate: (own.observedAt || competitors[0]?.observedAt || "2026-08-24").slice(0,10),
+      source: "Crawler dedicado · tarifa pública oficial",
+    });
+  }
+  return out.sort((a,b)=>b.index-a.index);
 }
 
 function normalizeLive(rows: ApiRow[]): RouteRow[] {
@@ -156,7 +292,8 @@ export default function ChilexpressMarketPanel() {
   const [rows,setRows] = useState<RouteRow[]>(FALLBACK);
   const [tab,setTab] = useState<Tab>("overview");
   const [loading,setLoading] = useState(true);
-  const [sourceMode,setSourceMode] = useState<"live"|"snapshot">("snapshot");
+  const [sourceMode,setSourceMode] = useState<"dedicated"|"live"|"snapshot">("snapshot");
+  const [dedicated,setDedicated] = useState<DedicatedPayload | null>(null);
   const [query,setQuery] = useState("");
   const [distance,setDistance] = useState("");
   const [messages,setMessages] = useState<Message[]>([{role:"assistant",content:"Soy el Pricing Copilot de Chilexpress. Puedo analizar brechas por ruta, premiums y prioridades de pricing usando la cobertura disponible."}]);
@@ -167,6 +304,18 @@ export default function ChilexpressMarketPanel() {
     let active = true;
     async function load() {
       try {
+        const dedicatedResponse = await fetch("/api/chilexpress-logistics?days=1095",{cache:"no-store"});
+        const dedicatedPayload = await dedicatedResponse.json() as DedicatedPayload;
+        if (dedicatedResponse.ok && active) {
+          setDedicated(dedicatedPayload);
+          const direct = normalizeDedicated(dedicatedPayload.b2cRates ?? []);
+          if (direct.length >= 4) {
+            setRows(direct);
+            setSourceMode("dedicated");
+            return;
+          }
+        }
+
         const response = await fetch("/api/b2b-pricing?category=courier&days=1095&layer=best",{cache:"no-store"});
         const payload = await response.json() as Payload;
         if (!response.ok) throw new Error(payload.error || "No fue posible cargar datos.");
@@ -174,6 +323,9 @@ export default function ChilexpressMarketPanel() {
         if (active && live.length >= 4) {
           setRows(live);
           setSourceMode("live");
+        } else if (active) {
+          setRows(FALLBACK);
+          setSourceMode("snapshot");
         }
       } catch {
         if (active) {
@@ -246,7 +398,7 @@ export default function ChilexpressMarketPanel() {
         <p>Comparación normalizada por <strong>ruta, peso y servicio</strong>, con Price Index, brechas tarifarias, oportunidades y Copilot de pricing.</p>
       </div>
       <div className={styles.liveBox}>
-        <span><i/> {sourceMode === "live" ? "DATA LIVE" : "SNAPSHOT VALIDADO"}</span>
+        <span><i/> {sourceMode === "dedicated" ? "CRAWLERS DEDICADOS" : sourceMode === "live" ? "DATA LIVE" : "SNAPSHOT VALIDADO"}</span>
         <strong>{rows.length} rutas comparables · {stats.competitors} benchmark</strong>
         <small>{loading ? "Actualizando datos…" : `Última observación ${dateLabel(stats.latest)}`}</small>
       </div>
@@ -261,7 +413,7 @@ export default function ChilexpressMarketPanel() {
     </div>
 
     <nav className={styles.tabs}>
-      {([["overview","Resumen"],["copilot","AI Copilot"],["benchmark","Benchmark"],["heatmap","Price Index Map"],["opportunities","Oportunidades"],["history","Histórico"],["sources","Fuentes"]] as [Tab,string][]).map(([key,label])=>
+      {([["overview","Resumen"],["copilot","AI Copilot"],["benchmark","B2C Benchmark"],["b2b","B2B Mercado Público"],["heatmap","Price Index Map"],["opportunities","Oportunidades"],["history","Histórico"],["sources","Fuentes"]] as [Tab,string][]).map(([key,label])=>
         <button key={key} className={tab===key?styles.active:""} onClick={()=>go(key)}>{label}</button>
       )}
     </nav>
@@ -307,6 +459,38 @@ export default function ChilexpressMarketPanel() {
       </tbody></table></div>
     </article>}
 
+    {tab==="b2b"&&<>
+      <div className={styles.opportunityGrid}>
+        <article><span>PROCESOS DETECTADOS</span><strong>{NF.format(dedicated?.b2bProcesses?.length ?? 0)}</strong><p>Licitaciones, compras ágiles y órdenes relacionadas con courier/logística.</p></article>
+        <article><span>DOCUMENTOS LEÍDOS</span><strong>{NF.format(dedicated?.b2bDocuments?.length ?? 0)}</strong><p>Anexos PDF procesados con trazabilidad de fuente.</p></article>
+        <article><span>TARIFAS COMPARABLES</span><strong>{NF.format(dedicated?.b2bRates?.length ?? 0)}</strong><p>Solo valores unitarios o por banda con contexto suficiente.</p></article>
+      </div>
+      <article className={styles.panel}>
+        <div className={styles.panelTitle}><div><span>MERCADO PÚBLICO</span><h2>Procesos relevantes detectados</h2><p>Ordenados por fecha y relevancia para courier/paquetería.</p></div></div>
+        <div className={styles.tableWrap}><table className={styles.table}>
+          <thead><tr><th>Proceso</th><th>Comprador</th><th>Objeto</th><th>Estado</th><th>Fecha</th><th>Relevancia</th></tr></thead>
+          <tbody>{(dedicated?.b2bProcesses ?? []).slice(0,40).map(row=><tr key={row.id || row.sourceUrl}>
+            <td><strong>{row.processId || "—"}</strong></td><td>{row.buyerName || "—"}</td><td><strong>{row.title || "—"}</strong></td>
+            <td>{row.processState || row.processType || "—"}</td><td>{dateLabel(row.publicationDate || row.awardDate || row.observedAt?.slice(0,10))}</td><td>{num(row.relevance).toFixed(0)}/100</td>
+          </tr>)}</tbody>
+        </table></div>
+        {!(dedicated?.b2bProcesses?.length) && <div className={styles.note}>La primera corrida de descubrimiento está procesándose o aún no encontró procesos verificables.</div>}
+      </article>
+      <article className={styles.panel}>
+        <div className={styles.panelTitle}><div><span>TARIFAS EXTRAÍDAS</span><h2>Pricing B2B desde anexos</h2><p>Evidencia unitaria/banda aceptada por el motor de comparabilidad.</p></div></div>
+        <div className={styles.tableWrap}><table className={styles.table}>
+          <thead><tr><th>Proveedor</th><th>Comprador / proceso</th><th>Ruta o zona</th><th>Peso</th><th>Precio</th><th>Confianza</th></tr></thead>
+          <tbody>{(dedicated?.b2bRates ?? []).slice(0,80).map((row,index)=><tr key={`${row.providerGroup}-${row.observedAt}-${index}`}>
+            <td><strong>{row.providerGroup || row.providerName || "—"}</strong></td>
+            <td>{row.buyerName || "Mercado Público"}<small>{row.processId || ""}</small></td>
+            <td>{row.originLabel || "—"} → {row.destinationLabel || "Zona publicada"}</td><td>{row.weightBand || (num(row.weightKg)>0 ? `${num(row.weightKg)} kg` : "—")}</td>
+            <td><strong>{num(row.shipmentPriceClp)>0 ? CLP.format(num(row.shipmentPriceClp)) : "—"}</strong></td><td>{num(row.confidence).toFixed(0)}%</td>
+          </tr>)}</tbody>
+        </table></div>
+        {!(dedicated?.b2bRates?.length) && <div className={styles.note}>Los documentos sin una tarifa explícita y comparable se conservan como evidencia, pero no entran a esta tabla.</div>}
+      </article>
+    </>}
+
     {tab==="heatmap"&&<article className={styles.panel}>
       <div className={styles.panelTitle}><div><span>PRICE INDEX MAP</span><h2>Mapa de brechas por corredor</h2><p>Mercado = 100. Mientras mayor el índice, mayor el premium observable.</p></div></div>
       <div className={styles.legend}><span><i className={styles.good}/> &lt;95 Espacio</span><span><i className={styles.parity}/> 95–104 Paridad</span><span><i className={styles.warn}/> 105–129 Premium</span><span><i className={styles.hot}/> 130+ Alto</span></div>
@@ -323,17 +507,38 @@ export default function ChilexpressMarketPanel() {
     </>}
 
     {tab==="history"&&<article className={styles.panel}>
-      <div className={styles.panelTitle}><div><span>HISTÓRICO Y EVIDENCIA</span><h2>Timeline de capturas validadas</h2><p>La plataforma no interpola datos inexistentes.</p></div></div>
+      <div className={styles.panelTitle}><div><span>HISTÓRICO Y EVIDENCIA</span><h2>Timeline de capturas validadas</h2><p>Cada crawler deja una corrida trazable; no se interpolan datos inexistentes.</p></div></div>
       <div className={styles.historyGrid}>
-        <article><span>24 AGO 2026</span><h3>Tarifas públicas comparables</h3><p>Chilexpress y Blue Express · Santiago → principales destinos · hasta 0,5 kg.</p></article>
-        <article><span>26 DIC 2025</span><h3>Evidencia B2B pública</h3><p>CorreosChile · tarifario regional observado en Mercado Público. Se mantiene separado del benchmark comercial.</p></article>
-        <article><span>PRÓXIMOS CORTES</span><h3>Serie automática</h3><p>Cada nueva captura irá construyendo la evolución por ruta, peso, proveedor e índice competitivo.</p></article>
+        {(dedicated?.runs ?? []).slice(0,5).map(run=><article key={run.id || `${run.layer}-${run.sourceKey}-${run.startedAt}`}>
+          <span>{run.startedAt ? new Intl.DateTimeFormat("es-CL",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}).format(new Date(run.startedAt)) : "CORRIDA"}</span>
+          <h3>{run.layer?.toUpperCase()} · {run.sourceKey || "Fuente"}</h3>
+          <p>Estado: <strong>{run.status || "—"}</strong> · disparo {run.trigger || "—"}.</p>
+        </article>)}
+        {!(dedicated?.runs?.length) && <article><span>SNAPSHOT</span><h3>Histórico previo validado</h3><p>La serie dedicada se poblará con cada corrida de los crawlers Chilexpress.</p></article>}
+        <article><span>MARTES + VIERNES</span><h3>Serie automática</h3><p>Captura B2C y Mercado Público dos veces por semana, más corridas manuales cuando sea necesario.</p></article>
       </div>
     </article>}
 
     {tab==="sources"&&<section className={styles.grid2}>
-      <article className={styles.panel}><div className={styles.panelTitle}><div><span>CAPA COMERCIAL</span><h2>Tarifas públicas</h2></div></div><div className={styles.sourceCards}><div><strong>Chilexpress</strong><span>Tarifa pública observada</span><small>Rutas nacionales desde Santiago</small></div><div><strong>Blue Express</strong><span>Tarifa pública observada</span><small>Benchmark comparable</small></div></div></article>
-      <article className={styles.panel}><div className={styles.panelTitle}><div><span>CAPA B2B</span><h2>Evidencia pública empresarial</h2></div></div><div className={styles.sourceCards}><div><strong>CorreosChile</strong><span>Mercado Público / tarifario regional</span><small>Se analiza como capa B2B separada</small></div></div><div className={styles.note}>No se mezcla automáticamente una tarifa B2B adjudicada con una tarifa comercial pública. La homologación exige contexto de servicio, volumen y condiciones.</div></article>
+      <article className={styles.panel}>
+        <div className={styles.panelTitle}><div><span>CAPA B2C · OFICIAL</span><h2>Crawlers de tarifas públicas</h2><p>Solo dominios oficiales y precios explícitos.</p></div></div>
+        <div className={styles.sourceCards}>
+          {["Chilexpress","Blue Express","Starken","CorreosChile"].map(provider=>{
+            const rates=(dedicated?.b2cRates ?? []).filter(row=>(row.providerGroup||row.providerName)===provider);
+            const run=(dedicated?.runs ?? []).find(item=>item.layer==="b2c" && (item.sourceKey||"").toLocaleLowerCase("es-CL").includes(provider==="Blue Express"?"blue":provider==="CorreosChile"?"correos":provider.toLocaleLowerCase("es-CL")));
+            return <div key={provider}><strong>{provider}</strong><span>{rates.length ? `${NF.format(rates.length)} tarifas guardadas` : "Fuente monitoreada"}</span><small>{run ? `Última corrida: ${run.status || "—"}` : "Esperando primera corrida dedicada"}</small></div>;
+          })}
+        </div>
+      </article>
+      <article className={styles.panel}>
+        <div className={styles.panelTitle}><div><span>CAPA B2B · MERCADO PÚBLICO</span><h2>Licitaciones y anexos</h2><p>Procesos, documentos y tarifas unitarias verificadas.</p></div></div>
+        <div className={styles.sourceCards}>
+          <div><strong>{NF.format(dedicated?.b2bProcesses?.length ?? 0)} procesos</strong><span>Mercado Público / ChileCompra</span><small>descubrimiento de courier, paquetería y mensajería</small></div>
+          <div><strong>{NF.format(dedicated?.b2bDocuments?.length ?? 0)} documentos</strong><span>PDF/anexos analizados</span><small>lectura asistida por IA con trazabilidad</small></div>
+          <div><strong>{NF.format(dedicated?.b2bRates?.length ?? 0)} tarifas</strong><span>Pricing B2B comparable</span><small>solo precio unitario/banda de alta confianza</small></div>
+        </div>
+        <div className={styles.note}>B2B y B2C permanecen separados. Montos globales de contratos, presupuestos o puntajes no se convierten en tarifa por envío.</div>
+      </article>
     </section>}
 
     {tab==="copilot"&&<section className={styles.copilot}>
