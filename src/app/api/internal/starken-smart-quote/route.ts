@@ -355,7 +355,8 @@ async function runResidentialBrowser(quotes: QuoteInput[], browserWs: string) {
       waitUntil: "domcontentloaded",
       timeout: 30_000,
     });
-    await page.waitForTimeout(2_500);
+    await page.getByText(/Cotiza con Starken/i).first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => undefined);
+    await page.waitForTimeout(1_000);
 
     const selects = page.locator("select");
     const inputs = page.locator("input");
@@ -393,7 +394,11 @@ async function runResidentialBrowser(quotes: QuoteInput[], browserWs: string) {
     const destinationSelect = selectMeta.find((item) => /destino/i.test(item.context))?.index ?? 1;
 
     if (selectCount < 2) {
-      throw new Error(`ui_form_selects_missing:selects=${selectCount}:inputs=${inputCount}`);
+      const title = await page.title().catch(() => "");
+      const body = await page.locator("body").innerText().catch(() => "");
+      throw new Error(
+        `ui_form_selects_missing:selects=${selectCount}:inputs=${inputCount}:url=${page.url()}:title=${title.slice(0,120)}:body=${body.replace(/\\s+/g," ").slice(0,500)}`
+      );
     }
 
     const findInputIndex = (label: RegExp, fallback: number) =>
