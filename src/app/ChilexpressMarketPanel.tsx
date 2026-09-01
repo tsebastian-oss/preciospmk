@@ -37,6 +37,9 @@ type DedicatedRate = {
   evidence?: string | null;
   observedAt?: string | null;
   metadata?: Record<string, unknown>;
+  processId?: string | null;
+  buyerName?: string | null;
+  priceBasis?: string | null;
 };
 
 type DedicatedRun = {
@@ -175,7 +178,8 @@ function normalizeDedicated(rows: DedicatedRate[]): RouteRow[] {
     if (!provider || !destination || price <= 0) continue;
     const weight = num(row.weightKg);
     const weightBand = row.weightBand || (weight > 0 ? `${weight} kg` : "Sin peso");
-    const key = [provider.toLocaleLowerCase("es-CL"), row.originLabel || "Santiago Centro", destination, weightBand, deliveryKey(row.deliveryType)].join("|");
+    const weightKey = weight > 0 ? weight.toFixed(3) : weightBand;
+    const key = [provider.toLocaleLowerCase("es-CL"), row.originLabel || "Santiago Centro", destination, weightKey, deliveryKey(row.deliveryType)].join("|");
     const previous = latest.get(key);
     const previousTime = previous?.observedAt ? new Date(previous.observedAt).getTime() : 0;
     const nextTime = row.observedAt ? new Date(row.observedAt).getTime() : 0;
@@ -187,7 +191,8 @@ function normalizeDedicated(rows: DedicatedRate[]): RouteRow[] {
     const destination = (row.destinationLabel || "").trim();
     const weight = num(row.weightKg);
     const weightBand = row.weightBand || (weight > 0 ? `${weight} kg` : "Sin peso");
-    const key = [row.originLabel || "Santiago Centro", destination, weightBand, deliveryKey(row.deliveryType)].join("|");
+    const weightKey = weight > 0 ? weight.toFixed(3) : weightBand;
+    const key = [row.originLabel || "Santiago Centro", destination, weightKey, deliveryKey(row.deliveryType)].join("|");
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
 
@@ -477,7 +482,7 @@ export default function ChilexpressMarketPanel() {
           <thead><tr><th>Proveedor</th><th>Comprador / proceso</th><th>Ruta o zona</th><th>Peso</th><th>Precio</th><th>Confianza</th></tr></thead>
           <tbody>{(dedicated?.b2bRates ?? []).slice(0,80).map((row,index)=><tr key={`${row.providerGroup}-${row.observedAt}-${index}`}>
             <td><strong>{row.providerGroup || row.providerName || "—"}</strong></td>
-            <td>{String(row.metadata?.buyer ?? "") || "Mercado Público"}<small>{String((row as any).processId ?? "")}</small></td>
+            <td>{row.buyerName || "Mercado Público"}<small>{row.processId || ""}</small></td>
             <td>{row.originLabel || "—"} → {row.destinationLabel || "Zona publicada"}</td><td>{row.weightBand || (num(row.weightKg)>0 ? `${num(row.weightKg)} kg` : "—")}</td>
             <td><strong>{num(row.shipmentPriceClp)>0 ? CLP.format(num(row.shipmentPriceClp)) : "—"}</strong></td><td>{num(row.confidence).toFixed(0)}%</td>
           </tr>)}</tbody>
