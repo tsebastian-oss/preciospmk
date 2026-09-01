@@ -1,0 +1,113 @@
+name: Starken Browser Probe
+
+on:
+  push:
+    branches:
+      - feature/starken-browser-collector
+    paths:
+      - .github/workflows/starken-browser-probe.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install Playwright
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Quote Starken in browser context
+        run: |
+          cat > /tmp/starken-probe.mjs <<'EOF'
+          import { chromium } from "playwright";
+
+          const browser = await chromium.launch({ headless: true });
+          const page = await browser.newPage({
+            locale: "es-CL",
+            timezoneId: "America/Santiago",
+            userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36"
+          });
+
+          try {
+            const response = await page.goto("https://www.starken.cl/cotizador", {
+              waitUntil: "domcontentloaded",
+              timeout: 45000
+            });
+            console.log("PAGE_STATUS", response?.status());
+            console.log("PAGE_URL", page.url());
+            await page.waitForTimeout(2500);
+
+            const result = await page.evaluate(async () => {
+              function norm(v) {
+                return String(v || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+              }
+              const cityRes = await fetch("https://gateway.starken.cl/agency/city", {
+                headers: { accept: "application/json" }
+              });
+              const cityText = await cityRes.text();
+              let cityPayload = null;
+              try { cityPayload = JSON.parse(cityText); } catch {}
+              const cities = Array.isArray(cityPayload)
+                ? cityPayload
+                : Array.isArray(cityPayload?.data)
+                  ? cityPayload.data
+                  : Array.isArray(cityPayload?.response)
+                    ? cityPayload.response
+                    : [];
+
+              const find = (name) => cities.find((x) => norm(JSON.stringify(x)).includes(norm(name)));
+              const santiago = find("santiago");
+              const antofagasta = find("antofagasta");
+              const code = (x) => x?.code_dls ?? x?.codigo ?? x?.id ?? x?.code ?? x?.value ?? null;
+
+              const quoteBody = {
+                alto: 10,
+                ancho: 10,
+                bulto: "PAQUETE",
+                destino: code(antofagasta),
+                entrega: "DOMICILIO",
+                kilos: 0.5,
+                largo: 20,
+                origen: code(santiago),
+                servicio: "NORMAL"
+              };
+
+              let quoteStatus = null;
+              let quotePayload = null;
+              if (quoteBody.origen && quoteBody.destino) {
+                const qr = await fetch("https://gateway.starken.cl/quote/cotizador", {
+                  method: "POST",
+                  headers: { "content-type": "application/json;charset=UTF-8", accept: "application/json" },
+                  body: JSON.stringify(quoteBody)
+                });
+                quoteStatus = qr.status;
+                const qt = await qr.text();
+                try { quotePayload = JSON.parse(qt); } catch { quotePayload = qt.slice(0, 3000); }
+              }
+              return {
+                cityStatus: cityRes.status,
+                cityCount: cities.length,
+                santiago,
+                antofagasta,
+                quoteBody,
+                quoteStatus,
+                quotePayload
+              };
+            });
+
+            console.log("STARKEN_RESULT=" + JSON.stringify(result));
+            if (!(result.cityStatus >= 200 && result.cityStatus < 300)) process.exitCode = 2;
+            if (!(result.quoteStatus >= 200 && result.quoteStatus < 300)) process.exitCode = 3;
+          } finally {
+            await browser.close();
+          }
+          EOF
+          node /tmp/starken-probe.mjs
