@@ -245,9 +245,9 @@ export default function ChilexpressDemoPage() {
       });
       const payload = await response.json() as { answer?: string };
       const answer = response.ok && payload.answer ? payload.answer : localAnswer(clean, rows);
-      setMessages((current) => [...current, { role: "assistant", content: answer }].slice(-12));
+      setMessages((current) => [...current, { role: "assistant" as const, content: answer }].slice(-12));
     } catch {
-      setMessages((current) => [...current, { role: "assistant", content: localAnswer(clean, rows) }].slice(-12));
+      setMessages((current) => [...current, { role: "assistant" as const, content: localAnswer(clean, rows) }].slice(-12));
     } finally {
       setChatLoading(false);
     }
