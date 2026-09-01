@@ -352,11 +352,16 @@ async function runResidentialBrowser(quotes: QuoteInput[], browserWs: string) {
     const page = context.pages()[0] || await context.newPage();
 
     await page.goto(STARKEN_QUOTER_URL, {
-      waitUntil: "domcontentloaded",
-      timeout: 30_000,
+      waitUntil: "commit",
+      timeout: 15_000,
+    }).catch(async (error) => {
+      const current = page.url();
+      if (!current.includes("starken.cl")) throw error;
     });
-    await page.getByText(/Cotiza con Starken/i).first().waitFor({ state: "visible", timeout: 15_000 }).catch(() => undefined);
-    await page.waitForTimeout(1_000);
+    await page.waitForLoadState("domcontentloaded", { timeout: 12_000 }).catch(() => undefined);
+    const formTitle = page.getByText(/Cotiza con Starken/i).first();
+    await formTitle.waitFor({ state: "visible", timeout: 18_000 });
+    await page.waitForTimeout(700);
 
     const selects = page.locator("select");
     const inputs = page.locator("input");
