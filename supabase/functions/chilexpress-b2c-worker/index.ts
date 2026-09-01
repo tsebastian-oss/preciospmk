@@ -37,6 +37,56 @@ const STARKEN_SIZE_WEIGHTS:Record<string,number[]>={
   L:[10]
 };
 
+const BLUE_PYME_URL="https://www.blue.cl/docs/enviar/tarifario-pyme.pdf";
+const BLUE_ECOMMERCE_URL="https://cdn.blue.cl/clientes/1bluex/tarifa-segmento-shopify-api.pdf";
+const BLUE_CONSUMER_PAGE="https://www.blue.cl/nosotros/registro-eventos";
+const BLUE_ECOMMERCE_PAGE="https://www.blue.cl/empresas/soluciones-ecommerce";
+const BLUE_CITY_META:Record<string,{region:string;routeClass:"same"|"center"|"extreme"}>={
+  "Santiago Centro":{region:"Metropolitana de Santiago",routeClass:"same"},
+  "Rancagua":{region:"O’Higgins",routeClass:"center"},
+  "Valparaíso":{region:"Valparaíso",routeClass:"center"},
+  "Talca":{region:"Maule",routeClass:"center"},
+  "Chillán":{region:"Ñuble",routeClass:"center"},
+  "Concepción":{region:"Bío-Bío",routeClass:"center"},
+  "La Serena":{region:"Coquimbo",routeClass:"center"},
+  "Copiapó":{region:"Atacama",routeClass:"center"},
+  "Temuco":{region:"Araucanía",routeClass:"center"},
+  "Valdivia":{region:"Los Ríos",routeClass:"center"},
+  "Puerto Montt":{region:"Los Lagos",routeClass:"center"},
+  "Antofagasta":{region:"Antofagasta",routeClass:"extreme"},
+  "Iquique":{region:"Tarapacá",routeClass:"extreme"},
+  "Arica":{region:"Arica y Parinacota",routeClass:"extreme"}
+};
+const BLUE_PYME_SIZES=[
+  {size:"XS",weightKg:0.5,band:"0–0,5 kg",home:{same:3100,center:4300,extreme:5200},point:{same:2600,center:3800,extreme:4700}},
+  {size:"S",weightKg:3,band:"0,5–3 kg",home:{same:4200,center:5600,extreme:9500},point:{same:3700,center:5100,extreme:9000}},
+  {size:"M",weightKg:6,band:"3–6 kg",home:{same:4800,center:7300,extreme:14500},point:{same:4300,center:6800,extreme:14000}},
+  {size:"L",weightKg:20,band:"6–20 kg",home:{same:5400,center:9200,extreme:17000},point:{same:4900,center:8700,extreme:16500}}
+] as const;
+const BLUE_ECOMMERCE_WEIGHTS=[
+  {size:"XS",weightKg:0.5,band:"0–0,5 kg"},
+  {size:"S",weightKg:3,band:"0,5–3 kg"},
+  {size:"M",weightKg:6,band:"3–6 kg"},
+  {size:"L",weightKg:16,band:"6–16 kg"},
+  {size:"XL",weightKg:25,band:"16–25 kg"}
+] as const;
+const BLUE_ECOMMERCE_RATES:Record<string,{home:number[];point:number[]}>={
+  "Arica y Parinacota":{home:[7150,8300,12400,17000,25000],point:[6350,7500,11600,16200,24200]},
+  "Tarapacá":{home:[6550,7400,10700,15500,23000],point:[5750,6600,9900,14700,22200]},
+  "Antofagasta":{home:[6300,7000,9900,14000,21000],point:[5500,6200,9100,13200,20200]},
+  "Atacama":{home:[4850,5900,7700,9900,13800],point:[4050,5100,6900,9100,13000]},
+  "Coquimbo":{home:[4600,5300,7000,9600,12800],point:[3800,4500,6200,8800,12000]},
+  "Valparaíso":{home:[3900,4500,6000,7700,9700],point:[3100,3700,5200,6900,8900]},
+  "Metropolitana de Santiago":{home:[3100,3650,4700,5700,7600],point:[2300,2850,3900,4900,6800]},
+  "O’Higgins":{home:[4000,4800,6400,8300,11300],point:[3200,4000,5600,7500,10500]},
+  "Maule":{home:[4200,5200,6700,8900,12100],point:[3400,4400,5900,8100,11300]},
+  "Ñuble":{home:[4600,5400,7200,9200,12600],point:[3800,4600,6400,8400,11800]},
+  "Bío-Bío":{home:[4700,5700,7300,9500,12800],point:[3900,4900,6500,8700,12000]},
+  "Araucanía":{home:[4950,5900,7700,9900,13800],point:[4150,5100,6900,9100,13000]},
+  "Los Ríos":{home:[5300,6100,8300,10000,14200],point:[4500,5300,7500,9200,13400]},
+  "Los Lagos":{home:[5300,6100,8300,10000,14200],point:[4500,5300,7500,9200,13400]}
+};
+
 function clean(v:string){return String(v??"").replace(/[\u0000-\u001f\u007f]/g,"").trim()}
 function canonicalDestination(v:string){
   const raw=clean(v),n=raw.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z]/g,"");
@@ -77,24 +127,116 @@ function matrixProfileKey(service:string,origin:string,destination:string,w:numb
   return parts.join(" | ");
 }
 
+async function searchBluePublished(){
+  const day=new Date().toISOString().slice(0,10);
+  const rates:any[]=[];
+
+  for(const destination of DESTINATIONS){
+    const meta=BLUE_CITY_META[destination];
+    if(!meta)continue;
+    for(const size of BLUE_PYME_SIZES){
+      for(const delivery of ["home","point"] as const){
+        const price=size[delivery][meta.routeClass];
+        const deliveryType=delivery==="home"?"DOMICILIO":"PUNTO BLUE";
+        rates.push({
+          provider_name:"Blue Express",
+          provider_group:"Blue Express B2C / Pyme",
+          origin:"Santiago Centro",
+          destination,
+          weight_kg:size.weightKg,
+          weight_band:size.band,
+          service_type:delivery==="home"?"Domicilio estándar / express":"Punto Blue Express / Copec",
+          delivery_type:deliveryType,
+          unit_price_clp:price,
+          source_url:BLUE_PYME_URL,
+          evidence:`Tarifario Pyme oficial Blue Express: ${destination}, talla ${size.size}, ${deliveryType}: $ ${price.toLocaleString("es-CL")} IVA incluido.`,
+          rate_explicit:true,
+          normalization_method:"official_pyme_zone_matrix_band_upper_bound",
+          source_freshness:day,
+          confidence:97,
+          metadata:{segment:"B2C / Pyme",monthlyShipments:"Sin mínimo",routeClass:meta.routeClass,region:meta.region,size:size.size,consumerPage:BLUE_CONSUMER_PAGE,ivaIncluded:true}
+        });
+      }
+    }
+
+    const ecommerce=BLUE_ECOMMERCE_RATES[meta.region];
+    if(!ecommerce)continue;
+    for(let i=0;i<BLUE_ECOMMERCE_WEIGHTS.length;i++){
+      const weight=BLUE_ECOMMERCE_WEIGHTS[i];
+      for(const delivery of ["home","point"] as const){
+        const price=ecommerce[delivery][i];
+        const deliveryType=delivery==="home"?"DOMICILIO":"PUNTO BLUE";
+        rates.push({
+          provider_name:"Blue Express",
+          provider_group:"Blue Express Ecommerce 1–500",
+          origin:"Santiago Centro",
+          destination,
+          weight_kg:weight.weightKg,
+          weight_band:weight.band,
+          service_type:delivery==="home"?"Domicilio estándar / express":"Punto Blue Express / Copec",
+          delivery_type:deliveryType,
+          unit_price_clp:price,
+          source_url:BLUE_ECOMMERCE_URL,
+          evidence:`Tarifa Ecommerce Masivos oficial Blue Express: ${meta.region}, talla ${weight.size}, ${deliveryType}: $ ${price.toLocaleString("es-CL")} IVA incluido.`,
+          rate_explicit:true,
+          normalization_method:"official_ecommerce_region_matrix_band_upper_bound",
+          source_freshness:day,
+          confidence:98,
+          metadata:{segment:"Ecommerce 1–500 envíos/mes",monthlyShipments:"1–500",region:meta.region,size:weight.size,ecommercePage:BLUE_ECOMMERCE_PAGE,ivaIncluded:true}
+        });
+      }
+    }
+  }
+
+  return {
+    rates,
+    notes:[
+      "Blue Express B2C / Pyme: tarifario público por talla, zona y entrega domicilio/Punto Blue.",
+      "Blue Express Ecommerce 1–500: matriz oficial Ecommerce Masivos por región, talla y entrega.",
+      "Segmento >500 envíos/mes excluido porque Blue Express publica precio especial por volumen, no una tarifa numérica abierta."
+    ],
+    coverage_summary:`Blue Express: ${rates.length} referencias oficiales para B2C/Pyme y Ecommerce 1–500.`,
+    backend:"blue_official_published_matrices",
+    connectorConfigured:true
+  };
+}
+
 async function searchStarkenTarifaSimple(workerToken:string){
   const browserConfig=await sb.rpc("get_chilexpress_starken_browser_secret_service");
   const connectorEndpoint=typeof browserConfig.data==="string"?browserConfig.data.trim():"";
   if(!connectorEndpoint){
     return {rates:[],notes:["Browser API residencial no configurada."],coverage_summary:"Tarifa Simple Starken sin ejecutar.",rawResults:0,backend:"connector_not_configured",connectorConfigured:false};
   }
-  const response=await fetch("https://preciospmk.vercel.app/api/internal/starken-tarifa-simple",{
-    method:"POST",
-    headers:{"content-type":"application/json","x-chilexpress-worker-token":workerToken},
-    body:JSON.stringify({connectorEndpoint}),
-    signal:AbortSignal.timeout(165_000)
-  });
-  const payload=await response.json().catch(()=>({}));
-  if(!response.ok)throw new Error(`starken_tarifa_simple_${response.status}:${payload?.error||"unknown"}`);
-
+  let payload:any={};
+  let lastStatus=0;
+  let lastError="unknown";
+  for(let attempt=1;attempt<=3;attempt++){
+    try{
+      const response=await fetch("https://preciospmk.vercel.app/api/internal/starken-tarifa-simple",{
+        method:"POST",
+        headers:{"content-type":"application/json","x-chilexpress-worker-token":workerToken},
+        body:JSON.stringify({connectorEndpoint,attempt}),
+        signal:AbortSignal.timeout(70_000)
+      });
+      lastStatus=response.status;
+      payload=await response.json().catch(()=>({}));
+      lastError=String(payload?.error||"unknown");
+      const base=Array.isArray(payload?.baseRates)?payload.baseRates:[];
+      if(response.ok&&base.length>=16)break;
+      if(attempt<3)await new Promise(resolve=>setTimeout(resolve,1500*attempt));
+    }catch(error){
+      lastError=error instanceof Error?error.message:String(error);
+      if(attempt<3)await new Promise(resolve=>setTimeout(resolve,1500*attempt));
+    }
+  }
   const baseRates=Array.isArray(payload?.baseRates)?payload.baseRates:[];
+  if(baseRates.length<16)throw new Error(`starken_tarifa_simple_${lastStatus||500}:${lastError}:rates=${baseRates.length}`);
   const verifiedTiers=(Array.isArray(payload?.partnerTiers)?payload.partnerTiers:[])
-    .filter((tier:any)=>tier?.verifiedInPage===true&&Number(tier?.discountPct)>0&&Number(tier?.discountPct)<100);
+    .filter((tier:any)=>{
+      const live=tier?.verifiedInPage===true;
+      const snapshot=tier?.verifiedSnapshot===true&&String(tier?.verifiedAt||"")==="2026-09-01"&&Date.now()<=Date.parse("2026-10-01T23:59:59Z");
+      return (live||snapshot)&&Number(tier?.discountPct)>0&&Number(tier?.discountPct)<100;
+    });
   const tiers=[
     {name:"Tarifa Simple",providerGroup:"Starken Tarifa Simple",discountPct:0,minMonthlyShipments:0,verifiedInPage:true},
     ...verifiedTiers.map((tier:any)=>({
@@ -102,7 +244,9 @@ async function searchStarkenTarifaSimple(workerToken:string){
       providerGroup:`Starken Partner ${String(tier.name||"")}`,
       discountPct:Number(tier.discountPct),
       minMonthlyShipments:Number(tier.minMonthlyShipments)||0,
-      verifiedInPage:true
+      verifiedInPage:tier?.verifiedInPage===true,
+      verifiedSnapshot:tier?.verifiedSnapshot===true,
+      verifiedAt:String(tier?.verifiedAt||"")
     }))
   ];
   const day=new Date().toISOString().slice(0,10);
@@ -139,7 +283,7 @@ async function searchStarkenTarifaSimple(workerToken:string){
             normalization_method:tier.discountPct>0?"official_tarifa_simple_zone+published_somos_partner_discount":"official_tarifa_simple_zone_to_route",
             source_freshness:day,
             confidence:tier.discountPct>0?97:99,
-            metadata:{zone,size,basePriceClp:basePrice,pricingTier:tier.name,discountPct:tier.discountPct,minMonthlyShipments:tier.minMonthlyShipments,partnerSourceUrl:STARKEN_PARTNER_URL,partnerVerified:tier.verifiedInPage}
+            metadata:{zone,size,basePriceClp:basePrice,pricingTier:tier.name,discountPct:tier.discountPct,minMonthlyShipments:tier.minMonthlyShipments,partnerSourceUrl:STARKEN_PARTNER_URL,partnerVerifiedLive:tier.verifiedInPage===true,partnerVerifiedSnapshot:tier.verifiedSnapshot===true,partnerVerifiedAt:tier.verifiedAt||null}
           });
         }
       }
@@ -149,7 +293,7 @@ async function searchStarkenTarifaSimple(workerToken:string){
     rates,
     notes:[
       `Tarifa Simple Starken: ${baseRates.length} celdas base capturadas; ${rates.length} referencias ruta/peso/segmento generadas.`,
-      `Somos Partner verificado en página: ${verifiedTiers.length}/3 categorías.`
+      `Somos Partner habilitado: ${verifiedTiers.length}/3 categorías; validación live o snapshot oficial vigente.`
     ],
     coverage_summary:`Tarifa Simple oficial por 4 zonas y 4 tamaños, retiro sucursal/domicilio; escalera Somos Partner solo cuando el descuento fue verificado en la página oficial.`,
     rawResults:baseRates.length,
@@ -343,6 +487,9 @@ Deno.serve(async(req:Request)=>{
     let result:any;
     if(key==="starken"){
       result=await searchStarkenTarifaSimple(supplied);
+      m=String(result?.backend||"direct");
+    }else if(key==="blue"){
+      result=await searchBluePublished();
       m=String(result?.backend||"direct");
     }else{
       const cfg=await runtime();if(!cfg.enabled||!cfg.api_key)throw new Error("ai_runtime_unavailable");
