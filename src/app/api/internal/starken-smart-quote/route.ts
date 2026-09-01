@@ -291,6 +291,59 @@ function chileBrowserEndpoint(value: string) {
 async function runResidentialBrowser(quotes: QuoteInput[], browserWs: string) {
   const { chromium } = await import("playwright-core");
   const browser = await chromium.connectOverCDP(chileBrowserEndpoint(browserWs), { timeout: 20_000 });
+
+  function quoteOptions(payload: unknown) {
+    const options: Array<{ price: number; delivery: "DOMICILIO" | "AGENCIA" | null; service: string }> = [];
+    const seen = new Set<string>();
+
+    function walk(value: unknown, depth: number) {
+      if (depth > 6 || value == null) return;
+      if (Array.isArray(value)) {
+        for (const item of value.slice(0, 80)) walk(item, depth + 1);
+        return;
+      }
+      if (typeof value !== "object") return;
+
+      const obj = value as Record<string, unknown>;
+      const price = numeric(
+        obj.precio ??
+        obj.valorFlete ??
+        obj.valor_flete ??
+        obj.flete ??
+        obj.tarifa ??
+        obj.total
+      );
+      if (price) {
+        const delivery = providerDelivery(
+          obj.entrega ??
+          obj.tipoEntrega ??
+          obj.tipo_entrega ??
+          obj.delivery ??
+          obj.modalidad
+        );
+        const service = String(obj.servicio ?? obj.service ?? obj.tipoServicio ?? "NORMAL").trim() || "NORMAL";
+        const key = [price, delivery || "", service].join("|");
+        if (!seen.has(key)) {
+          seen.add(key);
+          options.push({ price, delivery, service });
+        }
+      }
+
+      for (const next of Object.values(obj)) {
+        if (typeof next === "object" && next !== null) walk(next, depth + 1);
+      }
+    }
+
+    walk(payload, 0);
+    return options;
+  }
+
+  function priceFromText(text: string) {
+    const match = text.match(/(?:valor\s*(?:del\s*)?flete|total\s*(?:a\s*pagar)?|tarifa)[^$\d]{0,40}\$?\s*([\d.]{3,})/i);
+    if (!match) return null;
+    return numeric(match[1]);
+  }
+
   try {
     const context = browser.contexts()[0] || await browser.newContext({
       locale: "es-CL",
@@ -302,151 +355,168 @@ async function runResidentialBrowser(quotes: QuoteInput[], browserWs: string) {
       waitUntil: "domcontentloaded",
       timeout: 30_000,
     });
-    await page.waitForTimeout(900);
+    await page.waitForTimeout(2_500);
 
-    const browserResult = await page.evaluate(async ({ cityUrl, quoteUrl, quotes }) => {
-      function norm(value: unknown) {
-        return String(value || "")
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "")
-          .toLowerCase()
-          .replace(/[^a-z0-9]+/g, " ")
-          .trim();
-      }
-      function unwrap(payload: any) {
-        if (Array.isArray(payload)) return payload;
-        for (const key of ["data", "response", "cities", "result"]) {
-          if (Array.isArray(payload?.[key])) return payload[key];
-        }
-        return [];
-      }
-      function cityName(city: any) {
-        for (const key of ["city", "ciudad", "name", "nombre", "label"]) {
-          if (typeof city?.[key] === "string" && city[key].trim()) return city[key].trim();
-        }
-        return "";
-      }
-      function cityCode(city: any) {
-        for (const key of ["code_dls", "codigo_dls", "codigo", "id", "code", "value"]) {
-          if (city?.[key] !== undefined && city?.[key] !== null && String(city[key]).trim()) return city[key];
-        }
-        return null;
-      }
-      function findCity(cities: any[], requested: string) {
-        const target = norm(requested);
-        return cities.find((city) => norm(cityName(city)) === target)
-          || cities.find((city) => {
-            const current = norm(cityName(city));
-            return current.startsWith(target) || target.startsWith(current);
-          })
-          || cities.find((city) => norm(JSON.stringify(city)).includes(target))
-          || null;
-      }
+    const selects = page.locator("select");
+    const inputs = page.locator("input");
+    const selectCount = await selects.count();
+    const inputCount = await inputs.count();
 
-      const cityResponse = await fetch(cityUrl, {
-        headers: { accept: "application/json" },
-        cache: "no-store",
-      });
-      const cityText = await cityResponse.text();
-      let cityPayload: any = null;
-      try { cityPayload = JSON.parse(cityText); } catch {}
-      const cities = unwrap(cityPayload);
-      if (!cityResponse.ok || !cities.length) {
-        return {
-          cityStatus: cityResponse.status,
-          cityCount: cities.length,
-          results: [],
-          error: "residential_city_catalog_unavailable",
+    const selectMeta: Array<{ index: number; context: string; options: Array<{ label: string; value: string }> }> = [];
+    for (let i = 0; i < selectCount; i += 1) {
+      const locator = selects.nth(i);
+      const contextText = await locator.evaluate((element) =>
+        String(element.parentElement?.parentElement?.innerText || element.parentElement?.innerText || "").slice(0, 300)
+      ).catch(() => "");
+      const options = await locator.locator("option").evaluateAll((nodes) =>
+        nodes.map((node) => ({
+          label: String((node as HTMLOptionElement).textContent || "").trim(),
+          value: String((node as HTMLOptionElement).value || ""),
+        }))
+      ).catch(() => []);
+      selectMeta.push({ index: i, context: contextText, options });
+    }
+
+    const inputMeta: Array<{ index: number; context: string; type: string; placeholder: string }> = [];
+    for (let i = 0; i < inputCount; i += 1) {
+      const locator = inputs.nth(i);
+      const data = await locator.evaluate((element) => ({
+        context: String(element.parentElement?.parentElement?.innerText || element.parentElement?.innerText || "").slice(0, 240),
+        type: String((element as HTMLInputElement).type || ""),
+        placeholder: String((element as HTMLInputElement).placeholder || ""),
+      })).catch(() => ({ context: "", type: "", placeholder: "" }));
+      inputMeta.push({ index: i, ...data });
+    }
+
+    const norm = (value: string) => normalize(value);
+    const originSelect = selectMeta.find((item) => /origen/i.test(item.context))?.index ?? 0;
+    const destinationSelect = selectMeta.find((item) => /destino/i.test(item.context))?.index ?? 1;
+
+    if (selectCount < 2) {
+      throw new Error(`ui_form_selects_missing:selects=${selectCount}:inputs=${inputCount}`);
+    }
+
+    const findInputIndex = (label: RegExp, fallback: number) =>
+      inputMeta.find((item) => label.test(item.context) || label.test(item.placeholder))?.index ?? fallback;
+
+    const heightInput = findInputIndex(/alto/i, 0);
+    const lengthInput = findInputIndex(/largo/i, 1);
+    const widthInput = findInputIndex(/ancho/i, 2);
+    const weightInput = findInputIndex(/peso|kilo/i, 3);
+    const declaredInput = findInputIndex(/valor\s*declarado|declarado/i, 4);
+
+    async function choose(selectIndex: number, requested: string) {
+      const locator = selects.nth(selectIndex);
+      const options = await locator.locator("option").evaluateAll((nodes) =>
+        nodes.map((node) => ({
+          label: String((node as HTMLOptionElement).textContent || "").trim(),
+          value: String((node as HTMLOptionElement).value || ""),
+        }))
+      );
+      const target = norm(requested === "Santiago Centro" ? "Santiago" : requested);
+      const match = options.find((option) => norm(option.label) === target)
+        || options.find((option) => norm(option.label).includes(target))
+        || options.find((option) => target.includes(norm(option.label)) && norm(option.label).length > 3);
+      if (!match) throw new Error(`ui_city_not_found:${requested}`);
+      await locator.selectOption(match.value);
+    }
+
+    async function fill(index: number, value: number) {
+      if (index < 0 || index >= inputCount) return;
+      const locator = inputs.nth(index);
+      if (!(await locator.isEditable().catch(() => false))) return;
+      await locator.fill(String(value));
+    }
+
+    const button = page.getByRole("button", { name: /cotizar/i }).first();
+    if (!(await button.count())) throw new Error("ui_quote_button_missing");
+
+    const results: QuoteResult[] = [];
+
+    for (const input of quotes) {
+      try {
+        await choose(originSelect, input.origin);
+        await page.waitForTimeout(250);
+        await choose(destinationSelect, input.destination);
+        await fill(heightInput, input.heightCm);
+        await fill(lengthInput, input.lengthCm);
+        await fill(widthInput, input.widthCm);
+        await fill(weightInput, input.weightKg);
+        await fill(declaredInput, 10_000);
+
+        const captured: unknown[] = [];
+        const onResponse = async (response: any) => {
+          try {
+            const request = response.request();
+            if (request.method() !== "POST") return;
+            const url = response.url();
+            if (!/(quote|cotiz|tarif|flete|precio)/i.test(url)) return;
+            const text = await response.text();
+            let payload: unknown = text.slice(0, 20_000);
+            try { payload = JSON.parse(text); } catch {}
+            captured.push(payload);
+          } catch {}
         };
-      }
 
-      const results: any[] = [];
-      for (const input of quotes) {
-        const originCity = findCity(cities, input.origin);
-        const destinationCity = findCity(cities, input.destination);
-        const originCode = cityCode(originCity);
-        const destinationCode = cityCode(destinationCity);
-        if (!originCity || !destinationCity || originCode == null || destinationCode == null) {
-          results.push({ ok: false, input, error: "city_not_resolved" });
-          continue;
+        page.on("response", onResponse);
+        await button.click({ timeout: 10_000 });
+        await page.waitForTimeout(1_250);
+        page.off("response", onResponse);
+
+        const options = captured.flatMap((payload) => quoteOptions(payload));
+        const exact = options
+          .filter((option) => !input.deliveryType || option.delivery === input.deliveryType)
+          .sort((a, b) => a.price - b.price)[0];
+        const anyOption = options.sort((a, b) => a.price - b.price)[0];
+
+        let selected = exact || anyOption;
+        if (!selected) {
+          const bodyText = await page.locator("body").innerText().catch(() => "");
+          const visiblePrice = priceFromText(bodyText);
+          if (visiblePrice) {
+            selected = {
+              price: visiblePrice,
+              delivery: input.deliveryType || "DOMICILIO",
+              service: input.service || "NORMAL",
+            };
+          }
         }
 
-        try {
-          const response = await fetch(quoteUrl, {
-            method: "POST",
-            headers: {
-              "content-type": "application/json;charset=UTF-8",
-              accept: "application/json",
-            },
-            body: JSON.stringify({
-              alto: input.heightCm,
-              ancho: input.widthCm,
-              bulto: input.packageType || "PAQUETE",
-              destino: destinationCode,
-              entrega: input.deliveryType || "DOMICILIO",
-              kilos: input.weightKg,
-              largo: input.lengthCm,
-              origen: originCode,
-              servicio: input.service || "NORMAL",
-            }),
-          });
-          const text = await response.text();
-          let payload: any = text.slice(0, 2500);
-          try { payload = JSON.parse(text); } catch {}
-          results.push({
-            ok: response.ok,
-            status: response.status,
-            input,
-            origin: cityName(originCity),
-            destination: cityName(destinationCity),
-            originCode,
-            destinationCode,
-            payload,
-          });
-        } catch {
+        if (!selected) {
           results.push({
             ok: false,
             input,
-            origin: cityName(originCity),
-            destination: cityName(destinationCity),
-            originCode,
-            destinationCode,
-            error: "residential_quote_fetch_failed",
+            error: `ui_price_not_found:responses=${captured.length}:selects=${selectCount}:inputs=${inputCount}`,
           });
+          continue;
         }
-        await new Promise((resolve) => setTimeout(resolve, 180));
+
+        results.push({
+          ok: true,
+          status: 200,
+          input,
+          origin: input.origin,
+          destination: input.destination,
+          priceClp: selected.price,
+          deliveryType: selected.delivery || input.deliveryType || "DOMICILIO",
+          serviceType: selected.service || input.service || "NORMAL",
+          eta: null,
+        });
+      } catch (error) {
+        results.push({
+          ok: false,
+          input,
+          error: error instanceof Error ? error.message : "ui_quote_failed",
+        });
       }
-
-      return { cityStatus: cityResponse.status, cityCount: cities.length, results };
-    }, {
-      cityUrl: LEGACY_CITY_URL,
-      quoteUrl: LEGACY_QUOTE_URL,
-      quotes,
-    });
-
-    if (browserResult?.error) throw new Error(String(browserResult.error));
-
-    const results: QuoteResult[] = (browserResult?.results || []).map((row: any) => {
-      const priceClp = row?.ok ? extractPrice(row?.payload) : null;
-      return {
-        ok: Boolean(row?.ok && priceClp),
-        status: row?.status,
-        input: row?.input,
-        origin: row?.origin,
-        destination: row?.destination,
-        originCode: row?.originCode,
-        destinationCode: row?.destinationCode,
-        priceClp,
-        deliveryType: row?.input?.deliveryType || "DOMICILIO",
-        serviceType: row?.input?.service || "NORMAL",
-        eta: null,
-        ...(row?.error ? { error: String(row.error) } : {}),
-      };
-    });
+    }
 
     return {
-      backend: "brightdata_browser_api_chile",
-      cityCount: Number(browserResult?.cityCount) || 0,
+      backend: "brightdata_browser_ui_chile",
+      cityCount: Math.max(
+        selectMeta[originSelect]?.options?.length || 0,
+        selectMeta[destinationSelect]?.options?.length || 0,
+      ),
       results,
     };
   } finally {
