@@ -13,6 +13,7 @@ const PROVIDERS:Record<ProviderKey,{name:string;group:string;domains:string[];se
 };
 
 const DESTINATIONS=["Santiago Centro","Rancagua","Valparaíso","Talca","Chillán","Concepción","La Serena","Copiapó","Temuco","Valdivia","Puerto Montt","Antofagasta","Iquique","Arica"];
+const STARKEN_ANCHORS=["Santiago","Arica","Iquique","Antofagasta","Copiapó","La Serena","Valparaíso","Rancagua","Talca","Chillán","Concepción","Temuco","Valdivia","Puerto Montt","Coyhaique","Punta Arenas"];
 const WEIGHTS=[0.5,1,3,5,6,10,20];
 const STARKEN_PROFILES=[
   {weightKg:0.5,heightCm:10,widthCm:10,lengthCm:20,label:"0–0,5 kg"},
@@ -54,14 +55,25 @@ async function model(apiKey:string,preferred?:string|null){if(preferred&&preferr
 async function digest(s:string){const h=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(s));return [...new Uint8Array(h)].map(b=>b.toString(16).padStart(2,"0")).join("").slice(0,24)}
 function weightBand(w:number|null){if(!w||w<=0)return"Sin peso";if(w<=0.5)return"0–0,5 kg";if(w<=1)return"0,5–1 kg";if(w<=3)return"1–3 kg";if(w<=6)return"3–6 kg";if(w<=10)return"6–10 kg";if(w<=20)return"10–20 kg";return"20+ kg"}
 
-async function searchStarkenDirect(workerToken:string){
+async function searchStarkenDirect(workerToken:string,triggerKind:string){
   const quotes:any[]=[];
-  for(const destination of DESTINATIONS){
+  const destinations=triggerKind==="manual"?DESTINATIONS:STARKEN_ANCHORS;
+  let origins=["Santiago"];
+  if(triggerKind==="schedule"){
+    const day=Math.floor(Date.now()/86_400_000);
+    const first=day%STARKEN_ANCHORS.length;
+    origins=[STARKEN_ANCHORS[first],STARKEN_ANCHORS[(first+7)%STARKEN_ANCHORS.length]];
+  }else if(triggerKind==="backfill"){
+    origins=STARKEN_ANCHORS;
+  }
+  for(const origin of origins){
+  for(const destination of destinations){
     for(const profile of STARKEN_PROFILES){
       for(const deliveryType of ["DOMICILIO","AGENCIA"]){
-        quotes.push({origin:"Santiago",destination,weightKg:profile.weightKg,heightCm:profile.heightCm,widthCm:profile.widthCm,lengthCm:profile.lengthCm,deliveryType,packageType:"PAQUETE",service:"NORMAL",profileLabel:profile.label});
+        quotes.push({origin,destination,weightKg:profile.weightKg,heightCm:profile.heightCm,widthCm:profile.widthCm,lengthCm:profile.lengthCm,deliveryType,packageType:"PAQUETE",service:"NORMAL",profileLabel:profile.label});
       }
     }
+  }
   }
   const results:any[]=[];
   for(let i=0;i<quotes.length;i+=30){
@@ -78,7 +90,7 @@ async function searchStarkenDirect(workerToken:string){
   }
   const day=new Date().toISOString().slice(0,10);
   const rates=results.filter((x:any)=>x?.ok&&Number(x?.priceClp)>0).map((x:any)=>({
-    origin:"Santiago Centro",
+    origin:canonicalDestination(String(x?.origin||x?.input?.origin||"")),
     destination:canonicalDestination(String(x?.destination||x?.input?.destination||"")),
     weight_kg:Number(x?.input?.weightKg)>0?Number(x.input.weightKg):null,
     weight_band:String(x?.input?.profileLabel||weightBand(Number(x?.input?.weightKg)||null)),
@@ -96,7 +108,7 @@ async function searchStarkenDirect(workerToken:string){
     destinationCode:x?.destinationCode??null,
     eta:x?.eta??null
   }));
-  return {rates,notes:[`Cotizador oficial Starken: ${rates.length}/${quotes.length} escenarios con precio válido.`],coverage_summary:`Cotización directa de ${DESTINATIONS.length} destinos, ${STARKEN_PROFILES.length} perfiles de peso y entrega domicilio/agencia.`,rawResults:results.length};
+  return {rates,notes:[`Cotizador oficial Starken: ${rates.length}/${quotes.length} escenarios con precio válido.`],coverage_summary:`Cotización directa de ${origins.length} origen(es) × ${destinations.length} destinos, ${STARKEN_PROFILES.length} perfiles de peso y entrega domicilio/agencia.`,rawResults:results.length};
 }
 
 async function searchRates(apiKey:string,modelName:string,key:ProviderKey){
@@ -162,7 +174,7 @@ Deno.serve(async(req:Request)=>{
     let m="direct";
     let result:any;
     if(key==="starken"){
-      result=await searchStarkenDirect(supplied);
+      result=await searchStarkenDirect(supplied,triggerKind);
     }else{
       const cfg=await runtime();if(!cfg.enabled||!cfg.api_key)throw new Error("ai_runtime_unavailable");
       m=await model(cfg.api_key,cfg.model);
