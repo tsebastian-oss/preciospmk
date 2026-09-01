@@ -83,16 +83,30 @@ async function searchStarkenTarifaSimple(workerToken:string){
   if(!connectorEndpoint){
     return {rates:[],notes:["Browser API residencial no configurada."],coverage_summary:"Tarifa Simple Starken sin ejecutar.",rawResults:0,backend:"connector_not_configured",connectorConfigured:false};
   }
-  const response=await fetch("https://preciospmk.vercel.app/api/internal/starken-tarifa-simple",{
-    method:"POST",
-    headers:{"content-type":"application/json","x-chilexpress-worker-token":workerToken},
-    body:JSON.stringify({connectorEndpoint}),
-    signal:AbortSignal.timeout(165_000)
-  });
-  const payload=await response.json().catch(()=>({}));
-  if(!response.ok)throw new Error(`starken_tarifa_simple_${response.status}:${payload?.error||"unknown"}`);
-
+  let payload:any={};
+  let lastStatus=0;
+  let lastError="unknown";
+  for(let attempt=1;attempt<=3;attempt++){
+    try{
+      const response=await fetch("https://preciospmk.vercel.app/api/internal/starken-tarifa-simple",{
+        method:"POST",
+        headers:{"content-type":"application/json","x-chilexpress-worker-token":workerToken},
+        body:JSON.stringify({connectorEndpoint,attempt}),
+        signal:AbortSignal.timeout(70_000)
+      });
+      lastStatus=response.status;
+      payload=await response.json().catch(()=>({}));
+      lastError=String(payload?.error||"unknown");
+      const base=Array.isArray(payload?.baseRates)?payload.baseRates:[];
+      if(response.ok&&base.length>=16)break;
+      if(attempt<3)await new Promise(resolve=>setTimeout(resolve,1500*attempt));
+    }catch(error){
+      lastError=error instanceof Error?error.message:String(error);
+      if(attempt<3)await new Promise(resolve=>setTimeout(resolve,1500*attempt));
+    }
+  }
   const baseRates=Array.isArray(payload?.baseRates)?payload.baseRates:[];
+  if(baseRates.length<16)throw new Error(`starken_tarifa_simple_${lastStatus||500}:${lastError}:rates=${baseRates.length}`);
   const verifiedTiers=(Array.isArray(payload?.partnerTiers)?payload.partnerTiers:[])
     .filter((tier:any)=>tier?.verifiedInPage===true&&Number(tier?.discountPct)>0&&Number(tier?.discountPct)<100);
   const tiers=[
