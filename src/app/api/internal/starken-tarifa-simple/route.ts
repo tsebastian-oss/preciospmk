@@ -108,29 +108,23 @@ function dedupe(rates: BaseRate[]) {
 
 function parsePartnerTiers(text: string) {
   const normalized = String(text || "").replace(/\r/g, " ").replace(/\s+/g, " ");
+  const lower = normalized.toLocaleLowerCase("es-CL");
   const defs = [
     { name: "Colina", fallbackMin: 3, fallbackPct: 10 },
     { name: "Montaña", fallbackMin: 50, fallbackPct: 15 },
     { name: "Cordillera", fallbackMin: 150, fallbackPct: 20 },
   ];
   return defs.map((tier) => {
-    const escaped = tier.name.replace(/[.*+?^$()|[\]{}]/g, "\\function dedupe(rates: BaseRate[]) {
-  const out = new Map<string, BaseRate>();
-  for (const rate of rates) {
-    if (!rate.zone || !rate.priceClp) continue;
-    const key = [rate.deliveryType, rate.zone, rate.size].join("|");
-    if (!out.has(key)) out.set(key, rate);
-  }
-  return [...out.values()];
-}
-");
-    const re = new RegExp(escaped + "[\\s\\S]{0,180}?\\+?([0-9]{1,4})\\s*Envíos? mensuales[\\s\\S]{0,120}?([0-9]{1,2})%\\s*de descuentos?", "i");
-    const match = normalized.match(re);
+    const index = lower.indexOf(tier.name.toLocaleLowerCase("es-CL"));
+    const chunk = index >= 0 ? normalized.slice(index, index + 420) : "";
+    const shipmentMatch = chunk.match(/\+?([0-9]{1,4})\s*Envíos? mensuales/i);
+    const discountMatch = chunk.match(/([0-9]{1,2})%\s*de descuentos?/i);
+    const verifiedInPage = Boolean(shipmentMatch && discountMatch);
     return {
       name: tier.name,
-      minMonthlyShipments: match ? Number(match[1]) : tier.fallbackMin,
-      discountPct: match ? Number(match[2]) : tier.fallbackPct,
-      verifiedInPage: Boolean(match),
+      minMonthlyShipments: shipmentMatch ? Number(shipmentMatch[1]) : tier.fallbackMin,
+      discountPct: discountMatch ? Number(discountMatch[1]) : tier.fallbackPct,
+      verifiedInPage,
     };
   });
 }
