@@ -56,6 +56,8 @@ async function digest(s:string){const h=await crypto.subtle.digest("SHA-256",new
 function weightBand(w:number|null){if(!w||w<=0)return"Sin peso";if(w<=0.5)return"0–0,5 kg";if(w<=1)return"0,5–1 kg";if(w<=3)return"1–3 kg";if(w<=6)return"3–6 kg";if(w<=10)return"6–10 kg";if(w<=20)return"10–20 kg";return"20+ kg"}
 
 async function searchStarkenDirect(workerToken:string,triggerKind:string){
+  const browserConfig=await sb.rpc("get_chilexpress_starken_browser_secret_service");
+  const connectorEndpoint=typeof browserConfig.data==="string"?browserConfig.data.trim():"";
   const quotes:any[]=[];
   const destinations=triggerKind==="manual"?DESTINATIONS:STARKEN_ANCHORS;
   let origins=["Santiago"];
@@ -82,7 +84,7 @@ async function searchStarkenDirect(workerToken:string,triggerKind:string){
     const r=await fetch("https://preciospmk.vercel.app/api/internal/starken-smart-quote",{
       method:"POST",
       headers:{"content-type":"application/json","x-chilexpress-worker-token":workerToken},
-      body:JSON.stringify({quotes:batch}),
+      body:JSON.stringify({quotes:batch,connectorEndpoint}),
       signal:AbortSignal.timeout(55_000)
     });
     const j=await r.json().catch(()=>({}));
