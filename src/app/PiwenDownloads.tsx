@@ -21,7 +21,7 @@ export default function PiwenDownloads() {
       <div>
         <span>DATA EXPORT</span>
         <h2>Descarga las bases de Piwén</h2>
-        <p>Base vigente competitiva y serie histórica normalizada a $/kg, listas para Excel, análisis o presentaciones.</p>
+        <p>Base vigente competitiva e histórico granular de cada corrida, listos para Excel, análisis propios o presentaciones.</p>
       </div>
       <a href={href("current")} onClick={()=>track("base-vigente-completa")}>Descargar base vigente ↓</a>
     </section>
@@ -35,10 +35,10 @@ export default function PiwenDownloads() {
       </article>
 
       <article>
-        <span>CSV · HISTÓRICO</span>
-        <h3>Serie histórica $/kg</h3>
-        <p>Piwén, Alto La Cruz y Millantú por fecha y categoría, incluyendo el número de SKU y retailers considerados.</p>
-        <a href={href("history")} onClick={()=>track("historico-completo")}>Descargar histórico ↓</a>
+        <span>CSV · HISTÓRICO GRANULAR</span>
+        <h3>Todas las corridas, fila por observación</h3>
+        <p>Descarga cada captura histórica con corrida, fecha/hora, fuente, canal, marca, retailer, SKU, precios, $/kg, promoción, stock y URL.</p>
+        <a href={href("history")} onClick={()=>track("historico-granular-completo")}>Descargar histórico granular ↓</a>
       </article>
     </section>
 
@@ -53,14 +53,14 @@ export default function PiwenDownloads() {
           <p>Descarga el mercado actual o la evolución histórica solamente para esta categoría.</p>
           <div>
             <a href={href("current", family)} onClick={()=>track("vigente-"+family)}>Base vigente ↓</a>
-            <a href={href("history", family)} onClick={()=>track("historico-"+family)}>Histórico ↓</a>
+            <a href={href("history", family)} onClick={()=>track("historico-granular-"+family)}>Histórico granular ↓</a>
           </div>
         </article>)}
       </div>
     </section>
 
     <div className={styles.note}>
-      Las descargas respetan el acceso privado de la cuenta Piwén. La serie histórica identifica por separado el censo de supermercados y las referencias públicas de Piwén disponibles antes del crawler D2C continuo.
+      Las descargas respetan el acceso privado de la cuenta Piwén. El histórico granular conserva una fila por observación de cada corrida disponible: no reemplaza mediciones anteriores y separa Piwén.cl, supermercados y MercadoLibre. La columna “Comparable directo” permite reproducir el benchmark o construir análisis propios con el universo completo.
     </div>
   </div>;
 }
