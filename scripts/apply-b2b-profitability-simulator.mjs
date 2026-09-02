@@ -3,7 +3,7 @@ import fs from "node:fs";
 const pricingPath = "src/app/B2BPricing.tsx";
 let source = fs.readFileSync(pricingPath, "utf8");
 
-if (source.includes('import ChilexpressMarketPanel from "./ChilexpressMarketPanel";')) {
+if (source.includes("COURIER_SEGMENTED_ACCORDION_V1") || source.includes('import ChilexpressMarketPanel from "./ChilexpressMarketPanel";')) {
   console.log("Dedicated Courier & Logistics workspace detected; generic profitability simulator patch skipped");
   process.exit(0);
 }
