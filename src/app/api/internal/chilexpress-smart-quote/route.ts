@@ -111,11 +111,14 @@ function extractAlternatives(payload: unknown) {
 function parseBodyAlternatives(text: string) {
   const out: Alternative[] = [];
   const seen = new Set<string>();
-  const compact = text.replace(/\s+/g, " ");
+  const compact = text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
   for (const label of ["Basico", "Estandar", "Prioritario"]) {
     const service = serviceName(label);
     if (!service) continue;
-    const regex = new RegExp(label + "[\\s\\S]{0,180}?\\$\\s*([0-9.]{3,})", "i");
+    const regex = new RegExp(label + "[\\s\\S]{0,220}?\\$\\s*([0-9.]{3,})", "i");
     const match = compact.match(regex);
     const p = match ? numeric(match[1]) : null;
     if (p) {
