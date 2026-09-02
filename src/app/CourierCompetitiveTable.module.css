@@ -12,7 +12,7 @@
 .segmentTabs button.active span{color:#79aa91}
 .filters{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:13px;border:1px solid #202a35;background:#0d131a;border-radius:14px;margin-bottom:14px}
 .filters label{display:grid;gap:6px;color:#718195;font-size:9px;font-weight:850;letter-spacing:.08em;text-transform:uppercase}
-.filters select{height:38px;min-width:170px;max-width:460px;background:#111923;border:1px solid #2a3542;color:#e8edf2;border-radius:9px;padding:0 10px}
+.filters select{height:38px;min-width:170px;max-width:460px;background:#f8fafc!important;border:1px solid #cbd5e1;color:#111827!important;-webkit-text-fill-color:#111827;color-scheme:light;border-radius:9px;padding:0 34px 0 10px}.filters select option{background:#ffffff;color:#111827}
 .profileSelect{min-width:440px!important}
 .check{display:flex!important;align-items:center;gap:8px!important;height:38px;padding:0 10px;border:1px solid #293541;background:#101720;border-radius:9px;color:#aab6c3!important;text-transform:none!important;letter-spacing:0!important;font-size:10px!important}
 .check input{accent-color:#7dd3a8}
