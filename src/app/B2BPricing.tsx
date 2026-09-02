@@ -5,9 +5,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import B2BProfitabilitySimulator from "./B2BProfitabilitySimulator";
+import B2BDecisionLab from "./B2BDecisionLab";
 import styles from "./CourierCompetitiveTable.module.css";
 
-type Layer = "simulator" | "b2b";
+type Layer = "simulator" | "b2b" | "decisions";
 type Numeric = number | string | null;
 type MacroZone = "Norte" | "Centro" | "Sur";
 
@@ -269,7 +270,7 @@ export default function B2BPricing() {
   }, []);
 
   useEffect(() => {
-    if (layer === "b2b") void loadRegional();
+    if (layer === "b2b" || layer === "decisions") void loadRegional();
   }, [layer, loadRegional]);
 
   const regionalCells = useMemo(
@@ -429,17 +430,26 @@ export default function B2BPricing() {
     </div>
 
     <div className={styles.segmentTabs}>
+      <button type="button" className={layer === "b2b" ? styles.active : ""} onClick={() => setLayer("b2b")}>
+        Censo B2B
+        <span>Precios, posicionamiento e inteligencia</span>
+      </button>
       <button type="button" className={layer === "simulator" ? styles.active : ""} onClick={() => setLayer("simulator")}>
         Simulador
         <span>Precio, costo y margen competitivo</span>
       </button>
-      <button type="button" className={layer === "b2b" ? styles.active : ""} onClick={() => setLayer("b2b")}>
-        B2B
-        <span>Pyme, emprendedores y compras públicas</span>
+      <button type="button" className={layer === "decisions" ? styles.active : ""} onClick={() => setLayer("decisions")}>
+        Decisiones
+        <span>Oportunidades, impacto y precio recomendado</span>
       </button>
     </div>
 
-    {layer === "simulator" ? <B2BProfitabilitySimulator/> : <>
+    {layer === "simulator" ? <B2BProfitabilitySimulator/> : layer === "decisions" ? <B2BDecisionLab
+      zones={chartZones}
+      selectedMonth={selectedMonth}
+      months={regionalMonths}
+      onMonthChange={setSelectedMonth}
+    /> : <>
       <article className={`${styles.card} ${styles.regionalCard}`}>
         <header className={styles.regionalHeader}>
           <div>
