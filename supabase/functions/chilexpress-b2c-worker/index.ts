@@ -544,11 +544,14 @@ async function searchStarkenDirect(workerToken:string,triggerKind:string,maxQuot
   return {rates,notes:[`Cotizador oficial Starken (${backend}): ${rates.length}/${queue.length} escenarios con precio válido.`,...diagnostics.map((d:string)=>`Diagnóstico: ${d}`)],coverage_summary:`Cotización directa de ${origins.length} origen(es) × ${destinations.length} destinos, ${STARKEN_PROFILES.length} perfiles de peso y entrega domicilio/agencia. Ejecutados ${queue.length} escenarios en esta corrida.`,rawResults:results.length,backend,connectorConfigured:true};
 }
 
-async function searchChilexpressDirect(workerToken:string){
+async function searchChilexpressDirect(workerToken:string, requestedDestinations?:string[]){
   const browserConfig=await sb.rpc("get_chilexpress_starken_browser_secret_service");
   const connectorEndpoint=typeof browserConfig.data==="string"?browserConfig.data.trim():"";
   const day=new Date().toISOString().slice(0,10);
-  const profiles=DESTINATIONS.map(destination=>({
+  const targetDestinations=(Array.isArray(requestedDestinations)&&requestedDestinations.length
+    ? requestedDestinations.map(canonicalDestination).filter((destination:string)=>DESTINATIONS.includes(destination))
+    : DESTINATIONS);
+  const profiles=targetDestinations.map(destination=>({
     destination,
     quote:{
       origin:"Santiago Centro",
@@ -708,7 +711,8 @@ Deno.serve(async(req:Request)=>{
       result=await searchCorreosPublished();
       m=String(result?.backend||"direct");
     }else if(key==="chilexpress"){
-      result=await searchChilexpressDirect(supplied);
+      const requestedDestinations=Array.isArray(body?.destinations)?body.destinations.map((value:any)=>String(value)).slice(0,6):undefined;
+      result=await searchChilexpressDirect(supplied,requestedDestinations);
       m=String(result?.backend||"chilexpress_brightdata_multiservice");
     }else{
       const cfg=await runtime();if(!cfg.enabled||!cfg.api_key)throw new Error("ai_runtime_unavailable");
