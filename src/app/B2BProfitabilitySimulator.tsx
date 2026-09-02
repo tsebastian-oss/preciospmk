@@ -68,6 +68,8 @@ type SimulationRow = {
   observedAt: string | null;
   sourceUrl: string | null;
   history: HistoryPoint[];
+  currentForBenchmark: boolean;
+  freshnessLabel: string;
 };
 
 const money = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
@@ -124,6 +126,21 @@ function median(values: number[]) {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
+function daysOld(value: string | null | undefined) {
+  if (!value) return Infinity;
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return Infinity;
+  return Math.max(0, (Date.now() - time) / 86400000);
+}
+
+function freshnessLabel(value: string | null | undefined) {
+  const age = daysOld(value);
+  if (!Number.isFinite(age)) return "Sin fecha verificable";
+  if (age <= 7) return "Vigente · capturado recientemente";
+  if (age <= 90) return `Capturado hace ${Math.round(age)} días`;
+  return "Referencia histórica · fuera del benchmark vigente";
+}
+
 export default function B2BProfitabilitySimulator() {
   const [routeKey, setRouteKey] = useState("Santiago Centro|Concepción");
   const [weight, setWeight] = useState<number>(0.5);
@@ -178,11 +195,6 @@ export default function B2BProfitabilitySimulator() {
     return map;
   }, [routeHistory]);
 
-  const rawPrices = PROVIDERS
-    .map((profile) => Number(region?.prices?.[profile.name] ?? 0))
-    .filter((value) => value > 0);
-  const marketMedian = median(rawPrices);
-
   const rows = useMemo<SimulationRow[]>(() => {
     const scenarioFactor = COST_SCENARIO_MULTIPLIER[scenario];
     return PROVIDERS.map((profile) => {
@@ -196,41 +208,50 @@ export default function B2BProfitabilitySimulator() {
       const margin = price == null ? null : contribution! / price * 100;
       const latest = latestHistoryByProvider.get(profile.name);
       const isCorreos = profile.name === "CorreosChile" && price != null;
+      const observedAt = latest?.observedAt ?? (isCorreos ? "2025-10-01T12:00:00-03:00" : null);
+      const currentForBenchmark = price != null && daysOld(observedAt) <= 90;
       return {
         competitor: profile.name,
         price,
         cost,
         contribution,
         margin,
-        priceIndex: price != null && marketMedian ? price / marketMedian * 100 : null,
+        priceIndex: null,
         density: profile.density,
         product: region?.products?.[profile.name] ?? null,
         matchQuality: region?.matchQuality?.[profile.name] ?? null,
-        observedAt: latest?.observedAt ?? (isCorreos ? "2025-10-01T12:00:00-03:00" : null),
+        observedAt,
         sourceUrl: latest?.sourceUrl ?? (isCorreos ? "https://www.diariooficial.interior.gob.cl/publicaciones/2025/10/01/44263/01/2704814.pdf" : null),
         history: routeHistory.filter((point) => point.provider === profile.name),
+        currentForBenchmark,
+        freshnessLabel: freshnessLabel(observedAt),
       };
     });
-  }, [region, route.km, routeHistory, weight, scenario, latestHistoryByProvider, marketMedian]);
+  }, [region, route.km, routeHistory, weight, scenario, latestHistoryByProvider]);
 
-  const selectedRow = rows.find((row) => row.competitor === selected) ?? rows[0];
+  const currentMedian = median(rows.filter((row) => row.currentForBenchmark && hasPrice(row.price)).map((row) => row.price as number));
+  const rowsWithIndex = useMemo(
+    () => rows.map((row) => ({ ...row, priceIndex: row.currentForBenchmark && row.price != null && currentMedian ? row.price / currentMedian * 100 : null })),
+    [rows, currentMedian],
+  );
+
+  const selectedRow = rowsWithIndex.find((row) => row.competitor === selected) ?? rowsWithIndex[0];
   const adjustedSelectedPrice = hasPrice(selectedRow.price) ? selectedRow.price * (1 + priceAdjustment / 100) : null;
   const adjustedContribution = adjustedSelectedPrice == null ? null : adjustedSelectedPrice - selectedRow.cost;
   const adjustedMargin = adjustedSelectedPrice == null ? null : adjustedContribution! / adjustedSelectedPrice * 100;
   const recommendedPrice = selectedRow.cost / 0.72;
 
-  const availableRows = rows.filter((row) => hasPrice(row.price));
+  const availableRows = rowsWithIndex.filter((row) => row.currentForBenchmark && hasPrice(row.price));
   const marketPrice = availableRows.length ? availableRows.reduce((sum, row) => sum + (row.price ?? 0), 0) / availableRows.length : null;
   const lowestPrice = availableRows.length ? [...availableRows].sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity))[0] : null;
   const bestMargin = availableRows.filter((row) => row.margin != null).sort((a, b) => (b.margin ?? -Infinity) - (a.margin ?? -Infinity))[0] ?? null;
 
   const chartDates = useMemo(() => {
     const values = new Set(routeHistory.map((point) => point.observedDate));
-    if (hasPrice(rows.find((row) => row.competitor === "CorreosChile")?.price)) values.add("2025-10-01");
     return [...values].sort();
-  }, [routeHistory, rows]);
+  }, [routeHistory]);
 
-  const chartSeries = useMemo(() => rows.map((row) => {
+  const chartSeries = useMemo(() => rowsWithIndex.map((row) => {
     const points = [...row.history];
     if (row.competitor === "CorreosChile" && hasPrice(row.price)) {
       points.push({
@@ -246,7 +267,7 @@ export default function B2BProfitabilitySimulator() {
     }
     const byDate = new Map(points.map((point) => [point.observedDate, point.price]));
     return { competitor: row.competitor, points: chartDates.map((date) => ({ date, price: byDate.get(date) ?? null })) };
-  }), [rows, chartDates, route.destination]);
+  }), [rowsWithIndex, chartDates, route.destination]);
 
   const chart = useMemo(() => {
     const all = chartSeries.flatMap((series) => series.points.map((point) => point.price).filter(hasPrice));
@@ -291,7 +312,7 @@ export default function B2BProfitabilitySimulator() {
 
     {!loading && payload ? <>
       <div className={styles.kpis}>
-        <div><span>Precio medio observado</span><strong>{marketPrice ? money.format(marketPrice) : "—"}</strong><small>{route.destination} · {availableRows.length}/4 couriers</small></div>
+        <div><span>Precio medio vigente</span><strong>{marketPrice ? money.format(marketPrice) : "—"}</strong><small>{route.destination} · {availableRows.length}/4 couriers con dato ≤90 días</small></div>
         <div><span>Operador más agresivo</span><strong>{lowestPrice?.competitor ?? "—"}</strong><small>{lowestPrice?.price ? money.format(lowestPrice.price) : "sin comparación"}</small></div>
         <div><span>Mayor margen estimado</span><strong>{bestMargin?.margin != null ? `${percent.format(bestMargin.margin)}%` : "—"}</strong><small>{bestMargin?.competitor ?? "requiere precio observado"}</small></div>
         <div><span>Distancia de referencia</span><strong>{route.km.toLocaleString("es-CL")} km</strong><small>supuesto de costo · {weight} kg</small></div>
@@ -301,13 +322,14 @@ export default function B2BProfitabilitySimulator() {
         <section className={styles.comparisonCard}>
           <div className={styles.cardHead}><div><span>PRECIO OBSERVADO + ECONOMÍA ESTIMADA</span><h3>Precio, costo y margen por competidor</h3></div><small>Precio = evidencia capturada/oficial · CTE = supuesto operativo</small></div>
           <div className={styles.operatorGrid}>
-            {rows.map((row) => <button type="button" key={row.competitor} className={selected === row.competitor ? styles.operatorActive : styles.operator} onClick={() => { setSelected(row.competitor); setPriceAdjustment(0); }}>
+            {rowsWithIndex.map((row) => <button type="button" key={row.competitor} className={selected === row.competitor ? styles.operatorActive : styles.operator} onClick={() => { setSelected(row.competitor); setPriceAdjustment(0); }}>
               <div className={styles.operatorTitle}><strong>{row.competitor}</strong><span>{row.priceIndex != null ? `Índice ${row.priceIndex.toFixed(0)}` : "Sin precio"}</span></div>
               <div className={styles.priceLine}><span>Precio observado</span><b>{row.price ? money.format(row.price) : "Sin tarifa capturada"}</b></div>
               <div className={styles.priceLine}><span>Costo estimado</span><b>{money.format(row.cost)}</b></div>
               <div className={styles.marginLine}><span>Margen estimado</span><strong className={row.margin == null ? styles.mid : row.margin >= 28 ? styles.good : row.margin >= 18 ? styles.mid : styles.risk}>{row.margin == null ? "—" : `${percent.format(row.margin)}%`}</strong></div>
               <div className={styles.marginTrack}><i style={{ width: `${row.margin == null ? 0 : clamp(row.margin, 0, 45) / 45 * 100}%` }}/></div>
               <div className={styles.priceLine}><span>Fuente / fecha</span><b>{row.observedAt ? shortDate(row.observedAt) : "No disponible"}</b></div>
+              <div className={styles.priceLine}><span>Freshness</span><b>{row.freshnessLabel}</b></div>
             </button>)}
           </div>
         </section>
@@ -342,18 +364,18 @@ export default function B2BProfitabilitySimulator() {
               return <g key={series.competitor} className={styles[`series${rowIndex}`]}>{path ? <path d={path}/> : null}{available.map((point) => <circle key={point.date} cx={chart.x(point.index)} cy={chart.y(point.price)} r={3.5}/>)}</g>;
             })}
           </svg>
-          <div className={styles.legend}>{rows.map((row, index) => <span key={row.competitor}><i className={styles[`legend${index}`]}/>{row.competitor}</span>)}</div>
+          <div className={styles.legend}>{rowsWithIndex.map((row, index) => <span key={row.competitor}><i className={styles[`legend${index}`]}/>{row.competitor}</span>)}</div>
         </div> : <div className={styles.recommendation}><strong>Sin histórico suficiente para esta combinación.</strong><p>La pantalla mantendrá el precio actual y agregará puntos automáticamente a medida que las próximas corridas capturen nuevas observaciones.</p></div>}
       </section>
 
       <section className={styles.tableCard}>
         <div className={styles.cardHead}><div><span>COMPETITIVE VIEW</span><h3>Resumen comparable</h3></div><small>Precios reales/observados; rentabilidad estimada</small></div>
         <div className={styles.tableWrap}><table><thead><tr><th>Operador</th><th>Precio observado</th><th>Fecha</th><th>Producto / SLA</th><th>Costo estimado</th><th>Contribución est.</th><th>Margen est.</th><th>Lectura</th></tr></thead><tbody>
-          {rows.map((row) => <tr key={row.competitor}><td><b>{row.competitor}</b></td><td>{row.price ? money.format(row.price) : "—"}</td><td>{shortDate(row.observedAt)}</td><td>{row.product || "Sin equivalente público capturado"}</td><td>{money.format(row.cost)}</td><td>{row.contribution != null ? money.format(row.contribution) : "—"}</td><td><strong>{row.margin != null ? `${percent.format(row.margin)}%` : "—"}</strong></td><td>{row.price == null ? "Sin tarifa comparable" : row.margin != null && row.margin >= 30 ? "Rentabilidad estimada saludable" : row.margin != null && row.margin >= 20 ? "Competitivo / defendible" : "Margen estimado tensionado"}</td></tr>)}
+          {rowsWithIndex.map((row) => <tr key={row.competitor}><td><b>{row.competitor}</b></td><td>{row.price ? money.format(row.price) : "—"}</td><td>{shortDate(row.observedAt)}<br/><small>{row.freshnessLabel}</small></td><td>{row.product || "Sin equivalente público capturado"}</td><td>{money.format(row.cost)}</td><td>{row.contribution != null ? money.format(row.contribution) : "—"}</td><td><strong>{row.margin != null ? `${percent.format(row.margin)}%` : "—"}</strong></td><td>{row.price == null ? "Sin tarifa comparable" : row.margin != null && row.margin >= 30 ? "Rentabilidad estimada saludable" : row.margin != null && row.margin >= 20 ? "Competitivo / defendible" : "Margen estimado tensionado"}</td></tr>)}
         </tbody></table></div>
       </section>
 
-      <footer className={styles.footnote}><b>Metodología:</b> precio = tarifa pública capturada u oficial para Santiago Centro → {route.destination}, {weight} kg, domicilio, Estándar. Costos = pickup + sort + linehaul + last mile + overhead bajo supuestos del modelo. Si un courier no tiene una tarifa pública capturada para esa combinación, se muestra vacío y no se estima un precio. La referencia de CorreosChile Estándar proviene de la Res. Exenta 66 publicada el 01-10-2025.</footer>
+      <footer className={styles.footnote}><b>Metodología:</b> precio = tarifa pública capturada u oficial para Santiago Centro → {route.destination}, {weight} kg, domicilio, Estándar. Para KPIs competitivos vigentes solo se consideran observaciones de hasta 90 días. Una tarifa más antigua puede mostrarse como referencia histórica, pero queda fuera del promedio, ranking y price index actuales. Costos = pickup + sort + linehaul + last mile + overhead bajo supuestos del modelo. La referencia de CorreosChile Estándar proviene de la Res. Exenta 66 publicada el 01-10-2025 y se mantiene marcada como histórica hasta reconfirmarla.</footer>
     </> : null}
   </article>;
 }
