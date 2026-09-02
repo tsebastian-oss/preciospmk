@@ -140,7 +140,7 @@ async function searchBluePublished(){
         const deliveryType=delivery==="home"?"DOMICILIO":"PUNTO BLUE";
         rates.push({
           provider_name:"Blue Express",
-          provider_group:"Blue Express B2C / Pyme",
+          provider_group:"Blue Express B2C / Público",
           origin:"Santiago Centro",
           destination,
           weight_kg:size.weightKg,
@@ -154,7 +154,7 @@ async function searchBluePublished(){
           normalization_method:"official_pyme_zone_matrix_band_upper_bound",
           source_freshness:day,
           confidence:97,
-          metadata:{segment:"B2C / Pyme",monthlyShipments:"Sin mínimo",routeClass:meta.routeClass,region:meta.region,size:size.size,consumerPage:BLUE_CONSUMER_PAGE,ivaIncluded:true}
+          metadata:{segment:"B2C / Público",monthlyShipments:"Sin mínimo",routeClass:meta.routeClass,region:meta.region,size:size.size,consumerPage:BLUE_CONSUMER_PAGE,ivaIncluded:true}
         });
       }
     }
@@ -191,7 +191,7 @@ async function searchBluePublished(){
   return {
     rates,
     notes:[
-      "Blue Express B2C / Pyme: tarifario público por talla, zona y entrega domicilio/Punto Blue.",
+      "Blue Express B2C / Público: tarifario público por talla, zona y entrega domicilio/Punto Blue.",
       "Blue Express Ecommerce 1–500: matriz oficial Ecommerce Masivos por región, talla y entrega.",
       "Segmento >500 envíos/mes excluido porque Blue Express publica precio especial por volumen, no una tarifa numérica abierta."
     ],
