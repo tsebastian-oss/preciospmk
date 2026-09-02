@@ -206,14 +206,8 @@ function macroZoneForDestination(value: string | null | undefined): MacroZone | 
   return null;
 }
 
-function lastSixMonthKeys() {
-  const now = new Date();
-  const keys: string[] = [];
-  for (let offset = 5; offset >= 0; offset -= 1) {
-    const date = new Date(now.getFullYear(), now.getMonth() - offset, 1, 12);
-    keys.push(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`);
-  }
-  return keys;
+function augustToDecemberKeys() {
+  return ["2026-08", "2026-09", "2026-10", "2026-11", "2026-12"];
 }
 
 function monthShortLabel(key: string) {
@@ -393,7 +387,7 @@ export default function B2BPricing() {
     if (layer === "b2b") void loadRegional();
   }, [layer, loadRegional]);
 
-  const regionalMonths = useMemo(() => lastSixMonthKeys(), []);
+  const regionalMonths = useMemo(() => augustToDecemberKeys(), []);
   const regionalCells = useMemo(
     () => buildRegionalB2B(regionalPoints, regionalMonths),
     [regionalPoints, regionalMonths],
