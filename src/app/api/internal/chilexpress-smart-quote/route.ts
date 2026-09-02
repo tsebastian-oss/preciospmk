@@ -154,10 +154,15 @@ async function runBrowser(input: QuoteInput, browserWs: string) {
 
     const captured: unknown[] = [];
     const urls: string[] = [];
+    const quoteRequests: Array<{ url: string; headers: Record<string, string> }> = [];
     const onResponse = async (response: any) => {
       try {
         const url = response.url();
         const request = response.request();
+        if (/GetCotizadorNacional/i.test(url)) {
+          const requestHeaders = await request.allHeaders().catch(() => ({} as Record<string, string>));
+          quoteRequests.push({ url, headers: requestHeaders });
+        }
         if (!/(cotiz|tarif|precio|servic|shipping|quote|flete)/i.test(url)) return;
         if (!["GET", "POST"].includes(request.method())) return;
         const contentType = String(response.headers()?.["content-type"] || "");
@@ -293,6 +298,54 @@ async function runBrowser(input: QuoteInput, browserWs: string) {
     await page.waitForTimeout(5_000);
 
     let alternatives = captured.flatMap(extractAlternatives);
+
+    // Once the UI resolves Chilexpress city codes, replay the official quote call with
+    // the exact requested parcel values. This avoids Angular timing races that can
+    // briefly emit PESO/ALTO/ANCHO/LARGO=0 or the generic-dimensions flag.
+    const lastQuoteRequest = quoteRequests.at(-1);
+    let directQuotePayload: unknown = null;
+    let directQuoteUrl: string | null = null;
+    if (lastQuoteRequest) {
+      try {
+        const directUrl = new URL(lastQuoteRequest.url);
+        directUrl.searchParams.set("PESO", String(input.weightKg));
+        directUrl.searchParams.set("ALTO", String(input.heightCm));
+        directUrl.searchParams.set("ANCHO", String(input.widthCm));
+        directUrl.searchParams.set("LARGO", String(input.lengthCm));
+        directUrl.searchParams.set("VALOR_DECLARADO", String(input.declaredValue || 20_000));
+        directUrl.searchParams.set("iNDTARIFAGENERICA", "0");
+
+        const sourceHeaders = lastQuoteRequest.headers;
+        const directHeaders: Record<string, string> = {};
+        for (const key of [
+          "ocp-apim-subscription-key",
+          "x-api-key",
+          "authorization",
+          "accept",
+          "origin",
+          "referer",
+          "user-agent",
+        ]) {
+          const value = sourceHeaders[key];
+          if (value) directHeaders[key] = value;
+        }
+
+        const directResponse = await fetch(directUrl.toString(), {
+          method: "GET",
+          headers: directHeaders,
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (directResponse.ok) {
+          directQuotePayload = await directResponse.json().catch(() => null);
+          directQuoteUrl = directUrl.toString();
+          if (directQuotePayload) {
+            captured.push(directQuotePayload);
+            alternatives.push(...extractAlternatives(directQuotePayload));
+          }
+        }
+      } catch {}
+    }
+
     const body = await page.locator("body").innerText().catch(() => "");
     alternatives.push(...parseBodyAlternatives(body));
 
@@ -331,6 +384,9 @@ async function runBrowser(input: QuoteInput, browserWs: string) {
       diagnostics: {
         capturedResponses: captured.length,
         responseUrls: [...new Set(urls)].slice(0, 12),
+        quoteRequestCount: quoteRequests.length,
+        directQuoteUrl: directQuoteUrl ? directQuoteUrl.replace(/COD_TCC_CLIENTE=[^&]+/i, "COD_TCC_CLIENTE=***") : null,
+        directQuotePreview: directQuotePayload ? JSON.stringify(directQuotePayload).slice(0, 2500) : null,
         inputCount,
         formDiagnostics,
         otherMatches,
