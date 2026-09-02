@@ -68,6 +68,10 @@ if (!commercial.includes('if (view === "pricing-b2b") return "Enterprise";')) {
 }
 
 let pricing = fs.readFileSync(pricingPath, "utf8");
+if (pricing.includes("COURIER_SEGMENTED_ACCORDION_V1")) {
+  console.log("Segmented Courier & Logistics UI detected; legacy pricing mutations skipped");
+  process.exit(0);
+}
 pricing = pricing.replace(
   /const WEIGHT_BANDS = \[[^\n]+\];/,
   'const WEIGHT_BANDS = ["0–0,5 kg", "0,5–1,5 kg", "1,5–3 kg", "3–6 kg", "6–10 kg", "10–15 kg", "15–20 kg", "20+ kg"];',
