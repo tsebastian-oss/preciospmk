@@ -103,6 +103,29 @@
 .sourceCards span{margin-top:5px}
 .sourceCards small{margin-top:3px;color:var(--muted);font-size:8px}
 .note{margin-top:10px;padding:10px;border-radius:9px;background:#0c1016;color:var(--muted);font-size:9px;line-height:1.5}
+.regionalPanel{overflow:hidden}
+.regionalRules{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.regionalRules span{border:1px solid #28543a;background:#10251a;color:#86efac;border-radius:999px;padding:6px 8px;font-size:8px;font-weight:900;letter-spacing:.08em;white-space:nowrap}
+.regionalStack{display:grid;gap:12px}
+.regionBlock{background:#0c1016;border:1px solid #242c37;border-radius:12px;overflow:hidden}
+.regionHeader{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;padding:12px 14px;border-bottom:1px solid #242c37;background:linear-gradient(90deg,#0e1319,#111a15)}
+.regionHeader span{font-size:8px;letter-spacing:.13em;color:#86efac;font-weight:900}
+.regionHeader h3{margin:4px 0 0;font-size:17px}
+.regionHeader small{max-width:70%;text-align:right;color:#7f8b9c;font-size:8px;line-height:1.4}
+.regionalTableWrap{overflow:auto}
+.regionalTable{width:100%;min-width:760px;border-collapse:collapse}
+.regionalTable th{background:#0a0e13;color:#8895a5;font-size:8px;text-transform:uppercase;letter-spacing:.08em;padding:9px 11px;text-align:left}
+.regionalTable th:not(:first-child){text-align:center}
+.regionalTable td{padding:10px 11px;border-top:1px solid #202833;font-size:10px;vertical-align:top;text-align:center;min-width:105px}
+.regionalTable td:first-child{text-align:left;position:sticky;left:0;background:#0c1016;z-index:1;min-width:150px}
+.regionalTable td:first-child strong{font-size:10px}
+.regionalCell strong,.regionalCell small,.regionalCell em,.regionalEmpty strong,.regionalEmpty small{display:block}
+.regionalCell strong{font-size:12px}
+.regionalCell small{margin-top:3px;color:#9aa7b7;font-size:7.5px}
+.regionalCell em{margin:5px auto 0;width:max-content;background:#173322;color:#86efac;border:1px solid #28543a;border-radius:999px;padding:3px 6px;font-size:7px;font-style:normal;font-weight:900}
+.regionalEmpty strong{color:#566272}
+.regionalEmpty small{margin-top:3px;color:#566272;font-size:7.5px}
+.methodNote{margin-top:12px;padding:10px 12px;border-radius:10px;background:#0b0f14;border:1px solid #25303b;color:#8e99a9;font-size:8.5px;line-height:1.55}
 .copilot{background:linear-gradient(145deg,#0e1218,#17130f);border:1px solid var(--line);border-radius:16px;padding:18px;margin-bottom:12px}
 .copilotHead{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;padding-bottom:14px;border-bottom:1px solid #252d38}
 .copilotHead h2{margin:5px 0;font-size:21px}
@@ -129,6 +152,9 @@
 .heatGrid{grid-template-columns:repeat(3,1fr)}
 }
 @media(max-width:760px){.hero,.panelTitle,.copilotHead{flex-direction:column}
+.regionalRules{justify-content:flex-start}
+.regionHeader{align-items:flex-start;flex-direction:column}
+.regionHeader small{max-width:100%;text-align:left}
 .hero h1{font-size:27px}
 .liveBox{min-width:0;width:100%}
 .kpis,.positionGrid,.heatGrid,.opportunityGrid,.historyGrid{grid-template-columns:1fr 1fr}
