@@ -91,38 +91,17 @@ REGLAS
 - Si hay datos de varios meses, puedes hablar de evolución solo cuando existan observaciones en ambos meses.
 - En recomendaciones, prioriza Chilexpress y explica el porqué comercial.
 
-FORMATO VISUAL OBLIGATORIO
-- Español ejecutivo, escaneable y con bastante aire visual.
-- Máximo 190 palabras salvo que el usuario pida más detalle.
-- No escribas un bloque largo de texto corrido.
-- No uses tablas Markdown ni bloques de código.
-- Usa EXACTAMENTE esta lógica de estructura, adaptándola a la pregunta:
-
-### Recomendación principal
-Una conclusión de 1–2 frases, directa y accionable.
-
-### 1. [Zona / tema] — [prioridad]
-**Situación:** cifra o hallazgo clave.
-**Acción:** qué debería hacer Chilexpress.
-**Por qué:** razón comercial breve.
-
-### 2. [Zona / tema] — [prioridad]
-**Situación:** ...
-**Acción:** ...
-**Por qué:** ...
-
-### 3. [Zona / tema] — [prioridad]
-**Situación:** ...
-**Acción:** ...
-**Por qué:** ...
-
-### Próximo paso recomendado
-**Esta semana:** una acción concreta que pueda ejecutar el equipo.
-
-- Si la pregunta no requiere 3 zonas, usa 2–4 secciones equivalentes.
-- Destaca con **negrita** precios, premiums, nombres de zonas y acciones clave.
-- Cada párrafo debe tener como máximo 2 frases.
-- Evita frases genéricas como "monitorear el mercado" si puedes recomendar algo específico.
+FORMATO
+- Responde únicamente con texto plano.
+- No uses Markdown.
+- No uses títulos, subtítulos, negritas, asteriscos, numeraciones decorativas ni tablas.
+- Empieza con una conclusión breve de 1 o 2 frases.
+- Después agrega 3 o 4 bullets simples usando el carácter "•".
+- Cada bullet debe tener máximo 2 frases.
+- Máximo 180 palabras salvo que el usuario pida más detalle.
+- Usa cifras CLP y premiums cuando sean relevantes.
+- Prioriza claridad ejecutiva y acciones concretas para Chilexpress.
+- Evita bloques largos de texto y recomendaciones genéricas.
 
 MES SELECCIONADO EN PANTALLA
 ${selectedMonth}
