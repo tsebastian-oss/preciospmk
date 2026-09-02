@@ -700,6 +700,9 @@ Deno.serve(async(req:Request)=>{
     }else if(key==="correos"){
       result=await searchCorreosPublished();
       m=String(result?.backend||"direct");
+    }else if(key==="chilexpress"){
+      result=await searchChilexpressDirect(supplied);
+      m=String(result?.backend||"chilexpress_brightdata_multiservice");
     }else{
       const cfg=await runtime();if(!cfg.enabled||!cfg.api_key)throw new Error("ai_runtime_unavailable");
       m=await model(cfg.api_key,cfg.model);
@@ -715,7 +718,7 @@ Deno.serve(async(req:Request)=>{
       const sourceUrl=clean(x.source_url);
       const effectiveProviderName=clean(x.provider_name||PROVIDERS[key].name)||PROVIDERS[key].name;
       const effectiveProviderGroup=clean(x.provider_group||PROVIDERS[key].group)||PROVIDERS[key].group;
-      const basis=[effectiveProviderGroup,day,clean(x.origin||"Santiago Centro"),canonicalDestination(x.destination),String(w??x.weight_band??""),clean(x.delivery_type??""),String(price),sourceUrl].join("|");
+      const basis=[effectiveProviderGroup,day,clean(x.origin||"Santiago Centro"),canonicalDestination(x.destination),String(w??x.weight_band??""),clean(x.service_type??""),clean(x.delivery_type??""),String(price),sourceUrl].join("|");
       rows.push({
         organization_id:org.data.id,run_id:runId,source_record_id:`${key}:${day}:${await digest(basis)}`,
         provider_name:effectiveProviderName,provider_group:effectiveProviderGroup,source_url:sourceUrl,source_kind:"public_commercial_rate",
@@ -723,7 +726,7 @@ Deno.serve(async(req:Request)=>{
         origin_label:clean(x.origin||"Santiago Centro")||"Santiago Centro",destination_label:canonicalDestination(x.destination),
         weight_kg:w,weight_band:clean(x.weight_band||"")||weightBand(w),shipment_price_clp:price,
         confidence:Math.max(0,Math.min(100,Number(x.confidence)||80)),evidence:clean(x.evidence).slice(0,1500),
-        observed_at:new Date().toISOString(),metadata:{normalizationMethod:x.normalization_method||"explicit_public_rate",sourceFreshness:x.source_freshness||null,collector:key==="starken"?"chilexpress-starken-tarifa-simple-v1":"chilexpress-b2c-worker-v1",backend:key==="starken"?result?.backend||null:null,coverageSummary:result?.coverage_summary||null,dimensions:x.dimensions||null,originCode:x.originCode||null,destinationCode:x.destinationCode||null,eta:x.eta||null,...(x.metadata||{})}
+        observed_at:new Date().toISOString(),metadata:{normalizationMethod:x.normalization_method||"explicit_public_rate",sourceFreshness:x.source_freshness||null,collector:key==="starken"?"chilexpress-starken-tarifa-simple-v1":key==="chilexpress"?"chilexpress-b2c-multiservice-v2":"chilexpress-b2c-worker-v1",backend:(key==="starken"||key==="chilexpress")?result?.backend||null:null,coverageSummary:result?.coverage_summary||null,dimensions:x.dimensions||null,originCode:x.originCode||null,destinationCode:x.destinationCode||null,eta:x.eta||null,...(x.metadata||{})}
       });
     }
     let inserted=0;
