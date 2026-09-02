@@ -73,7 +73,7 @@ export async function POST(request:NextRequest){
   const body=await request.json().catch(()=>({}));
   const browserWs=process.env.BRIGHTDATA_BROWSER_WS?.trim()||String(body?.connectorEndpoint||"").trim();
   if(!browserWs)return NextResponse.json({error:"browser_not_configured"},{status:503});
-  const requested=Array.isArray(body?.destinations)&&body.destinations.length?body.destinations.map(String):DESTINATIONS;
+  const requested:string[]=Array.isArray(body?.destinations)&&body.destinations.length?body.destinations.map((value:unknown)=>String(value)):DESTINATIONS;
 
   const {chromium}=await import("playwright-core");
   const browser=await chromium.connectOverCDP(chileBrowserEndpoint(browserWs),{timeout:12000});
