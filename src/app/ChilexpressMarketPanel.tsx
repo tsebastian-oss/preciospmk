@@ -93,6 +93,38 @@ type DedicatedPayload = {
   error?: string;
 };
 
+type B2BTimeSeriesPoint = {
+  date?: string | null;
+  company?: string | null;
+  plan?: string | null;
+  channel?: string | null;
+  preferredPlan?: boolean | null;
+  origin?: string | null;
+  destination?: string | null;
+  weightBand?: string | null;
+  weightKg?: number | string | null;
+  serviceType?: string | null;
+  priceClp?: number | string | null;
+  observations?: number | string | null;
+  confidence?: number | string | null;
+};
+
+type B2BTimeSeriesPayload = {
+  points?: B2BTimeSeriesPoint[];
+  error?: string;
+};
+
+type MacroZone = "Norte" | "Centro" | "Sur";
+
+type RegionalB2BCell = {
+  price: number;
+  confidence: number;
+  destinations: number;
+  observations: number;
+  channel: string;
+  plan: string;
+};
+
 type RouteRow = {
   destination: string;
   weightBand: string;
@@ -281,6 +313,158 @@ function documentStatus(value: string | null | undefined) {
   return value || "Procesado";
 }
 
+const B2B_COMPANIES = ["Chilexpress", "Starken", "Blue Express", "CorreosChile"] as const;
+const MACRO_ZONES: MacroZone[] = ["Norte", "Centro", "Sur"];
+const B2B_MIN_SOURCE_CONFIDENCE = 90;
+const B2B_MIN_CELL_CONFIDENCE = 82;
+
+const ZONE_REFERENCE_DESTINATIONS: Record<MacroZone, string[]> = {
+  Norte: ["arica", "iquique", "antofagasta", "copiapo", "la serena"],
+  Centro: ["santiago", "valparaiso", "rancagua", "talca"],
+  Sur: ["chillan", "concepcion", "temuco", "valdivia", "puerto montt"],
+};
+
+function cleanText(value: string | null | undefined) {
+  return (value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("es-CL")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function macroZoneForDestination(value: string | null | undefined): MacroZone | null {
+  const key = cleanText(value);
+  if (!key || key.startsWith("zona ")) return null;
+
+  if (["arica", "iquique", "antofagasta", "calama", "copiapo", "la serena", "coquimbo", "ovalle"].some(item => key.includes(item))) {
+    return "Norte";
+  }
+  if (["santiago", "valparaiso", "vina del mar", "rancagua", "talca", "curico", "san antonio", "los andes"].some(item => key.includes(item))) {
+    return "Centro";
+  }
+  if (["chillan", "concepcion", "los angeles", "temuco", "valdivia", "osorno", "puerto montt", "castro", "coyhaique", "punta arenas"].some(item => key.includes(item))) {
+    return "Sur";
+  }
+  return null;
+}
+
+function lastSixMonthKeys() {
+  const now = new Date();
+  const keys: string[] = [];
+  for (let offset = 5; offset >= 0; offset -= 1) {
+    const date = new Date(now.getFullYear(), now.getMonth() - offset, 1, 12);
+    keys.push(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`);
+  }
+  return keys;
+}
+
+function monthShortLabel(key: string) {
+  const parsed = new Date(`${key}-01T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return key;
+  const label = new Intl.DateTimeFormat("es-CL", { month: "short" }).format(parsed).replace(".", "");
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function buildRegionalB2B(points: B2BTimeSeriesPoint[], monthKeys: string[]) {
+  type Bucket = { pyme: B2BTimeSeriesPoint[]; enterprise: B2BTimeSeriesPoint[] };
+  const buckets = new Map<string, Bucket>();
+  const monthSet = new Set(monthKeys);
+
+  for (const point of points) {
+    const date = String(point.date || "");
+    const month = date.slice(0, 7);
+    if (!monthSet.has(month)) continue;
+
+    const company = String(point.company || "");
+    if (!(B2B_COMPANIES as readonly string[]).includes(company)) continue;
+
+    const weight = num(point.weightKg);
+    if (!(weight > 0 && weight <= 0.5001)) continue;
+
+    const sourceConfidence = num(point.confidence);
+    if (sourceConfidence < B2B_MIN_SOURCE_CONFIDENCE) continue;
+
+    const origin = cleanText(point.origin);
+    if (!origin.includes("santiago")) continue;
+
+    const service = cleanText(point.serviceType);
+    const isDomicile = service.includes("domic");
+    const isGenericEnterprise = point.channel === "Mercado Público"
+      && !["punto", "sucursal", "agencia"].some(term => service.includes(term));
+    if (!isDomicile && !isGenericEnterprise) continue;
+
+    const zone = macroZoneForDestination(point.destination);
+    if (!zone) continue;
+
+    const isPyme = point.channel === "Pyme / Emprendedores";
+    const isEnterprise = point.channel === "Mercado Público";
+    if (!isPyme && !isEnterprise) continue;
+    if (isPyme && point.preferredPlan !== true) continue;
+
+    const price = num(point.priceClp);
+    if (!(price > 0)) continue;
+
+    const key = `${zone}|${company}|${month}`;
+    const bucket = buckets.get(key) ?? { pyme: [], enterprise: [] };
+    (isPyme ? bucket.pyme : bucket.enterprise).push(point);
+    buckets.set(key, bucket);
+  }
+
+  const cells = new Map<string, RegionalB2BCell>();
+
+  for (const [key, bucket] of buckets.entries()) {
+    // A published Pyme/Emprendedores plan is the cleanest cross-brand benchmark.
+    // If it is unavailable, use observed enterprise/procurement evidence, but never mix both.
+    const selected = bucket.pyme.length ? bucket.pyme : bucket.enterprise;
+    if (!selected.length) continue;
+
+    const sorted = [...selected].sort((a, b) => num(a.priceClp) - num(b.priceClp));
+    const trim = sorted.length >= 10 ? Math.floor(sorted.length * 0.1) : 0;
+    const robust = trim > 0 ? sorted.slice(trim, sorted.length - trim) : sorted;
+
+    let weightedPrice = 0;
+    let totalWeight = 0;
+    let weightedConfidence = 0;
+    let observations = 0;
+    const destinations = new Set<string>();
+    const plans = new Set<string>();
+
+    for (const point of robust) {
+      const confidence = num(point.confidence);
+      const weight = Math.max(0.5, confidence / 100);
+      weightedPrice += num(point.priceClp) * weight;
+      weightedConfidence += confidence * weight;
+      totalWeight += weight;
+      observations += Math.max(1, num(point.observations));
+      if (point.destination) destinations.add(cleanText(point.destination));
+      if (point.plan) plans.add(point.plan);
+    }
+
+    if (!(totalWeight > 0)) continue;
+
+    const [zone] = key.split("|") as [MacroZone, string, string];
+    const sourceConfidence = weightedConfidence / totalWeight;
+    const targetCount = ZONE_REFERENCE_DESTINATIONS[zone].length;
+    const coverage = Math.min(100, (destinations.size / Math.max(1, targetCount)) * 100);
+    const sourceQuality = bucket.pyme.length ? 100 : 92;
+    const cellConfidence = Math.round(sourceConfidence * 0.72 + coverage * 0.23 + sourceQuality * 0.05);
+
+    if (cellConfidence < B2B_MIN_CELL_CONFIDENCE) continue;
+
+    cells.set(key, {
+      price: Math.round(weightedPrice / totalWeight),
+      confidence: cellConfidence,
+      destinations: destinations.size,
+      observations,
+      channel: bucket.pyme.length ? "Pyme" : "Empresa",
+      plan: [...plans].join(" / "),
+    });
+  }
+
+  return cells;
+}
+
 function localAnswer(question: string, rows: RouteRow[]) {
   const sorted = [...rows].sort((a,b)=>b.index-a.index);
   const avg = rows.length ? rows.reduce((sum,row)=>sum+row.index,0)/rows.length : 0;
@@ -307,6 +491,27 @@ export default function ChilexpressMarketPanel() {
   const [chatInput,setChatInput] = useState("");
   const [chatLoading,setChatLoading] = useState(false);
   const [reloadToken,setReloadToken] = useState(0);
+  const [b2bTimeSeries,setB2BTimeSeries] = useState<B2BTimeSeriesPoint[]>([]);
+  const [b2bRegionalLoading,setB2BRegionalLoading] = useState(true);
+
+  useEffect(()=>{
+    let active = true;
+    async function loadRegionalB2B() {
+      setB2BRegionalLoading(true);
+      try {
+        const response = await fetch("/api/b2b-pricing/timeseries?category=courier&days=1095&layer=b2b",{cache:"no-store"});
+        const payload = await response.json() as B2BTimeSeriesPayload;
+        if (!response.ok) throw new Error(payload.error || "No fue posible cargar histórico B2B.");
+        if (active) setB2BTimeSeries(payload.points ?? []);
+      } catch {
+        if (active) setB2BTimeSeries([]);
+      } finally {
+        if (active) setB2BRegionalLoading(false);
+      }
+    }
+    void loadRegionalB2B();
+    return ()=>{active=false;};
+  },[reloadToken]);
 
   useEffect(()=>{
     let active = true;
@@ -384,6 +589,9 @@ export default function ChilexpressMarketPanel() {
     return {band,avg,count:subset.length,min:Math.min(...subset.map(row=>row.index)),max:Math.max(...subset.map(row=>row.index))};
   }),[rows,bands]);
 
+  const b2bMonths = useMemo(()=>lastSixMonthKeys(),[]);
+  const b2bRegionalCells = useMemo(()=>buildRegionalB2B(b2bTimeSeries,b2bMonths),[b2bTimeSeries,b2bMonths]);
+
   async function ask(question: string) {
     const clean = question.trim();
     if (!clean || chatLoading) return;
@@ -449,6 +657,59 @@ export default function ChilexpressMarketPanel() {
           <footer>Rango {card.min.toFixed(0)}–{card.max.toFixed(0)}</footer>
         </article>)}
       </section>
+
+      <article className={`${styles.panel} ${styles.regionalPanel}`}>
+        <div className={styles.panelTitle}>
+          <div>
+            <span>B2B · MACROZONAS</span>
+            <h2>Precio promedio censado por zona</h2>
+            <p>Benchmark homogéneo: origen Santiago, paquete 0–0,5 kg, entrega a domicilio y tarifa Pyme/Empresa. Se prioriza plan Pyme publicado; si no existe, evidencia empresarial observada.</p>
+          </div>
+          <div className={styles.regionalRules}>
+            <span>0–0,5 KG</span>
+            <span>DOMICILIO</span>
+            <span>≥90% FUENTE</span>
+          </div>
+        </div>
+
+        {b2bRegionalLoading ? <div className={styles.note}>Calculando matriz B2B de alta confianza…</div> : null}
+
+        <div className={styles.regionalStack}>
+          {MACRO_ZONES.map(zone=><section className={styles.regionBlock} key={zone}>
+            <header className={styles.regionHeader}>
+              <div><span>MACROZONA</span><h3>{zone}</h3></div>
+              <small>{ZONE_REFERENCE_DESTINATIONS[zone].map(item=>item.replace(/\b\w/g,letter=>letter.toUpperCase())).join(" · ")}</small>
+            </header>
+            <div className={styles.regionalTableWrap}>
+              <table className={styles.regionalTable}>
+                <thead>
+                  <tr><th>Marca</th>{b2bMonths.map(month=><th key={month}>{monthShortLabel(month)}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {B2B_COMPANIES.map(company=><tr key={`${zone}-${company}`}>
+                    <td><strong>{company === "CorreosChile" ? "Correos Chile" : company}</strong></td>
+                    {b2bMonths.map(month=>{
+                      const cell=b2bRegionalCells.get(`${zone}|${company}|${month}`);
+                      return <td key={`${zone}-${company}-${month}`} className={cell?styles.regionalCell:styles.regionalEmpty} title={cell ? `${cell.plan || cell.channel} · ${cell.observations} observaciones · ${cell.destinations} destinos` : "Sin censo B2B comparable para este mes"}>
+                        {cell ? <>
+                          <strong>{CLP.format(cell.price)}</strong>
+                          <small>{cell.confidence}% · {cell.destinations} destino{cell.destinations===1?"":"s"}</small>
+                          <em>{cell.channel}</em>
+                        </> : <><strong>—</strong><small>sin censo comparable</small></>}
+                      </td>;
+                    })}
+                  </tr>)}
+                </tbody>
+              </table>
+            </div>
+          </section>)}
+        </div>
+
+        <div className={styles.methodNote}>
+          Promedio robusto ponderado por confianza. No se imputan meses ni rutas inexistentes y no se mezclan tarifas punto/sucursal con domicilio. Correos Chile INTRA/CERCA/LEJOS se mantiene fuera de Norte/Centro/Sur hasta contar con una equivalencia geográfica oficial; así evitamos una falsa precisión.
+        </div>
+      </article>
+
       <section className={styles.grid2}>
         <article className={styles.panel}>
           <div className={styles.panelTitle}><div><span>TOP ALERTS</span><h2>Rutas a revisar primero</h2><p>Priorizadas por mayor Price Index.</p></div></div>
