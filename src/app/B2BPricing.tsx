@@ -3,7 +3,7 @@
 // COURIER_SEGMENTED_ACCORDION_V1
 // COURIER_COMPETITIVE_TABLE_V1
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import B2CRegionalPricing from "./B2CRegionalPricing";
 import styles from "./CourierCompetitiveTable.module.css";
 
@@ -134,6 +134,62 @@ function selectBestPymePlan(company: string, plans: Map<string, B2BTimeSeriesPoi
 
   if (!ranked.length) return null;
   return { plan: ranked[0][0], rows: ranked[0][1] };
+}
+
+function renderInlineMarkdown(value: string) {
+  return value.split(/(\\*\\*[^*]+\\*\\*)/g).filter(Boolean).map((part, index) => {
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={`strong-${index}`}>{part.slice(2, -2)}</strong>;
+    }
+    return <span key={`text-${index}`}>{part}</span>;
+  });
+}
+
+function AssistantRichText({ content }: { content: string }) {
+  const lines = content.split("\n");
+  const blocks: ReactNode[] = [];
+  let bullets: string[] = [];
+
+  const flushBullets = () => {
+    if (!bullets.length) return;
+    blocks.push(
+      <ul className={styles.aiRichList} key={`list-${blocks.length}`}>
+        {bullets.map((bullet, index) => <li key={`bullet-${index}`}>{renderInlineMarkdown(bullet)}</li>)}
+      </ul>,
+    );
+    bullets = [];
+  };
+
+  lines.forEach((rawLine) => {
+    const line = rawLine.trim();
+    if (!line) {
+      flushBullets();
+      return;
+    }
+
+    if (line.startsWith("### ")) {
+      flushBullets();
+      blocks.push(<h4 key={`h4-${blocks.length}`}>{renderInlineMarkdown(line.slice(4))}</h4>);
+      return;
+    }
+
+    if (line.startsWith("## ")) {
+      flushBullets();
+      blocks.push(<h3 key={`h3-${blocks.length}`}>{renderInlineMarkdown(line.slice(3))}</h3>);
+      return;
+    }
+
+    if (/^[•-]\s+/.test(line)) {
+      bullets.push(line.replace(/^[•-]\s+/, ""));
+      return;
+    }
+
+    flushBullets();
+    blocks.push(<p key={`p-${blocks.length}`}>{renderInlineMarkdown(line)}</p>);
+  });
+
+  flushBullets();
+  return <div className={styles.aiRichText}>{blocks}</div>;
 }
 
 function buildRegionalB2B(points: B2BTimeSeriesPoint[], monthKeys: string[]) {
@@ -616,7 +672,7 @@ export default function B2BPricing() {
             className={message.role === "user" ? styles.aiUserMessage : styles.aiAssistantMessage}
           >
             <span>{message.role === "user" ? "Tú" : "MGP Pricing Copilot"}</span>
-            <p>{message.content}</p>
+            {message.role === "assistant" ? <AssistantRichText content={message.content}/> : <p>{message.content}</p>}
           </div>)}
 
           {assistantLoading ? <div className={styles.aiTyping}>Analizando precios, brechas y evidencia…</div> : null}
