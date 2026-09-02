@@ -86,8 +86,8 @@ export async function POST(request:NextRequest){
       if(!/services\.wschilexpress\.com/i.test(req.url()))return;
       serviceHeaders=await req.allHeaders().catch(()=>({}));
     });
-    await page.goto(QUOTER_URL,{waitUntil:"domcontentloaded",timeout:15000});
-    for(let i=0;i<12&&!Object.keys(serviceHeaders).length;i++)await page.waitForTimeout(250);
+    await page.goto(QUOTER_URL,{waitUntil:"commit",timeout:12000}).catch(()=>null);
+    for(let i=0;i<20&&!Object.keys(serviceHeaders).length;i++)await page.waitForTimeout(250);
   }finally{
     await browser.close();
   }
