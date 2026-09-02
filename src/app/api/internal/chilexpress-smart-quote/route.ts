@@ -184,9 +184,17 @@ async function runBrowser(input: QuoteInput, browserWs: string) {
           id: String((el as HTMLInputElement).id || ""),
           context: String(el.parentElement?.parentElement?.innerText || el.parentElement?.innerText || "").slice(0, 220),
         })).catch(() => ({ placeholder: "", name: "", id: "", context: "" }));
-        if (pattern.test([meta.placeholder, meta.name, meta.id, meta.context].join(" "))) return locator;
+        if (
+          pattern.test([meta.placeholder, meta.name, meta.id, meta.context].join(" ")) &&
+          await locator.isVisible().catch(() => false) &&
+          await locator.isEditable().catch(() => false)
+        ) return locator;
       }
-      return fallback >= 0 && fallback < inputCount ? inputs.nth(fallback) : null;
+      if (fallback >= 0 && fallback < inputCount) {
+        const candidate = inputs.nth(fallback);
+        if (await candidate.isVisible().catch(() => false) && await candidate.isEditable().catch(() => false)) return candidate;
+      }
+      return null;
     }
 
     async function chooseCity(kind: "origin" | "destination", value: string) {
@@ -218,14 +226,32 @@ async function runBrowser(input: QuoteInput, browserWs: string) {
     await chooseCity("destination", input.destination);
     await page.waitForTimeout(250);
 
-    const declared = await inputByContext(/valor declarado|declarado/i, 3);
-    if (declared && await declared.isEditable().catch(() => false)) {
-      await declared.fill(String(input.declaredValue || 20_000));
+    // The article selector and custom-size controls are Angular widgets rather than native buttons.
+    // Select a generic article and explicitly reveal custom dimensions before filling the fields.
+    const selector = page.getByText("Seleccione", { exact: true }).last();
+    if ((await selector.count()) && await selector.isVisible().catch(() => false)) {
+      await selector.click({ force: true }).catch(() => undefined);
+      await page.waitForTimeout(180);
+      const other = page.getByText("OTROS", { exact: true }).last();
+      if ((await other.count()) && await other.isVisible().catch(() => false)) {
+        await other.click({ force: true }).catch(() => undefined);
+      }
     }
 
-    const height = await inputByContext(/alto/i, 4);
-    const width = await inputByContext(/ancho/i, 5);
-    const length = await inputByContext(/largo/i, 6);
+    const declared = await inputByContext(/valor declarado|declarado/i, 3);
+    if (declared && await declared.isEditable().catch(() => false)) {
+      await declared.fill(String(input.declaredValue || 20_000), { timeout: 5_000 });
+    }
+
+    const customDimensions = page.getByText("Medidas personalizadas", { exact: true }).last();
+    if ((await customDimensions.count()) && await customDimensions.isVisible().catch(() => false)) {
+      await customDimensions.click({ force: true }).catch(() => undefined);
+      await page.waitForTimeout(250);
+    }
+
+    const height = page.locator("#caja-alto:visible").first();
+    const width = page.locator("#caja-ancho:visible").first();
+    const length = page.locator("#caja-largo:visible").first();
     const weight = await inputByContext(/peso|kg|kilo/i, 7);
     for (const [locator, value] of [
       [height, input.heightCm],
@@ -233,8 +259,8 @@ async function runBrowser(input: QuoteInput, browserWs: string) {
       [length, input.lengthCm],
       [weight, input.weightKg],
     ] as const) {
-      if (locator && await locator.isEditable().catch(() => false)) {
-        await locator.fill(String(value));
+      if (locator && await locator.count().catch(() => 0) && await locator.isVisible().catch(() => false) && await locator.isEditable().catch(() => false)) {
+        await locator.fill(String(value), { timeout: 5_000 });
       }
     }
 
@@ -243,7 +269,7 @@ async function runBrowser(input: QuoteInput, browserWs: string) {
       await buttons.first().click({ force: true, timeout: 8_000 }).catch(() => undefined);
     }
 
-    await page.waitForTimeout(2_500);
+    await page.waitForTimeout(4_000);
 
     let alternatives = captured.flatMap(extractAlternatives);
     const body = await page.locator("body").innerText().catch(() => "");
