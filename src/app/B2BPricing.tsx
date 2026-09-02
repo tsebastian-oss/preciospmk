@@ -1,4 +1,7 @@
-"use client";\n\n// COURIER_SEGMENTED_ACCORDION_V1\n// COURIER_COMPETITIVE_TABLE_V1
+"use client";
+
+// COURIER_SEGMENTED_ACCORDION_V1
+// COURIER_COMPETITIVE_TABLE_V1
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import B2CRegionalPricing from "./B2CRegionalPricing";
