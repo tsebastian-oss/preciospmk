@@ -239,17 +239,20 @@ async function runBrowser(input: QuoteInput, browserWs: string) {
     await chooseCity("destination", input.destination);
     await page.waitForTimeout(250);
 
-    // The article selector and shipment controls are Angular widgets, not always native controls.
+    // Make the form explicit instead of relying on text/fallback matching.
     await clickFirstVisibleText("Encomienda");
     await clickFirstVisibleText("Nacional");
-    if (await clickFirstVisibleText("Seleccione")) {
-      await page.waitForTimeout(250);
-      await clickFirstVisibleText("OTROS");
-      await page.waitForTimeout(200);
+
+    const articleSelect = page.locator('select[formcontrolname="typeProtectedShipping"]:visible').first();
+    if (await articleSelect.count().catch(() => 0)) {
+      await articleSelect.selectOption("5").catch(async () => {
+        await articleSelect.selectOption({ label: "OTROS" }).catch(() => undefined);
+      });
+      await page.waitForTimeout(180);
     }
 
-    const declared = await inputByContext(/valor declarado|declarado/i, 3);
-    if (declared && await declared.isEditable().catch(() => false)) {
+    const declared = page.locator("#amount:visible").first();
+    if (await declared.count().catch(() => 0) && await declared.isEditable().catch(() => false)) {
       await declared.fill(String(input.declaredValue || 20_000), { timeout: 5_000 });
     }
 
@@ -260,7 +263,7 @@ async function runBrowser(input: QuoteInput, browserWs: string) {
     const height = page.locator("#caja-alto:visible").first();
     const width = page.locator("#caja-ancho:visible").first();
     const length = page.locator("#caja-largo:visible").first();
-    const weight = await inputByContext(/peso|kg|kilo/i, 7);
+    const weight = page.locator('input[formcontrolname="weight"]:visible').first();
     for (const [locator, value] of [
       [height, input.heightCm],
       [width, input.widthCm],
@@ -272,12 +275,19 @@ async function runBrowser(input: QuoteInput, browserWs: string) {
       }
     }
 
-    const buttons = page.getByRole("button", { name: /cotizar|continuar|calcular|buscar/i });
-    if (await buttons.count()) {
-      await buttons.first().click({ force: true, timeout: 8_000 }).catch(() => undefined);
+    const actionCandidates = [
+      page.getByRole("button", { name: /cotizar|continuar|calcular|buscar/i }).first(),
+      page.getByText("Cotizar", { exact: true }).first(),
+      page.getByText("Continuar", { exact: true }).first(),
+    ];
+    for (const action of actionCandidates) {
+      if ((await action.count().catch(() => 0)) && await action.isVisible().catch(() => false)) {
+        await action.click({ force: true, timeout: 5_000 }).catch(() => undefined);
+        break;
+      }
     }
 
-    await page.waitForTimeout(4_000);
+    await page.waitForTimeout(5_000);
 
     let alternatives = captured.flatMap(extractAlternatives);
     const body = await page.locator("body").innerText().catch(() => "");
