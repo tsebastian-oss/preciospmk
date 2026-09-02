@@ -169,6 +169,19 @@ async function runBrowser(input: QuoteInput, browserWs: string) {
     };
     page.on("response", onResponse);
 
+    async function clickFirstVisibleText(text: string) {
+      const matches = page.getByText(text, { exact: true });
+      const count = await matches.count();
+      for (let i = 0; i < count; i += 1) {
+        const item = matches.nth(i);
+        if (await item.isVisible().catch(() => false)) {
+          await item.click({ force: true, timeout: 4_000 }).catch(() => undefined);
+          return true;
+        }
+      }
+      return false;
+    }
+
     await page.goto(QUOTER_URL, { waitUntil: "domcontentloaded", timeout: 25_000 });
     await page.waitForTimeout(1_500);
 
@@ -226,16 +239,13 @@ async function runBrowser(input: QuoteInput, browserWs: string) {
     await chooseCity("destination", input.destination);
     await page.waitForTimeout(250);
 
-    // The article selector and custom-size controls are Angular widgets rather than native buttons.
-    // Select a generic article and explicitly reveal custom dimensions before filling the fields.
-    const selector = page.getByText("Seleccione", { exact: true }).last();
-    if ((await selector.count()) && await selector.isVisible().catch(() => false)) {
-      await selector.click({ force: true }).catch(() => undefined);
-      await page.waitForTimeout(180);
-      const other = page.getByText("OTROS", { exact: true }).last();
-      if ((await other.count()) && await other.isVisible().catch(() => false)) {
-        await other.click({ force: true }).catch(() => undefined);
-      }
+    // The article selector and shipment controls are Angular widgets, not always native controls.
+    await clickFirstVisibleText("Encomienda");
+    await clickFirstVisibleText("Nacional");
+    if (await clickFirstVisibleText("Seleccione")) {
+      await page.waitForTimeout(250);
+      await clickFirstVisibleText("OTROS");
+      await page.waitForTimeout(200);
     }
 
     const declared = await inputByContext(/valor declarado|declarado/i, 3);
@@ -243,9 +253,7 @@ async function runBrowser(input: QuoteInput, browserWs: string) {
       await declared.fill(String(input.declaredValue || 20_000), { timeout: 5_000 });
     }
 
-    const customDimensions = page.getByText("Medidas personalizadas", { exact: true }).last();
-    if ((await customDimensions.count()) && await customDimensions.isVisible().catch(() => false)) {
-      await customDimensions.click({ force: true }).catch(() => undefined);
+    if (await clickFirstVisibleText("Medidas personalizadas")) {
       await page.waitForTimeout(250);
     }
 
