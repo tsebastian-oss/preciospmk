@@ -98,6 +98,7 @@ export async function POST(request:NextRequest){
   let quoteRequest:{url:string;headers:Record<string,string>}|null=null;
   let anchorBody="";
   try{
+    console.log("[cx-bulk] connected");
     const context=browser.contexts()[0]||await browser.newContext({locale:"es-CL",timezoneId:"America/Santiago"});
     const page=context.pages()[0]||await context.newPage();
 
@@ -119,8 +120,10 @@ export async function POST(request:NextRequest){
     });
 
     await page.goto(QUOTER_URL,{waitUntil:"commit",timeout:10000}).catch(()=>null);
-    await page.locator('input[placeholder="Origen"]:visible').first().waitFor({state:"visible",timeout:14000});
-    await page.waitForTimeout(500);
+    console.log("[cx-bulk] committed");
+    await page.locator('input[placeholder="Origen"]:visible').first().waitFor({state:"visible",timeout:12000});
+    console.log("[cx-bulk] form-ready");
+    await page.waitForTimeout(350);
 
     async function exactCity(kind:"origin"|"destination",value:string){
       const input=kind==="origin"
@@ -175,7 +178,9 @@ export async function POST(request:NextRequest){
     }
 
     await exactCity("origin","Santiago Centro");
+    console.log("[cx-bulk] origin-selected");
     await exactCity("destination",anchor);
+    console.log("[cx-bulk] destination-selected",anchor);
     await clickExact("Encomienda");
     await clickExact("Nacional");
 
@@ -204,12 +209,17 @@ export async function POST(request:NextRequest){
       await page.waitForTimeout(attempt===0?1200:650);
     }
 
+    console.log("[cx-bulk] quote-request",!!quoteRequest,"coverage",!!coverage);
     anchorBody=(await page.locator("body").innerText().catch(()=>"")).replace(/\s+/g," ").slice(-1800);
     if(!coverage){
       for(let i=0;i<12&&!coverage;i++)await page.waitForTimeout(250);
     }
   }finally{
-    await browser.close().catch(()=>undefined);
+    await Promise.race([
+      browser.close().catch(()=>undefined),
+      new Promise(resolve=>setTimeout(resolve,1200)),
+    ]);
+    console.log("[cx-bulk] browser-close-finished");
   }
 
   const capturedQuote=quoteRequest as {url:string;headers:Record<string,string>}|null;
@@ -225,6 +235,7 @@ export async function POST(request:NextRequest){
     const value=capturedQuote.headers[key];if(value)headers[key]=value;
   }
 
+  console.log("[cx-bulk] direct-stage",originCode,requested.length);
   const mapped=requested.map(destination=>({destination,match:cityCode(coverage,destination)}));
   const results:any[]=[];
   const quotable=mapped.filter(item=>item.match?.code);
@@ -252,6 +263,7 @@ export async function POST(request:NextRequest){
       }
     }));
     results.push(...rows);
+    console.log("[cx-bulk] direct-batch",i,rows.map((row:any)=>({d:row.destination,ok:row.ok,n:row.services?.length||0})));
   }
   for(const item of mapped.filter(x=>!x.match?.code))results.push({destination:item.destination,destinationCode:null,ok:false,status:null,services:[],error:"destination_code_missing"});
 
