@@ -5,17 +5,6 @@ import styles from "./B2CRegionalPricing.module.css";
 
 type PriceMap = Record<string, number>;
 
-type ZoneRow = {
-  zone: string;
-  completeRegions?: number;
-  providerCount?: number;
-  prices: PriceMap;
-  coverageByProvider?: Record<string, number>;
-  leader: string | null;
-  leaderPrice: number | null;
-  chilexpressPremiumPct: number | null;
-};
-
 type RegionRow = {
   region: string;
   zone: string;
@@ -24,16 +13,23 @@ type RegionRow = {
   prices: PriceMap;
   leader: string | null;
   leaderPrice: number | null;
-  chilexpressPremiumPct: number | null;
   latestDate: string | null;
 };
 
-type Payload = {
+type ZoneRow = {
+  zone: string;
+  providerCount?: number;
+  prices: PriceMap;
+  leader: string | null;
+  leaderPrice: number | null;
+  coverageByProvider?: Record<string, number>;
+};
+
+type ServicePayload = {
   origin: string;
   weightKg: number;
   delivery: string;
-  service: string;
-  providers: string[];
+  service: "Básico" | "Estándar" | "Prioritario";
   coverage: {
     completeRegions?: number;
     comparableRegions?: number;
@@ -43,11 +39,27 @@ type Payload = {
   slaMap?: Record<string, string>;
   zones: ZoneRow[];
   regions: RegionRow[];
-  notes?: string[];
 };
 
-const PROVIDERS = ["Chilexpress", "Starken", "Blue Express", "CorreosChile"] as const;
-const providerLabel = (provider: string, service: string) => provider === "Chilexpress" ? `Chilexpress · ${service}` : provider;
+type MultiServicePayload = {
+  weightKg: number;
+  days: number;
+  services: {
+    Básico: ServicePayload | null;
+    Estándar: ServicePayload | null;
+    Prioritario: ServicePayload | null;
+  };
+  methodology?: {
+    comparison?: string;
+    slaWarning?: string;
+    missingPolicy?: string;
+  };
+  error?: string;
+};
+
+const CX_SERVICES = ["Básico", "Estándar", "Prioritario"] as const;
+const COMPETITORS = ["Starken", "Blue Express", "CorreosChile"] as const;
+
 const money = new Intl.NumberFormat("es-CL", {
   style: "currency",
   currency: "CLP",
@@ -62,35 +74,59 @@ function price(value: number | undefined | null) {
   return value && value > 0 ? money.format(value) : "—";
 }
 
-function premium(value: number | null | undefined) {
-  if (value === null || value === undefined || !Number.isFinite(value)) return "—";
+function gapPct(competitorPrice: number | undefined, cxPrice: number | undefined) {
+  if (!competitorPrice || !cxPrice || competitorPrice <= 0 || cxPrice <= 0) return null;
+  return (competitorPrice / cxPrice - 1) * 100;
+}
+
+function gapCopy(value: number | null) {
+  if (value == null || !Number.isFinite(value)) return "—";
   if (Math.abs(value) < 0.05) return "0,0%";
   return `${value > 0 ? "+" : ""}${pct.format(value)}%`;
 }
 
-function premiumTone(value: number | null | undefined) {
-  if (value === null || value === undefined) return styles.neutral;
+function gapTone(value: number | null) {
+  if (value == null) return styles.neutral;
   if (value > 3) return styles.bad;
   if (value < -3) return styles.good;
   return styles.neutral;
 }
 
+function regionMap(payload: ServicePayload | null | undefined) {
+  return new Map((payload?.regions ?? []).map((row) => [row.region, row]));
+}
+
+function zoneMap(payload: ServicePayload | null | undefined) {
+  return new Map((payload?.zones ?? []).map((row) => [row.zone, row]));
+}
+
+function comparisonCell(competitorPrice: number | undefined, cxPrices: Record<string, number | undefined>) {
+  return <div className={styles.compareStack}>
+    {CX_SERVICES.map((service) => {
+      const value = gapPct(competitorPrice, cxPrices[service]);
+      return <span key={service} className={`${styles.badge} ${gapTone(value)}`}>
+        vs {service}: {gapCopy(value)}
+      </span>;
+    })}
+  </div>;
+}
+
 export default function B2CRegionalPricing() {
-  const [payload, setPayload] = useState<Payload | null>(null);
+  const [payload, setPayload] = useState<MultiServicePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
   const [zone, setZone] = useState("Todas");
-  const [service, setService] = useState<"Básico" | "Estándar" | "Prioritario">("Estándar");
+  const [weight, setWeight] = useState<number>(0.5);
 
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
       setLoading(true);
       try {
-        const response = await fetch(`/api/b2c-pricing/regions?days=30&weight=0.5&service=${encodeURIComponent(service)}`, {
+        const response = await fetch(`/api/b2c-pricing/multi-service?days=30&weight=${weight}`, {
           cache: "no-store",
         });
-        const result = await response.json() as Payload & { error?: string };
+        const result = await response.json() as MultiServicePayload;
         if (!response.ok) throw new Error(result.error || "No fue posible cargar el benchmark B2C");
         if (!cancelled) {
           setPayload(result);
@@ -107,23 +143,38 @@ export default function B2CRegionalPricing() {
     };
     void run();
     return () => { cancelled = true; };
-  }, [service]);
+  }, [weight]);
 
-  const regions = useMemo(
-    () => (payload?.regions ?? []).filter((row) => zone === "Todas" || row.zone === zone),
-    [payload, zone],
+  const standard = payload?.services?.Estándar ?? null;
+  const basic = payload?.services?.Básico ?? null;
+  const priority = payload?.services?.Prioritario ?? null;
+
+  const standardRegions = useMemo(
+    () => (standard?.regions ?? []).filter((row) => zone === "Todas" || row.zone === zone),
+    [standard, zone],
   );
+
+  const basicRegions = useMemo(() => regionMap(basic), [basic]);
+  const priorityRegions = useMemo(() => regionMap(priority), [priority]);
+  const basicZones = useMemo(() => zoneMap(basic), [basic]);
+  const priorityZones = useMemo(() => zoneMap(priority), [priority]);
+
+  const cxCoverage = CX_SERVICES.map((service) => {
+    const servicePayload = payload?.services?.[service];
+    const count = (servicePayload?.regions ?? []).filter((row) => Number(row.prices?.Chilexpress ?? 0) > 0).length;
+    return { service, count };
+  });
 
   return <div className={styles.wrap}>
     <section className={styles.explainer}>
       <div>
-        <span>B2C · BENCHMARK HOMOLOGADO</span>
-        <h2>El mismo envío, comparado en los 4 couriers</h2>
-        <p>Origen fijo en Santiago Centro, entrega a domicilio y paquete de 0,5 kg. Básico, Estándar y Prioritario se analizan por separado; cuando un competidor no publica una tarifa con SLA equivalente, la celda queda vacía en vez de forzar una comparación.</p>
+        <span>B2C · MATRIZ MULTI-SERVICIO CHILEXPRESS</span>
+        <h2>Competencia vs Básico, Estándar y Prioritario</h2>
+        <p>Para cada ruta mostramos los tres precios Chilexpress por separado y enfrentamos la tarifa pública observada de cada competidor contra los tres niveles. Si un precio Chilexpress no fue capturado, queda vacío: no se infiere ni se aplica un descuento supuesto.</p>
       </div>
       <div className={styles.coverage}>
-        <b>{service === "Estándar" ? (payload?.coverage?.completeRegions ?? 0) : (payload?.coverage?.comparableRegions ?? 0)}/{payload?.coverage?.totalRegions ?? 16}</b>
-        <span>{service === "Estándar" ? "regiones comparables 4/4" : "regiones con ≥2 referencias SLA"}</span>
+        <b>{cxCoverage.map((item) => `${item.service.slice(0, 1)} ${item.count}/16`).join(" · ")}</b>
+        <span>rutas con precio Chilexpress capturado</span>
       </div>
     </section>
 
@@ -133,61 +184,72 @@ export default function B2CRegionalPricing() {
           <option>Santiago Centro</option>
         </select>
       </label>
-      <label>Paquete homologado
-        <select value="0.5" disabled>
-          <option value="0.5">0–0,5 kg · XS</option>
-        </select>
-      </label>
-      <label>Nivel de servicio
-        <select value={service} onChange={(event) => setService(event.target.value as "Básico" | "Estándar" | "Prioritario")}>
-          <option value="Básico">Básico</option>
-          <option value="Estándar">Estándar</option>
-          <option value="Prioritario">Prioritario</option>
+      <label>Peso homologado
+        <select value={weight} onChange={(event) => setWeight(Number(event.target.value))}>
+          <option value={0.5}>0–0,5 kg</option>
+          <option value={3}>hasta 3 kg</option>
+          <option value={6}>hasta 6 kg</option>
         </select>
       </label>
       <div className={styles.method}>
-        <span>HOMOLOGACIÓN SLA</span>
-        <b>{service} · domicilio · 0,5 kg</b>
+        <span>LÓGICA DE COMPARACIÓN</span>
+        <b>Competidor observado vs 3 tarifas Chilexpress</b>
       </div>
     </section>
 
-    {payload?.slaMap ? <section className={styles.slaMap}>
-      {PROVIDERS.map((provider) => <div key={provider}>
-        <span>{providerLabel(provider, service)}</span>
-        <b>{payload.slaMap?.[provider] || "Sin equivalencia pública disponible"}</b>
+    {standard?.slaMap ? <section className={styles.slaMap}>
+      {CX_SERVICES.map((service) => <div key={service}>
+        <span>Chilexpress · {service}</span>
+        <b>{payload?.services?.[service]?.slaMap?.Chilexpress || "Sin precio/SLA capturado aún"}</b>
       </div>)}
+      <div>
+        <span>Competidores</span>
+        <b>Se conserva su tarifa pública observada y se compara en precio contra cada nivel Chilexpress.</b>
+      </div>
     </section> : null}
 
     {notice ? <div className={styles.notice}>{notice}</div> : null}
-    {loading ? <div className={styles.loading}>Calculando benchmark B2C homologado…</div> : null}
+    {loading ? <div className={styles.loading}>Calculando matriz multi-servicio…</div> : null}
 
-    {!loading && payload ? <>
+    {!loading && standard ? <>
       <section className={styles.card}>
         <header className={styles.cardHead}>
           <div>
-            <span>RESUMEN EJECUTIVO</span>
-            <h3>Precio promedio por zona</h3>
-            <p>Norte, Centro y Sur calculados sobre la misma canasta regional comparable.</p>
+            <span>RESUMEN POR ZONA</span>
+            <h3>Posición de precio contra los tres servicios Chilexpress</h3>
+            <p>La tarifa de Starken, Blue Express y CorreosChile se mantiene una vez por zona; las brechas se calculan contra Básico, Estándar y Prioritario por separado.</p>
           </div>
-          <small>Ref. {payload.weightKg} kg · {payload.delivery} · Chilexpress {payload.service}</small>
+          <small>Ref. {weight} kg · domicilio</small>
         </header>
         <div className={styles.tableWrap}>
-          <table className={styles.zoneTable}>
+          <table className={styles.multiTable}>
             <thead><tr>
               <th>Zona</th>
-              {PROVIDERS.map((provider) => <th key={provider}>{providerLabel(provider, payload.service)}</th>)}
-              <th>Líder</th>
-              <th>Chilexpress vs líder</th>
-              <th>Cobertura</th>
+              <th>CX Básico</th>
+              <th>CX Estándar</th>
+              <th>CX Prioritario</th>
+              {COMPETITORS.map((competitor) => <th key={competitor}>{competitor}<br/>Precio + gap vs CX</th>)}
             </tr></thead>
             <tbody>
-              {payload.zones.map((row) => <tr key={row.zone}>
-                <td><b>{row.zone}</b></td>
-                {PROVIDERS.map((provider) => <td key={provider} className={provider === "Chilexpress" ? styles.chilexpress : ""}>{price(row.prices?.[provider])}</td>)}
-                <td><span className={styles.leader}>{row.leader || "—"}</span></td>
-                <td><span className={`${styles.badge} ${premiumTone(row.chilexpressPremiumPct)}`}>{premium(row.chilexpressPremiumPct)}</span></td>
-                <td>{row.providerCount === 4 ? "4/4 couriers" : `${row.providerCount ?? 0}/4 couriers`}</td>
-              </tr>)}
+              {(standard.zones ?? []).map((row) => {
+                const basicRow = basicZones.get(row.zone);
+                const priorityRow = priorityZones.get(row.zone);
+                const cxPrices = {
+                  Básico: basicRow?.prices?.Chilexpress,
+                  Estándar: row.prices?.Chilexpress,
+                  Prioritario: priorityRow?.prices?.Chilexpress,
+                };
+                return <tr key={row.zone}>
+                  <td><b>{row.zone}</b></td>
+                  <td className={styles.chilexpress}>{price(cxPrices.Básico)}</td>
+                  <td className={styles.chilexpress}>{price(cxPrices.Estándar)}</td>
+                  <td className={styles.chilexpress}>{price(cxPrices.Prioritario)}</td>
+                  {COMPETITORS.map((competitor) => <td key={competitor}>
+                    <strong>{price(row.prices?.[competitor])}</strong>
+                    {comparisonCell(row.prices?.[competitor], cxPrices)}
+                  </td>)}
+                </tr>;
+              })}
             </tbody>
           </table>
         </div>
@@ -196,9 +258,9 @@ export default function B2CRegionalPricing() {
       <section className={styles.card}>
         <header className={styles.cardHead}>
           <div>
-            <span>DETALLE REGIONAL</span>
-            <h3>Precio por región</h3>
-            <p>Selecciona una macrozona para leer rápidamente dónde se concentra el gap.</p>
+            <span>DETALLE POR RUTA</span>
+            <h3>Comparativa granular por región</h3>
+            <p>Cada porcentaje responde a: precio competidor / precio Chilexpress − 1. Un valor negativo significa que el competidor es más barato; positivo, que es más caro.</p>
           </div>
           <div className={styles.zoneTabs}>
             {["Todas", "Norte", "Centro", "Sur"].map((item) =>
@@ -207,24 +269,38 @@ export default function B2CRegionalPricing() {
           </div>
         </header>
         <div className={styles.tableWrap}>
-          <table className={styles.regionTable}>
+          <table className={styles.multiTable}>
             <thead><tr>
               <th>Región</th>
               <th>Zona</th>
-              {PROVIDERS.map((provider) => <th key={provider}>{providerLabel(provider, payload.service)}</th>)}
-              <th>Líder</th>
-              <th>Chilexpress vs líder</th>
-              <th>Estado</th>
+              <th>CX Básico</th>
+              <th>CX Estándar</th>
+              <th>CX Prioritario</th>
+              {COMPETITORS.map((competitor) => <th key={competitor}>{competitor}<br/>Precio + gap vs CX</th>)}
+              <th>Última ref.</th>
             </tr></thead>
             <tbody>
-              {regions.map((row) => <tr key={row.region}>
-                <td><b>{row.region}</b></td>
-                <td><span className={styles.zonePill}>{row.zone}</span></td>
-                {PROVIDERS.map((provider) => <td key={provider} className={provider === "Chilexpress" ? styles.chilexpress : ""}>{price(row.prices?.[provider])}</td>)}
-                <td>{row.leader || "—"}</td>
-                <td><span className={`${styles.badge} ${premiumTone(row.chilexpressPremiumPct)}`}>{premium(row.chilexpressPremiumPct)}</span></td>
-                <td><span className={row.complete ? styles.complete : styles.partial}>{row.complete ? "4/4 comparable" : `${row.providerCount}/4 parcial`}</span></td>
-              </tr>)}
+              {standardRegions.map((row) => {
+                const basicRow = basicRegions.get(row.region);
+                const priorityRow = priorityRegions.get(row.region);
+                const cxPrices = {
+                  Básico: basicRow?.prices?.Chilexpress,
+                  Estándar: row.prices?.Chilexpress,
+                  Prioritario: priorityRow?.prices?.Chilexpress,
+                };
+                return <tr key={row.region}>
+                  <td><b>{row.region}</b></td>
+                  <td><span className={styles.zonePill}>{row.zone}</span></td>
+                  <td className={styles.chilexpress}>{price(cxPrices.Básico)}</td>
+                  <td className={styles.chilexpress}>{price(cxPrices.Estándar)}</td>
+                  <td className={styles.chilexpress}>{price(cxPrices.Prioritario)}</td>
+                  {COMPETITORS.map((competitor) => <td key={competitor}>
+                    <strong>{price(row.prices?.[competitor])}</strong>
+                    {comparisonCell(row.prices?.[competitor], cxPrices)}
+                  </td>)}
+                  <td>{row.latestDate || "—"}</td>
+                </tr>;
+              })}
             </tbody>
           </table>
         </div>
@@ -232,19 +308,19 @@ export default function B2CRegionalPricing() {
 
       <section className={styles.reading}>
         <div>
-          <span>Cómo leerlo</span>
-          <b>El precio de zona no mezcla niveles de servicio.</b>
-          <p>Estándar es la capa más comparable. En Básico y Prioritario se muestran solo equivalentes SLA sustentados por tarifa pública.</p>
+          <span>Lectura comercial</span>
+          <b>Una misma tarifa competidora se enfrenta a los tres precios Chilexpress.</b>
+          <p>Esto permite ver, por ejemplo, si Blue es más barato que Estándar pero más caro que Básico, o si Prioritario sostiene un premium por velocidad.</p>
         </div>
         <div>
-          <span>CorreosChile</span>
-          <b>INTRA / CERCA / LEJOS se traduce a región.</b>
-          <p>Desde RM, las regiones extremas oficiales se asignan a LEJOS; RM a INTRA y el resto a CERCA.</p>
+          <span>Disciplina de datos</span>
+          <b>No completamos Básico/Prioritario con supuestos.</b>
+          <p>Mientras el cotizador no entregue una observación válida para ese nivel y ruta, la celda aparece vacía.</p>
         </div>
         <div>
-          <span>Servicio seleccionado</span>
-          <b>{service}</b>
-          <p>El benchmark cambia la capa Chilexpress y las referencias equivalentes de cada competidor sin mezclar promesas de entrega distintas.</p>
+          <span>SLA</span>
+          <b>Precio y nivel de servicio siguen separados.</b>
+          <p>La comparación muestra posición de precio. No afirma equivalencia de promesa de entrega cuando el competidor no publica un SLA idéntico.</p>
         </div>
       </section>
     </> : null}
