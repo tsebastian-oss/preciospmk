@@ -380,7 +380,7 @@ export default function B2BPricing() {
 
     const nextMessages: AssistantMessage[] = [
       ...assistantMessages,
-      { role: "user", content: question },
+      { role: "user" as const, content: question },
     ].slice(-10);
 
     setAssistantMessages(nextMessages);
@@ -403,13 +403,13 @@ export default function B2BPricing() {
 
       setAssistantMessages((current) => [
         ...current,
-        { role: "assistant", content: result.answer || "Sin respuesta." },
+        { role: "assistant" as const, content: result.answer || "Sin respuesta." },
       ].slice(-10));
     } catch (error) {
       setAssistantMessages((current) => [
         ...current,
         {
-          role: "assistant",
+          role: "assistant" as const,
           content: error instanceof Error ? error.message : "No fue posible consultar el asistente.",
         },
       ].slice(-10));
