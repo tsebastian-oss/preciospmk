@@ -134,20 +134,14 @@ export async function POST(request:NextRequest){
       await input.fill(value);
       await page.waitForTimeout(450);
       const options=page.locator("mat-option:visible, [role=option]:visible");
-      const count=await options.count();
       const target=normalize(value);
-      let index=-1;
-      for(let i=0;i<count;i++){
-        const t=normalize(await options.nth(i).innerText().catch(()=>""));
-        if(t===target){index=i;break;}
-      }
-      if(index<0){
-        for(let i=0;i<count;i++){
-          const t=normalize(await options.nth(i).innerText().catch(()=>""));
-          if(t.startsWith(target)||target.startsWith(t)){index=i;break;}
-        }
-      }
-      if(index<0)throw new Error(kind+"_option_missing:"+value);
+      const texts:string[]=await options.evaluateAll((nodes:any[])=>nodes.map(node=>String(node.innerText||node.textContent||"")));
+      let index=texts.findIndex(text=>normalize(text)===target);
+      if(index<0)index=texts.findIndex(text=>{
+        const t=normalize(text);
+        return t.startsWith(target)||target.startsWith(t);
+      });
+      if(index<0)throw new Error(kind+"_option_missing:"+value+":"+texts.slice(0,8).join("|"));
       await options.nth(index).click({force:true,timeout:5000});
       await page.waitForTimeout(100);
       const selected=normalize(await input.inputValue().catch(()=>""));
