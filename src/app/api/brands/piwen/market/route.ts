@@ -24,9 +24,10 @@ export async function GET(request: NextRequest) {
     ? within(piwenMarketIntelligence(authorization.access), 6_500)
     : Promise.reject(new Error("clickhouse_not_configured"));
 
-  const [marketResult, marketplaceResult] = await Promise.allSettled([
+  const [marketResult, marketplaceResult, officialResult] = await Promise.allSettled([
     marketPromise,
     enterpriseRpc<Record<string, unknown>>(request, "brands_piwen_marketplace_snapshot", { p_slug: "piwen" }),
+    enterpriseRpc<Record<string, unknown>>(request, "brands_piwen_official_snapshot", { p_slug: "piwen" }),
   ]);
 
   const payload = marketResult.status === "fulfilled" ? marketResult.value : piwenMarketFallback();
@@ -38,7 +39,11 @@ export async function GET(request: NextRequest) {
     ? marketplaceResult.value.data ?? null
     : null;
 
-  return NextResponse.json({ ...payload, marketplace }, {
+  const official = officialResult.status === "fulfilled" && !officialResult.value.response
+    ? officialResult.value.data ?? null
+    : null;
+
+  return NextResponse.json({ ...payload, marketplace, official }, {
     headers: {
       "cache-control": "private, max-age=120, stale-while-revalidate=300",
       "x-piwen-data-mode": marketResult.status === "fulfilled" ? "live" : "continuity",
