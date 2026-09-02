@@ -36,9 +36,11 @@ type Payload = {
   providers: string[];
   coverage: {
     completeRegions?: number;
+    comparableRegions?: number;
     totalRegions?: number;
     latestDate?: string | null;
   };
+  slaMap?: Record<string, string>;
   zones: ZoneRow[];
   regions: RegionRow[];
   notes?: string[];
@@ -120,8 +122,8 @@ export default function B2CRegionalPricing() {
         <p>Origen fijo en Santiago Centro, entrega a domicilio y paquete de 0,5 kg. Básico, Estándar y Prioritario se analizan por separado; cuando un competidor no publica una tarifa con SLA equivalente, la celda queda vacía en vez de forzar una comparación.</p>
       </div>
       <div className={styles.coverage}>
-        <b>{payload?.coverage?.completeRegions ?? 0}/{payload?.coverage?.totalRegions ?? 16}</b>
-        <span>regiones comparables 4/4</span>
+        <b>{service === "Estándar" ? (payload?.coverage?.completeRegions ?? 0) : (payload?.coverage?.comparableRegions ?? 0)}/{payload?.coverage?.totalRegions ?? 16}</b>
+        <span>{service === "Estándar" ? "regiones comparables 4/4" : "regiones con ≥2 referencias SLA"}</span>
       </div>
     </section>
 
@@ -148,6 +150,13 @@ export default function B2CRegionalPricing() {
         <b>{service} · domicilio · 0,5 kg</b>
       </div>
     </section>
+
+    {payload?.slaMap ? <section className={styles.slaMap}>
+      {PROVIDERS.map((provider) => <div key={provider}>
+        <span>{providerLabel(provider, service)}</span>
+        <b>{payload.slaMap?.[provider] || "Sin equivalencia pública disponible"}</b>
+      </div>)}
+    </section> : null}
 
     {notice ? <div className={styles.notice}>{notice}</div> : null}
     {loading ? <div className={styles.loading}>Calculando benchmark B2C homologado…</div> : null}
