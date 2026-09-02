@@ -7,8 +7,10 @@ type PriceMap = Record<string, number>;
 
 type ZoneRow = {
   zone: string;
-  completeRegions: number;
+  completeRegions?: number;
+  providerCount?: number;
   prices: PriceMap;
+  coverageByProvider?: Record<string, number>;
   leader: string | null;
   leaderPrice: number | null;
   chilexpressPremiumPct: number | null;
@@ -43,7 +45,7 @@ type Payload = {
 };
 
 const PROVIDERS = ["Chilexpress", "Starken", "Blue Express", "CorreosChile"] as const;
-const providerLabel = (provider: string) => provider === "Chilexpress" ? "Chilexpress · Estándar" : provider;
+const providerLabel = (provider: string, service: string) => provider === "Chilexpress" ? `Chilexpress · ${service}` : provider;
 const money = new Intl.NumberFormat("es-CL", {
   style: "currency",
   currency: "CLP",
@@ -76,13 +78,14 @@ export default function B2CRegionalPricing() {
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState("");
   const [zone, setZone] = useState("Todas");
+  const [service, setService] = useState<"Básico" | "Estándar" | "Prioritario">("Estándar");
 
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
       setLoading(true);
       try {
-        const response = await fetch("/api/b2c-pricing/regions?days=30&weight=0.5", {
+        const response = await fetch(`/api/b2c-pricing/regions?days=30&weight=0.5&service=${encodeURIComponent(service)}`, {
           cache: "no-store",
         });
         const result = await response.json() as Payload & { error?: string };
@@ -102,7 +105,7 @@ export default function B2CRegionalPricing() {
     };
     void run();
     return () => { cancelled = true; };
-  }, []);
+  }, [service]);
 
   const regions = useMemo(
     () => (payload?.regions ?? []).filter((row) => zone === "Todas" || row.zone === zone),
@@ -114,7 +117,7 @@ export default function B2CRegionalPricing() {
       <div>
         <span>B2C · BENCHMARK HOMOLOGADO</span>
         <h2>El mismo envío, comparado en los 4 couriers</h2>
-        <p>Origen fijo en Santiago Centro, entrega a domicilio y paquete de 0,5 kg. La referencia Chilexpress usada hoy corresponde al servicio Estándar; Básico y Prioritario se tratarán como niveles de servicio separados. Los promedios por zona usan solo regiones donde existen precios para los cuatro couriers.</p>
+        <p>Origen fijo en Santiago Centro, entrega a domicilio y paquete de 0,5 kg. Básico, Estándar y Prioritario se analizan por separado; cuando un competidor no publica una tarifa con SLA equivalente, la celda queda vacía en vez de forzar una comparación.</p>
       </div>
       <div className={styles.coverage}>
         <b>{payload?.coverage?.completeRegions ?? 0}/{payload?.coverage?.totalRegions ?? 16}</b>
@@ -133,14 +136,16 @@ export default function B2CRegionalPricing() {
           <option value="0.5">0–0,5 kg · XS</option>
         </select>
       </label>
-      <label>Entrega
-        <select value="Domicilio" disabled>
-          <option>Domicilio</option>
+      <label>Nivel de servicio
+        <select value={service} onChange={(event) => setService(event.target.value as "Básico" | "Estándar" | "Prioritario")}>
+          <option value="Básico">Básico</option>
+          <option value="Estándar">Estándar</option>
+          <option value="Prioritario">Prioritario</option>
         </select>
       </label>
       <div className={styles.method}>
-        <span>METODOLOGÍA</span>
-        <b>Precio final publicado · promedio simple por región</b>
+        <span>HOMOLOGACIÓN SLA</span>
+        <b>{service} · domicilio · 0,5 kg</b>
       </div>
     </section>
 
@@ -155,13 +160,13 @@ export default function B2CRegionalPricing() {
             <h3>Precio promedio por zona</h3>
             <p>Norte, Centro y Sur calculados sobre la misma canasta regional comparable.</p>
           </div>
-          <small>Ref. {payload.weightKg} kg · {payload.delivery} · Chilexpress Estándar</small>
+          <small>Ref. {payload.weightKg} kg · {payload.delivery} · Chilexpress {payload.service}</small>
         </header>
         <div className={styles.tableWrap}>
           <table className={styles.zoneTable}>
             <thead><tr>
               <th>Zona</th>
-              {PROVIDERS.map((provider) => <th key={provider}>{providerLabel(provider)}</th>)}
+              {PROVIDERS.map((provider) => <th key={provider}>{providerLabel(provider, payload.service)}</th>)}
               <th>Líder</th>
               <th>Chilexpress vs líder</th>
               <th>Cobertura</th>
@@ -172,7 +177,7 @@ export default function B2CRegionalPricing() {
                 {PROVIDERS.map((provider) => <td key={provider} className={provider === "Chilexpress" ? styles.chilexpress : ""}>{price(row.prices?.[provider])}</td>)}
                 <td><span className={styles.leader}>{row.leader || "—"}</span></td>
                 <td><span className={`${styles.badge} ${premiumTone(row.chilexpressPremiumPct)}`}>{premium(row.chilexpressPremiumPct)}</span></td>
-                <td>{row.completeRegions} regiones</td>
+                <td>{row.providerCount === 4 ? "4/4 couriers" : `${row.providerCount ?? 0}/4 couriers`}</td>
               </tr>)}
             </tbody>
           </table>
@@ -197,7 +202,7 @@ export default function B2CRegionalPricing() {
             <thead><tr>
               <th>Región</th>
               <th>Zona</th>
-              {PROVIDERS.map((provider) => <th key={provider}>{providerLabel(provider)}</th>)}
+              {PROVIDERS.map((provider) => <th key={provider}>{providerLabel(provider, payload.service)}</th>)}
               <th>Líder</th>
               <th>Chilexpress vs líder</th>
               <th>Estado</th>
@@ -219,8 +224,8 @@ export default function B2CRegionalPricing() {
       <section className={styles.reading}>
         <div>
           <span>Cómo leerlo</span>
-          <b>El precio de zona no mezcla pesos ni tipos de entrega.</b>
-          <p>Se promedian únicamente las regiones con cobertura completa para los cuatro couriers.</p>
+          <b>El precio de zona no mezcla niveles de servicio.</b>
+          <p>Estándar es la capa más comparable. En Básico y Prioritario se muestran solo equivalentes SLA sustentados por tarifa pública.</p>
         </div>
         <div>
           <span>CorreosChile</span>
@@ -228,9 +233,9 @@ export default function B2CRegionalPricing() {
           <p>Desde RM, las regiones extremas oficiales se asignan a LEJOS; RM a INTRA y el resto a CERCA.</p>
         </div>
         <div>
-          <span>Siguiente capa</span>
-          <b>Más pesos cuando exista cobertura 4/4.</b>
-          <p>Por ahora 0,5 kg es el perfil realmente homologado en los cuatro competidores.</p>
+          <span>Servicio seleccionado</span>
+          <b>{service}</b>
+          <p>El benchmark cambia la capa Chilexpress y las referencias equivalentes de cada competidor sin mezclar promesas de entrega distintas.</p>
         </div>
       </section>
     </> : null}
