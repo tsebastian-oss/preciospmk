@@ -223,23 +223,42 @@ async function runBrowser(input: QuoteInput, browserWs: string) {
       const fallback = kind === "origin" ? 1 : 2;
       const locator = await inputByContext(pattern, fallback);
       if (!locator) throw new Error(kind + "_input_missing");
-      await locator.click({ force: true });
-      await locator.fill(kind === "origin" && normalize(value).startsWith("santiago") ? "Santiago" : value);
-      await page.waitForTimeout(600);
 
-      const target = kind === "origin" && normalize(value).startsWith("santiago") ? "Santiago" : value;
-      const roleOption = page.getByRole("option", { name: target, exact: false }).first();
-      if ((await roleOption.count()) && await roleOption.isVisible().catch(() => false)) {
-        await roleOption.click({ force: true });
-        return;
+      const target = value.trim();
+      const targetNorm = normalize(target);
+      await locator.click({ force: true });
+      await locator.fill(target);
+      await page.waitForTimeout(900);
+
+      const options = page.locator("mat-option:visible, [role=option]:visible");
+      const optionCount = await options.count();
+      let exactIndex = -1;
+      let startsIndex = -1;
+      for (let i = 0; i < optionCount; i += 1) {
+        const text = normalize(await options.nth(i).innerText().catch(() => ""));
+        if (!text) continue;
+        if (text === targetNorm) {
+          exactIndex = i;
+          break;
+        }
+        if (startsIndex < 0 && (text.startsWith(targetNorm) || targetNorm.startsWith(text))) {
+          startsIndex = i;
+        }
       }
-      const visibleText = page.getByText(target, { exact: false }).last();
-      if ((await visibleText.count()) && await visibleText.isVisible().catch(() => false)) {
-        await visibleText.click({ force: true });
-        return;
+
+      const index = exactIndex >= 0 ? exactIndex : startsIndex;
+      if (index >= 0) {
+        await options.nth(index).click({ force: true, timeout: 5_000 });
+      } else {
+        await locator.press("ArrowDown").catch(() => undefined);
+        await locator.press("Enter").catch(() => undefined);
       }
-      await locator.press("ArrowDown").catch(() => undefined);
-      await locator.press("Enter").catch(() => undefined);
+
+      await page.waitForTimeout(250);
+      const selected = normalize(await locator.inputValue().catch(() => ""));
+      if (!(selected === targetNorm || selected.startsWith(targetNorm) || targetNorm.startsWith(selected))) {
+        throw new Error(kind + "_selection_mismatch:" + selected + "!=" + targetNorm);
+      }
     }
 
     await chooseCity("origin", input.origin);
