@@ -76,24 +76,58 @@ export async function POST(request:NextRequest){
   const requested:string[]=Array.isArray(body?.destinations)&&body.destinations.length?body.destinations.map((value:unknown)=>String(value)):DESTINATIONS;
 
   const {chromium}=await import("playwright-core");
-  const browser=await chromium.connectOverCDP(chileBrowserEndpoint(browserWs),{timeout:12000});
   let serviceHeaders:Record<string,string>={};
+  let coverage:unknown=null;
+  let browser:any=null;
+  let lastConnectError="";
+
+  for(let attempt=1;attempt<=3&&!browser;attempt++){
+    try{
+      browser=await chromium.connectOverCDP(chileBrowserEndpoint(browserWs),{timeout:10000});
+    }catch(error){
+      lastConnectError=error instanceof Error?error.message:String(error);
+      if(attempt<3)await new Promise(resolve=>setTimeout(resolve,700));
+    }
+  }
+  if(!browser)return NextResponse.json({error:"browser_connect_failed",detail:lastConnectError},{status:502});
+
   try{
     const context=browser.contexts()[0]||await browser.newContext({locale:"es-CL",timezoneId:"America/Santiago"});
     const page=context.pages()[0]||await context.newPage();
+
     page.on("request",async(req:any)=>{
-      if(Object.keys(serviceHeaders).length)return;
       if(!/services\.wschilexpress\.com/i.test(req.url()))return;
-      serviceHeaders=await req.allHeaders().catch(()=>({}));
+      if(!Object.keys(serviceHeaders).length){
+        serviceHeaders=await req.allHeaders().catch(()=>({}));
+      }
     });
-    await page.goto(QUOTER_URL,{waitUntil:"domcontentloaded",timeout:18000}).catch(()=>null);
-    for(let i=0;i<32&&!Object.keys(serviceHeaders).length;i++)await page.waitForTimeout(250);
-    if(!Object.keys(serviceHeaders).length){
-      await page.reload({waitUntil:"commit",timeout:8000}).catch(()=>null);
-      for(let i=0;i<16&&!Object.keys(serviceHeaders).length;i++)await page.waitForTimeout(250);
+
+    page.on("response",async(response:any)=>{
+      try{
+        const url=String(response.url()||"");
+        if(!/coverage-areas\?type=0&regionCode=99/i.test(url))return;
+        const contentType=String(response.headers()?.["content-type"]||"");
+        if(!contentType.includes("json"))return;
+        const payload=await response.json().catch(()=>null);
+        if(payload)coverage=payload;
+        if(!Object.keys(serviceHeaders).length){
+          serviceHeaders=await response.request().allHeaders().catch(()=>({}));
+        }
+      }catch{}
+    });
+
+    await page.goto(QUOTER_URL,{waitUntil:"domcontentloaded",timeout:22000}).catch(()=>null);
+    for(let i=0;i<40&&(!coverage||!Object.keys(serviceHeaders).length);i++){
+      await page.waitForTimeout(250);
+    }
+    if(!coverage){
+      await page.reload({waitUntil:"domcontentloaded",timeout:12000}).catch(()=>null);
+      for(let i=0;i<24&&(!coverage||!Object.keys(serviceHeaders).length);i++){
+        await page.waitForTimeout(250);
+      }
     }
   }finally{
-    await browser.close();
+    await browser.close().catch(()=>undefined);
   }
 
   if(!Object.keys(serviceHeaders).length)return NextResponse.json({error:"service_headers_not_captured"},{status:502});
@@ -102,12 +136,16 @@ export async function POST(request:NextRequest){
     const value=serviceHeaders[key];if(value)headers[key]=value;
   }
 
-  const coverageResponse=await fetch(COVERAGE_URL,{headers,signal:AbortSignal.timeout(8000)});
-  const coverage=await coverageResponse.json().catch(()=>null);
-  if(!coverageResponse.ok||!coverage)return NextResponse.json({error:"coverage_failed",status:coverageResponse.status},{status:502});
+  let coverageStatus=200;
+  if(!coverage){
+    const coverageResponse=await fetch(COVERAGE_URL,{headers,signal:AbortSignal.timeout(8000)});
+    coverageStatus=coverageResponse.status;
+    coverage=await coverageResponse.json().catch(()=>null);
+    if(!coverageResponse.ok||!coverage)return NextResponse.json({error:"coverage_failed",status:coverageResponse.status},{status:502});
+  }
 
-  const originMatch=cityCode(coverage,"Santiago Centro");
-  if(!originMatch)return NextResponse.json({error:"origin_code_missing",coveragePreview:JSON.stringify(coverage).slice(0,2500)},{status:502});
+  const originMatch=cityCode(coverage,"Santiago Centro")||cityCode(coverage,"Santiago");
+  if(!originMatch)return NextResponse.json({error:"origin_code_missing",coveragePreview:JSON.stringify(coverage).slice(0,6000)},{status:502});
 
   const mapped=requested.map(destination=>({destination,match:cityCode(coverage,destination)}));
   const quotable=mapped.filter(x=>x.match?.code);
@@ -152,7 +190,7 @@ export async function POST(request:NextRequest){
     declaredValueClp:20000,
     results,
     diagnostics:{
-      coverageStatus:coverageResponse.status,
+      coverageStatus,
       mappedDestinations:quotable.length,
       requestedDestinations:requested.length,
       headerNames:Object.keys(headers),
