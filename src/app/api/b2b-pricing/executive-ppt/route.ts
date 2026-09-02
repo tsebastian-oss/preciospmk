@@ -18,10 +18,7 @@ type DecisionRow = {
   plan: string;
 };
 
-type DecisionZone = {
-  zone: ZoneName;
-  rows: DecisionRow[];
-};
+type DecisionZone = { zone: ZoneName; rows: DecisionRow[] };
 
 type Scenario = {
   selectedZone?: string;
@@ -32,26 +29,45 @@ type Scenario = {
   targetMargin?: number;
 };
 
-const COLORS = {
-  bg: "07111F",
-  panel: "0D1928",
-  panel2: "112337",
-  line: "213348",
-  text: "F2F7FB",
-  muted: "9EB0C2",
-  green: "7DD3A8",
-  blue: "74B3FF",
-  yellow: "FACC6B",
+const SLIDE_W = 13.333;
+const SLIDE_H = 7.5;
+
+const C = {
+  ink: "06101D",
+  navy: "081827",
+  panel: "0D1F31",
+  panel2: "102942",
+  panel3: "0A1724",
+  line: "28415A",
+  line2: "355772",
+  text: "F4F8FB",
+  muted: "9AAEC0",
+  dim: "6E8193",
+  green: "77D9A8",
+  green2: "2CBF78",
+  cyan: "6CB6FF",
+  blue: "447CFF",
+  yellow: "FFD166",
   red: "FB7185",
   white: "FFFFFF",
 };
 
-function money(value: number) {
-  return new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(value || 0);
+const FONT = {
+  head: "Aptos Display",
+  body: "Aptos",
+  mono: "Aptos Mono",
+};
+
+function fmtMoney(value: number) {
+  return new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 }).format(Math.round(value || 0));
 }
 
-function pct(value: number) {
+function fmtPct(value: number) {
   return `${new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1, minimumFractionDigits: 1 }).format(value || 0)}%`;
+}
+
+function fmtNum(value: number) {
+  return new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 }).format(Math.round(value || 0));
 }
 
 function monthLabel(key: string) {
@@ -59,6 +75,10 @@ function monthLabel(key: string) {
   if (Number.isNaN(parsed.getTime())) return key;
   const label = new Intl.DateTimeFormat("es-CL", { month: "long" }).format(parsed);
   return `${label.charAt(0).toUpperCase() + label.slice(1)} 2026`;
+}
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function cleanZones(value: unknown): DecisionZone[] {
@@ -78,13 +98,17 @@ function cleanZones(value: unknown): DecisionZone[] {
           channel: String(row?.channel ?? "").slice(0, 60),
           plan: String(row?.plan ?? "").slice(0, 140),
         }))
-        .filter((row: DecisionRow) => row.company && row.price > 0)
+        .filter((row: DecisionRow) => row.company && row.price > 0 && Number.isFinite(row.price))
         .sort((a: DecisionRow, b: DecisionRow) => a.price - b.price),
     }));
 }
 
-function clamp(value: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, value));
+function actionForPremium(premium: number | null) {
+  if (premium == null) return "Completar evidencia";
+  if (premium >= 100) return "Crear tier / test";
+  if (premium >= 45) return "Ajustar selectivamente";
+  if (premium >= 15) return "Validar elasticidad";
+  return "Defender posición";
 }
 
 function enrich(zones: DecisionZone[]) {
@@ -93,41 +117,120 @@ function enrich(zones: DecisionZone[]) {
     const leader = rows[0] ?? null;
     const chilexpress = rows.find((row) => row.company === "Chilexpress") ?? null;
     const premium = leader && chilexpress && leader.price > 0 ? (chilexpress.price / leader.price - 1) * 100 : null;
-    const score = Math.round(clamp((premium ?? 0) / 3.5, 0, 100) * 0.8 + (chilexpress?.confidence ?? 0) * 0.2);
-    const action = premium == null ? "Completar evidencia" : premium >= 100 ? "Crear tier / test" : premium >= 45 ? "Ajustar selectivamente" : premium >= 15 ? "Validar elasticidad" : "Defender posición";
-    return { ...zone, rows, leader, chilexpress, premium, score, action };
+    const confidence = chilexpress?.confidence ?? 0;
+    const score = Math.round(clamp((premium ?? 0) / 3.5, 0, 100) * 0.8 + confidence * 0.2);
+    return { ...zone, rows, leader, chilexpress, premium, score, action: actionForPremium(premium) };
   });
 }
 
-function addBg(pptx: any, slide: any) {
-  slide.background = { color: COLORS.bg };
-  slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 13.333, h: 7.5, fill: { color: COLORS.bg }, line: { color: COLORS.bg } });
-  slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 13.333, h: 0.1, fill: { color: COLORS.green }, line: { color: COLORS.green }, transparency: 8 });
+function createPptShapeTypes(pptx: any) {
+  return {
+    rect: pptx.ShapeType.rect,
+    roundRect: pptx.ShapeType.roundRect,
+    line: pptx.ShapeType.line,
+    oval: pptx.ShapeType.ellipse,
+  };
 }
 
-function addFooter(slide: any, page: number) {
-  slide.addText("MGP · Pricing Intelligence Courier", { x: 0.55, y: 7.08, w: 4.4, h: 0.18, fontFace: "Aptos", fontSize: 7, color: COLORS.muted, margin: 0 });
-  slide.addText(String(page).padStart(2, "0"), { x: 12.15, y: 7.02, w: 0.7, h: 0.25, fontFace: "Aptos", fontSize: 8, bold: true, color: COLORS.green, align: "right", margin: 0 });
+function addBackground(pptx: any, slide: any, variant: "cover" | "content" = "content") {
+  const S = createPptShapeTypes(pptx);
+  slide.background = { color: C.ink };
+  slide.addShape(S.rect, { x: 0, y: 0, w: SLIDE_W, h: SLIDE_H, fill: { color: C.ink }, line: { color: C.ink } });
+  slide.addShape(S.rect, { x: 0, y: 0, w: SLIDE_W, h: SLIDE_H, fill: { color: variant === "cover" ? C.navy : C.ink, transparency: variant === "cover" ? 0 : 8 }, line: { color: C.ink, transparency: 100 } });
+  slide.addShape(S.oval, { x: 8.8, y: -1.15, w: 5.0, h: 5.0, fill: { color: C.green, transparency: 87 }, line: { color: C.green, transparency: 100 } });
+  slide.addShape(S.oval, { x: -1.55, y: 4.55, w: 4.2, h: 4.2, fill: { color: C.blue, transparency: 91 }, line: { color: C.blue, transparency: 100 } });
+  slide.addShape(S.rect, { x: 0.55, y: 0.28, w: 1.18, h: 0.045, fill: { color: C.green }, line: { color: C.green } });
+  slide.addShape(S.rect, { x: 1.83, y: 0.28, w: 0.44, h: 0.045, fill: { color: C.cyan }, line: { color: C.cyan } });
 }
 
-function addTitle(slide: any, eyebrow: string, title: string, subtitle?: string) {
-  slide.addText(eyebrow.toUpperCase(), { x: 0.55, y: 0.42, w: 5.8, h: 0.22, fontFace: "Aptos", fontSize: 7.5, bold: true, color: COLORS.green, charSpace: 1.3, margin: 0 });
-  slide.addText(title, { x: 0.55, y: 0.75, w: 8.8, h: 0.46, fontFace: "Aptos Display", fontSize: 24, bold: true, color: COLORS.text, margin: 0, breakLine: false });
-  if (subtitle) slide.addText(subtitle, { x: 0.55, y: 1.23, w: 8.8, h: 0.35, fontFace: "Aptos", fontSize: 9.5, color: COLORS.muted, margin: 0, breakLine: false });
+function addFooter(pptx: any, slide: any, page: number) {
+  const S = createPptShapeTypes(pptx);
+  slide.addShape(S.line, { x: 0.55, y: 6.95, w: 12.2, h: 0, line: { color: C.line, transparency: 35, width: 0.6 } });
+  slide.addText("MGP · Pricing Intelligence Courier", { x: 0.55, y: 7.09, w: 4.2, h: 0.18, fontFace: FONT.body, fontSize: 7, color: C.dim, margin: 0 });
+  slide.addText(String(page).padStart(2, "0"), { x: 12.05, y: 7.04, w: 0.72, h: 0.25, fontFace: FONT.body, fontSize: 8.5, bold: true, color: C.green, align: "right", margin: 0 });
 }
 
-function addCard(pptx: any, slide: any, x: number, y: number, w: number, h: number, title: string, value: string, note?: string, color = COLORS.text) {
-  slide.addShape(pptx.ShapeType.roundRect, { x, y, w, h, rectRadius: 0.08, fill: { color: COLORS.panel }, line: { color: COLORS.line, transparency: 10 } });
-  slide.addText(title.toUpperCase(), { x: x + 0.18, y: y + 0.15, w: w - 0.36, h: 0.18, fontFace: "Aptos", fontSize: 6.7, bold: true, color: COLORS.muted, charSpace: 0.5, margin: 0 });
-  slide.addText(value, { x: x + 0.18, y: y + 0.46, w: w - 0.36, h: 0.36, fontFace: "Aptos Display", fontSize: 18, bold: true, color, margin: 0, fit: "shrink" });
-  if (note) slide.addText(note, { x: x + 0.18, y: y + 0.93, w: w - 0.36, h: 0.35, fontFace: "Aptos", fontSize: 7.3, color: COLORS.muted, margin: 0, fit: "shrink" });
+function addPageTitle(slide: any, eyebrow: string, title: string, subtitle?: string) {
+  slide.addText(eyebrow.toUpperCase(), { x: 0.6, y: 0.48, w: 5.8, h: 0.22, fontFace: FONT.body, fontSize: 7.5, bold: true, color: C.green, charSpace: 1.35, margin: 0, fit: "shrink" });
+  slide.addText(title, { x: 0.6, y: 0.82, w: 9.2, h: 0.48, fontFace: FONT.head, fontSize: 24, bold: true, color: C.text, margin: 0, fit: "shrink" });
+  if (subtitle) slide.addText(subtitle, { x: 0.6, y: 1.34, w: 9.2, h: 0.34, fontFace: FONT.body, fontSize: 9.3, color: C.muted, margin: 0, fit: "shrink" });
 }
 
-function addBar(slide: any, x: number, y: number, w: number, label: string, value: string, widthPct: number, isChilexpress: boolean) {
-  slide.addText(label, { x, y, w: 2.25, h: 0.18, fontFace: "Aptos", fontSize: 7.7, bold: isChilexpress, color: isChilexpress ? COLORS.green : COLORS.text, margin: 0, fit: "shrink" });
-  slide.addText(value, { x: x + 2.35, y, w: 1.0, h: 0.18, fontFace: "Aptos", fontSize: 7.5, bold: true, color: COLORS.text, align: "right", margin: 0 });
-  slide.addShape("rect", { x, y: y + 0.28, w, h: 0.08, fill: { color: "1B2A3A" }, line: { color: "1B2A3A" } });
-  slide.addShape("rect", { x, y: y + 0.28, w: Math.max(0.18, w * widthPct), h: 0.08, fill: { color: isChilexpress ? COLORS.green : COLORS.blue }, line: { color: isChilexpress ? COLORS.green : COLORS.blue } });
+function pill(slide: any, pptx: any, text: string, x: number, y: number, w: number, accent = C.green) {
+  const S = createPptShapeTypes(pptx);
+  slide.addShape(S.roundRect, { x, y, w, h: 0.3, fill: { color: accent, transparency: 88 }, line: { color: accent, transparency: 40 } });
+  slide.addText(text.toUpperCase(), { x: x + 0.12, y: y + 0.085, w: w - 0.24, h: 0.1, fontFace: FONT.body, fontSize: 6.2, bold: true, color: accent, charSpace: 0.6, margin: 0, fit: "shrink" });
+}
+
+function statCard(pptx: any, slide: any, x: number, y: number, w: number, h: number, label: string, value: string, note?: string, accent = C.green) {
+  const S = createPptShapeTypes(pptx);
+  slide.addShape(S.roundRect, { x, y, w, h, fill: { color: C.panel, transparency: 0 }, line: { color: C.line, transparency: 8, width: 0.8 } });
+  slide.addShape(S.rect, { x, y, w: 0.06, h, fill: { color: accent }, line: { color: accent } });
+  slide.addText(label.toUpperCase(), { x: x + 0.22, y: y + 0.18, w: w - 0.38, h: 0.16, fontFace: FONT.body, fontSize: 6.4, bold: true, color: C.muted, charSpace: 0.65, margin: 0, fit: "shrink" });
+  slide.addText(value, { x: x + 0.22, y: y + 0.48, w: w - 0.36, h: 0.4, fontFace: FONT.head, fontSize: 18.8, bold: true, color: accent, margin: 0, fit: "shrink" });
+  if (note) slide.addText(note, { x: x + 0.22, y: y + 0.96, w: w - 0.36, h: 0.36, fontFace: FONT.body, fontSize: 7.4, color: C.muted, margin: 0, fit: "shrink" });
+}
+
+function narrativeBox(pptx: any, slide: any, x: number, y: number, w: number, h: number, title: string, body: string, accent = C.green) {
+  const S = createPptShapeTypes(pptx);
+  slide.addShape(S.roundRect, { x, y, w, h, fill: { color: C.panel3, transparency: 0 }, line: { color: C.line, transparency: 15 } });
+  slide.addText(title, { x: x + 0.22, y: y + 0.2, w: w - 0.44, h: 0.24, fontFace: FONT.body, fontSize: 9.5, bold: true, color: accent, margin: 0, fit: "shrink" });
+  slide.addText(body, { x: x + 0.22, y: y + 0.55, w: w - 0.44, h: h - 0.72, fontFace: FONT.body, fontSize: 8.3, color: C.muted, breakLine: false, margin: 0.02, fit: "shrink" });
+}
+
+function barsInPanel(pptx: any, slide: any, x: number, y: number, w: number, h: number, title: string, rows: DecisionRow[]) {
+  const S = createPptShapeTypes(pptx);
+  slide.addShape(S.roundRect, { x, y, w, h, fill: { color: C.panel, transparency: 2 }, line: { color: C.line, transparency: 8 } });
+  slide.addText(title, { x: x + 0.18, y: y + 0.2, w: w - 0.36, h: 0.22, fontFace: FONT.head, fontSize: 14, bold: true, color: C.text, margin: 0, fit: "shrink" });
+  const maxPrice = Math.max(...rows.map((r) => r.price), 1);
+  const leader = rows[0];
+  rows.slice(0, 5).forEach((row, idx) => {
+    const rowY = y + 0.68 + idx * 0.63;
+    const isCx = row.company === "Chilexpress";
+    const premium = leader?.price ? (row.price / leader.price - 1) * 100 : 0;
+    const color = isCx ? C.green : idx === 0 ? C.cyan : C.line2;
+    slide.addText(`${idx + 1}. ${row.label}`, { x: x + 0.22, y: rowY, w: 1.92, h: 0.16, fontFace: FONT.body, fontSize: 7.4, bold: isCx || idx === 0, color: isCx ? C.green : C.text, margin: 0, fit: "shrink" });
+    slide.addText(fmtMoney(row.price), { x: x + w - 1.22, y: rowY, w: 1.0, h: 0.16, fontFace: FONT.body, fontSize: 7.2, bold: true, color: C.text, align: "right", margin: 0, fit: "shrink" });
+    slide.addShape(S.roundRect, { x: x + 0.22, y: rowY + 0.25, w: w - 0.44, h: 0.12, fill: { color: "1B2B3C" }, line: { color: "1B2B3C" } });
+    slide.addShape(S.roundRect, { x: x + 0.22, y: rowY + 0.25, w: Math.max(0.18, (w - 0.44) * (row.price / maxPrice)), h: 0.12, fill: { color }, line: { color } });
+    slide.addText(idx === 0 ? "Líder" : `+${fmtPct(premium)} vs líder`, { x: x + 0.22, y: rowY + 0.42, w: w - 0.44, h: 0.12, fontFace: FONT.body, fontSize: 5.9, color: idx === 0 ? C.cyan : C.dim, margin: 0, fit: "shrink" });
+  });
+}
+
+function opportunityCard(pptx: any, slide: any, item: ReturnType<typeof enrich>[number], x: number, y: number, w: number, h: number) {
+  const S = createPptShapeTypes(pptx);
+  const accent = item.score >= 80 ? C.red : item.score >= 55 ? C.yellow : C.green;
+  slide.addShape(S.roundRect, { x, y, w, h, fill: { color: C.panel, transparency: 0 }, line: { color: accent, transparency: 35, width: 1.2 } });
+  slide.addText(item.zone, { x: x + 0.22, y: y + 0.2, w: 1.5, h: 0.26, fontFace: FONT.head, fontSize: 17, bold: true, color: C.text, margin: 0 });
+  slide.addText(`${item.score}/100`, { x: x + w - 1.26, y: y + 0.2, w: 1.02, h: 0.24, fontFace: FONT.head, fontSize: 16, bold: true, color: accent, align: "right", margin: 0 });
+  slide.addShape(S.roundRect, { x: x + 0.22, y: y + 0.68, w: w - 0.44, h: 0.1, fill: { color: "1C2B3B" }, line: { color: "1C2B3B" } });
+  slide.addShape(S.roundRect, { x: x + 0.22, y: y + 0.68, w: (w - 0.44) * clamp(item.score, 0, 100) / 100, h: 0.1, fill: { color: accent }, line: { color: accent } });
+  slide.addText("Chilexpress", { x: x + 0.22, y: y + 1.04, w: 1.3, h: 0.14, fontSize: 6.7, bold: true, color: C.dim, margin: 0 });
+  slide.addText(item.chilexpress ? fmtMoney(item.chilexpress.price) : "—", { x: x + 1.55, y: y + 1.0, w: 1.3, h: 0.22, fontSize: 10, bold: true, color: C.text, align: "right", margin: 0, fit: "shrink" });
+  slide.addText("Líder", { x: x + 0.22, y: y + 1.37, w: 1.0, h: 0.14, fontSize: 6.7, bold: true, color: C.dim, margin: 0 });
+  slide.addText(item.leader ? `${item.leader.label} · ${fmtMoney(item.leader.price)}` : "—", { x: x + 1.0, y: y + 1.33, w: w - 1.22, h: 0.22, fontSize: 8.2, bold: true, color: C.text, align: "right", margin: 0, fit: "shrink" });
+  slide.addText("Premium", { x: x + 0.22, y: y + 1.72, w: 1.0, h: 0.14, fontSize: 6.7, bold: true, color: C.dim, margin: 0 });
+  slide.addText(item.premium == null ? "—" : `+${fmtPct(item.premium)}`, { x: x + 1.35, y: y + 1.68, w: 1.45, h: 0.22, fontSize: 10.5, bold: true, color: accent, align: "right", margin: 0 });
+  pill(slide, pptx, item.action, x + 0.22, y + h - 0.5, w - 0.44, accent);
+}
+
+function addMiniMatrix(pptx: any, slide: any, x: number, y: number, w: number, h: number, items: ReturnType<typeof enrich>) {
+  const S = createPptShapeTypes(pptx);
+  slide.addShape(S.roundRect, { x, y, w, h, fill: { color: C.panel, transparency: 0 }, line: { color: C.line, transparency: 8 } });
+  slide.addText("Matriz de posición", { x: x + 0.22, y: y + 0.2, w: w - 0.44, h: 0.2, fontFace: FONT.head, fontSize: 13, bold: true, color: C.text, margin: 0 });
+  const maxScore = Math.max(...items.map((i) => i.score), 1);
+  items.forEach((item, idx) => {
+    const yy = y + 0.67 + idx * 0.64;
+    slide.addText(item.zone, { x: x + 0.22, y: yy, w: 0.9, h: 0.17, fontFace: FONT.body, fontSize: 8, bold: true, color: C.text, margin: 0 });
+    slide.addText(item.action, { x: x + 1.05, y: yy, w: 1.5, h: 0.17, fontFace: FONT.body, fontSize: 6.6, color: C.muted, margin: 0, fit: "shrink" });
+    slide.addShape(S.roundRect, { x: x + 2.65, y: yy + 0.02, w: w - 3.35, h: 0.12, fill: { color: "1B2B3C" }, line: { color: "1B2B3C" } });
+    slide.addShape(S.roundRect, { x: x + 2.65, y: yy + 0.02, w: (w - 3.35) * item.score / maxScore, h: 0.12, fill: { color: item.score >= 80 ? C.red : item.score >= 55 ? C.yellow : C.green }, line: { color: item.score >= 80 ? C.red : item.score >= 55 ? C.yellow : C.green } });
+    slide.addText(`${item.score}`, { x: x + w - 0.55, y: yy - 0.02, w: 0.35, h: 0.16, fontFace: FONT.body, fontSize: 7.4, bold: true, color: C.text, align: "right", margin: 0 });
+  });
+}
+
+function bullet(slide: any, text: string, x: number, y: number, w: number, accent = C.green) {
+  slide.addText([{ text: "• ", options: { color: accent, bold: true } }, { text, options: { color: C.muted } }], { x, y, w, h: 0.34, fontFace: FONT.body, fontSize: 9.1, breakLine: false, margin: 0, fit: "shrink" });
 }
 
 export async function POST(request: NextRequest) {
@@ -141,9 +244,7 @@ export async function POST(request: NextRequest) {
     const scenario = (body?.scenario ?? {}) as Scenario;
     const items = enrich(zones).filter((zone) => zone.rows.length);
 
-    if (!items.length) {
-      return Response.json({ error: "No hay data suficiente para generar la presentación." }, { status: 400 });
-    }
+    if (!items.length) return Response.json({ error: "No hay data suficiente para generar la presentación." }, { status: 400 });
 
     const { default: pptxgen } = await import("pptxgenjs");
     const pptx: any = new pptxgen();
@@ -153,11 +254,9 @@ export async function POST(request: NextRequest) {
     pptx.subject = "Executive pricing intelligence for Chilexpress";
     pptx.title = `Pricing Intelligence Chilexpress · ${monthLabel(selectedMonth)}`;
     pptx.lang = "es-CL";
-    pptx.theme = {
-      headFontFace: "Aptos Display",
-      bodyFontFace: "Aptos",
-      lang: "es-CL",
-    };
+    pptx.theme = { headFontFace: FONT.head, bodyFontFace: FONT.body, lang: "es-CL" };
+    pptx.defineLayout({ name: "CUSTOM_WIDE", width: SLIDE_W, height: SLIDE_H });
+    pptx.layout = "CUSTOM_WIDE";
 
     const mostPremium = [...items].sort((a, b) => (b.premium ?? -Infinity) - (a.premium ?? -Infinity))[0];
     const mostCompetitive = [...items].sort((a, b) => (a.premium ?? Infinity) - (b.premium ?? Infinity))[0];
@@ -173,121 +272,124 @@ export async function POST(request: NextRequest) {
     const unitCost = currentPrice * clamp(costShare, 1, 99) / 100;
     const newPrice = currentPrice * (1 + priceChange / 100);
     const newVolume = Math.max(0, monthlyVolume * (1 + volumeChange / 100));
+    const currentRevenue = currentPrice * monthlyVolume;
+    const newRevenue = newPrice * newVolume;
     const currentContribution = (currentPrice - unitCost) * monthlyVolume;
     const newContribution = (newPrice - unitCost) * newVolume;
+    const currentMargin = currentPrice ? (currentPrice - unitCost) / currentPrice * 100 : 0;
+    const newMargin = newPrice ? (newPrice - unitCost) / newPrice * 100 : 0;
     const floorPrice = unitCost / (1 - clamp(targetMargin, 1, 80) / 100);
     const recLow = leaderPrice > 0 && currentPrice > 0 ? Math.round(Math.max(floorPrice, leaderPrice * 1.1)) : 0;
     const recHigh = leaderPrice > 0 && currentPrice > 0 ? Math.round(Math.max(recLow, Math.min(currentPrice * 0.92, leaderPrice * 1.6))) : 0;
+    const recMid = recLow && recHigh ? Math.round((recLow + recHigh) / 2) : 0;
+    const recDelta = currentPrice && recMid ? (recMid / currentPrice - 1) * 100 : 0;
 
     let page = 1;
 
+    // 1. Cover
     const s1 = pptx.addSlide();
-    addBg(pptx, s1);
-    s1.addText("CHILEXPRESS", { x: 0.65, y: 0.58, w: 2.1, h: 0.24, fontSize: 8, bold: true, color: COLORS.green, charSpace: 1.6, margin: 0 });
-    s1.addText("Pricing Intelligence\nCourier B2B", { x: 0.65, y: 1.25, w: 7.1, h: 1.35, fontFace: "Aptos Display", fontSize: 34, bold: true, color: COLORS.text, margin: 0, breakLine: false, fit: "shrink" });
-    s1.addText(`Reporte ejecutivo · ${monthLabel(selectedMonth)}`, { x: 0.68, y: 2.75, w: 5.4, h: 0.32, fontSize: 12, color: COLORS.muted, margin: 0 });
-    s1.addShape(pptx.ShapeType.roundRect, { x: 8.15, y: 0.95, w: 3.95, h: 4.72, rectRadius: 0.12, fill: { color: COLORS.panel }, line: { color: COLORS.line } });
-    addCard(pptx, s1, 8.45, 1.35, 3.35, 1.05, "Mayor oportunidad", `${highestScore?.zone ?? "—"}`, `${highestScore?.action ?? "Sin data"}`, COLORS.green);
-    addCard(pptx, s1, 8.45, 2.65, 3.35, 1.05, "Mayor premium", `${mostPremium?.zone ?? "—"}`, mostPremium?.premium != null ? `+${pct(mostPremium.premium)} vs líder` : "Sin comparación", COLORS.yellow);
-    addCard(pptx, s1, 8.45, 3.95, 3.35, 1.05, "Más competitivo", `${mostCompetitive?.zone ?? "—"}`, mostCompetitive?.premium != null ? `+${pct(mostCompetitive.premium)} vs líder` : "Sin comparación", COLORS.blue);
-    s1.addText("MGP · Marketing Growth Partners", { x: 0.68, y: 6.6, w: 4.6, h: 0.22, fontSize: 8, color: COLORS.muted, margin: 0 });
-    addFooter(s1, page++);
+    addBackground(pptx, s1, "cover");
+    const S = createPptShapeTypes(pptx);
+    s1.addShape(S.roundRect, { x: 0.62, y: 0.65, w: 2.25, h: 0.35, fill: { color: C.green, transparency: 88 }, line: { color: C.green, transparency: 38 } });
+    s1.addText("CHILEXPRESS · DEMO", { x: 0.79, y: 0.78, w: 1.9, h: 0.08, fontFace: FONT.body, fontSize: 6.5, bold: true, color: C.green, charSpace: 1.2, margin: 0, fit: "shrink" });
+    s1.addText("Pricing\nIntelligence\nCourier B2B", { x: 0.66, y: 1.34, w: 6.3, h: 1.85, fontFace: FONT.head, fontSize: 37, bold: true, color: C.text, margin: 0, breakLine: false, fit: "shrink" });
+    s1.addText(`Reporte ejecutivo · ${monthLabel(selectedMonth)}`, { x: 0.7, y: 3.52, w: 4.8, h: 0.25, fontFace: FONT.body, fontSize: 11.5, color: C.muted, margin: 0 });
+    s1.addShape(S.roundRect, { x: 7.65, y: 0.82, w: 4.95, h: 5.28, fill: { color: C.panel, transparency: 0 }, line: { color: C.line, transparency: 10 } });
+    s1.addText("Resumen automático", { x: 8.02, y: 1.18, w: 3.7, h: 0.24, fontFace: FONT.head, fontSize: 15, bold: true, color: C.text, margin: 0 });
+    statCard(pptx, s1, 8.02, 1.72, 1.95, 1.12, "Prioridad", highestScore?.zone ?? "—", `${highestScore?.score ?? 0}/100`, C.green);
+    statCard(pptx, s1, 10.22, 1.72, 1.95, 1.12, "Mayor brecha", mostPremium?.zone ?? "—", mostPremium?.premium != null ? `+${fmtPct(mostPremium.premium)}` : "—", C.yellow);
+    statCard(pptx, s1, 8.02, 3.08, 1.95, 1.12, "Más competitivo", mostCompetitive?.zone ?? "—", mostCompetitive?.premium != null ? `+${fmtPct(mostCompetitive.premium)}` : "—", C.cyan);
+    statCard(pptx, s1, 10.22, 3.08, 1.95, 1.12, "Acción", highestScore?.action ?? "—", "recomendado", C.green);
+    narrativeBox(pptx, s1, 8.02, 4.47, 4.15, 0.9, "Tesis de trabajo", "Pasar de lectura de precios a decisiones de pricing por zona: priorización, simulación económica y rango de test.", C.green);
+    s1.addText("MGP", { x: 0.68, y: 6.54, w: 0.7, h: 0.2, fontFace: FONT.head, fontSize: 12, bold: true, color: C.text, margin: 0 });
+    s1.addText("Marketing Growth Partners", { x: 1.38, y: 6.61, w: 2.4, h: 0.12, fontFace: FONT.body, fontSize: 7.2, color: C.dim, margin: 0 });
+    addFooter(pptx, s1, page++);
 
+    // 2. Executive summary
     const s2 = pptx.addSlide();
-    addBg(pptx, s2);
-    addTitle(s2, "Resumen ejecutivo", "Dónde actuar primero", "Lectura de oportunidad competitiva por macrozona B2B.");
-    addCard(pptx, s2, 0.55, 1.8, 3.9, 1.35, "Prioridad", highestScore?.zone ?? "—", `${highestScore?.action ?? "Completar evidencia"} · score ${highestScore?.score ?? 0}/100`, COLORS.green);
-    addCard(pptx, s2, 4.72, 1.8, 3.9, 1.35, "Brecha crítica", mostPremium?.zone ?? "—", mostPremium?.premium != null ? `Chilexpress +${pct(mostPremium.premium)} vs líder` : "Sin comparación", COLORS.yellow);
-    addCard(pptx, s2, 8.9, 1.8, 3.9, 1.35, "Presión de precio", mostPremium?.leader?.label ?? "—", mostPremium?.leader ? `${money(mostPremium.leader.price)} en ${mostPremium.zone}` : "Sin líder", COLORS.blue);
-    const bullets = [
-      "El benchmark separa zonas Norte, Centro y Sur para evitar promedios nacionales que escondan brechas tácticas.",
-      "La recomendación es testear descuentos segmentados, no hacer una rebaja generalizada de tarifa base.",
-      "Los costos y márgenes deben usarse como simulación hasta conectar costos reales de Chilexpress.",
-      "El siguiente paso comercial es elegir una zona piloto y medir conversión, volumen, contribución y retención.",
-    ];
-    bullets.forEach((text, i) => {
-      s2.addShape(pptx.ShapeType.roundRect, { x: 0.75, y: 3.65 + i * 0.54, w: 11.9, h: 0.36, rectRadius: 0.05, fill: { color: COLORS.panel }, line: { color: COLORS.line, transparency: 40 } });
-      s2.addText(text, { x: 0.95, y: 3.73 + i * 0.54, w: 11.4, h: 0.16, fontSize: 8.4, color: COLORS.text, margin: 0, fit: "shrink" });
-    });
-    addFooter(s2, page++);
+    addBackground(pptx, s2);
+    addPageTitle(s2, "Executive summary", "Lo que debería mirar Pricing", "Tres señales accionables para convertir el benchmark en agenda comercial.");
+    statCard(pptx, s2, 0.62, 1.85, 3.75, 1.35, "Zona prioritaria", highestScore?.zone ?? "—", `${highestScore?.action ?? "—"} · score ${highestScore?.score ?? 0}/100`, C.green);
+    statCard(pptx, s2, 4.78, 1.85, 3.75, 1.35, "Brecha más exigente", mostPremium?.zone ?? "—", mostPremium?.premium != null ? `Chilexpress +${fmtPct(mostPremium.premium)} vs líder` : "Sin comparación", C.yellow);
+    statCard(pptx, s2, 8.94, 1.85, 3.75, 1.35, "Competidor presión", mostPremium?.leader?.label ?? "—", mostPremium?.leader ? `${fmtMoney(mostPremium.leader.price)} en ${mostPremium.zone}` : "Sin data", C.cyan);
+    narrativeBox(pptx, s2, 0.62, 3.72, 5.85, 1.45, "Lectura ejecutiva", `La mayor oportunidad está en ${highestScore?.zone ?? "—"}. El análisis sugiere evitar una rebaja general y probar descuentos segmentados por zona, recurrencia y volumen.`, C.green);
+    narrativeBox(pptx, s2, 6.82, 3.72, 5.85, 1.45, "Decisión recomendada", `Usar un piloto controlado en ${selected?.zone ?? "—"}: medir conversión, retención y contribución antes de modificar la tarifa base.`, C.yellow);
+    bullet(s2, "La ausencia de datos futuros no se interpreta como precio cero; sólo se muestran censos comparables.", 0.72, 5.62, 6.1, C.green);
+    bullet(s2, "Los márgenes de competencia son simulados; los precios sí provienen del benchmark cargado.", 6.9, 5.62, 5.7, C.cyan);
+    addFooter(pptx, s2, page++);
 
+    // 3. Market ranking
     const s3 = pptx.addSlide();
-    addBg(pptx, s3);
-    addTitle(s3, "Benchmark competitivo", "Posicionamiento por macrozona", "Precio promedio comparable: origen Santiago, paquete ≤0,5 kg, entrega a domicilio.");
-    items.forEach((zone, zi) => {
-      const x = 0.55 + zi * 4.22;
-      s3.addShape(pptx.ShapeType.roundRect, { x, y: 1.75, w: 3.85, h: 4.62, rectRadius: 0.09, fill: { color: COLORS.panel }, line: { color: COLORS.line } });
-      s3.addText(zone.zone, { x: x + 0.25, y: 1.98, w: 1.8, h: 0.28, fontSize: 17, bold: true, color: COLORS.text, margin: 0 });
-      s3.addText(zone.premium != null ? `Chilexpress +${pct(zone.premium)} vs líder` : "Sin comparación", { x: x + 0.25, y: 2.34, w: 3.25, h: 0.2, fontSize: 7.5, color: COLORS.muted, margin: 0 });
-      const max = Math.max(...zone.rows.map((row) => row.price), 1);
-      zone.rows.slice(0, 4).forEach((row, ri) => {
-        addBar(s3, x + 0.25, 2.85 + ri * 0.72, 3.3, `${ri + 1}. ${row.label}`, money(row.price), row.price / max, row.company === "Chilexpress");
-      });
-      s3.addText(`Acción: ${zone.action}`, { x: x + 0.25, y: 5.98, w: 3.2, h: 0.2, fontSize: 7.5, bold: true, color: COLORS.green, margin: 0, fit: "shrink" });
-    });
-    addFooter(s3, page++);
+    addBackground(pptx, s3);
+    addPageTitle(s3, "Benchmark competitivo", "Ranking de precios por macrozona", "Paquete ≤ 0,5 kg · origen Santiago · entrega a domicilio · tarifas Pyme/Empresa.");
+    items.forEach((item, idx) => barsInPanel(pptx, s3, 0.62 + idx * 4.23, 1.82, 3.78, 3.75, item.zone, item.rows));
+    narrativeBox(pptx, s3, 0.62, 5.9, 12.05, 0.72, "Cómo leer la lámina", "Las barras comparan precio promedio censado dentro de cada zona. Chilexpress aparece destacado; el líder es el menor precio comparable de la zona.", C.green);
+    addFooter(pptx, s3, page++);
 
+    // 4. Opportunity map
     const s4 = pptx.addSlide();
-    addBg(pptx, s4);
-    addTitle(s4, "Mapa de oportunidades", "Score para decidir dónde actuar", "Score 0–100 basado en brecha de precio, cobertura y confianza del benchmark.");
-    items.forEach((zone, i) => {
-      const y = 1.75 + i * 1.5;
-      s4.addText(zone.zone, { x: 0.75, y, w: 1.35, h: 0.26, fontSize: 15, bold: true, color: COLORS.text, margin: 0 });
-      s4.addText(`${zone.score}/100`, { x: 2.22, y: y - 0.02, w: 0.9, h: 0.25, fontSize: 13, bold: true, color: COLORS.green, align: "right", margin: 0 });
-      s4.addShape("rect", { x: 3.38, y: y + 0.06, w: 5.6, h: 0.12, fill: { color: "1B2A3A" }, line: { color: "1B2A3A" } });
-      s4.addShape("rect", { x: 3.38, y: y + 0.06, w: Math.max(0.1, 5.6 * zone.score / 100), h: 0.12, fill: { color: COLORS.green }, line: { color: COLORS.green } });
-      s4.addShape(pptx.ShapeType.roundRect, { x: 9.28, y: y - 0.13, w: 2.8, h: 0.5, rectRadius: 0.06, fill: { color: COLORS.panel }, line: { color: COLORS.line } });
-      s4.addText(zone.action, { x: 9.45, y: y + 0.03, w: 2.45, h: 0.15, fontSize: 7.4, bold: true, color: COLORS.green, align: "center", margin: 0, fit: "shrink" });
-      const detail = zone.chilexpress && zone.leader ? `Chilexpress ${money(zone.chilexpress.price)} · líder ${zone.leader.label} ${money(zone.leader.price)} · premium +${pct(zone.premium ?? 0)}` : "Falta data comparable para Chilexpress y líder.";
-      s4.addText(detail, { x: 0.75, y: y + 0.5, w: 11.3, h: 0.18, fontSize: 8.2, color: COLORS.muted, margin: 0, fit: "shrink" });
-    });
-    addFooter(s4, page++);
+    addBackground(pptx, s4);
+    addPageTitle(s4, "Mapa de oportunidades", "Dónde actuar primero", "El score combina brecha de precio y confianza del benchmark para priorizar zonas.");
+    items.forEach((item, idx) => opportunityCard(pptx, s4, item, 0.62 + idx * 4.18, 1.72, 3.72, 2.86));
+    addMiniMatrix(pptx, s4, 0.62, 5.08, 5.8, 1.15, items);
+    narrativeBox(pptx, s4, 6.72, 5.08, 5.95, 1.15, "Implicancia para Chilexpress", `La oportunidad principal no es “igualar al más barato”, sino diseñar un tier de test donde la brecha sea alta y la conversión pueda reaccionar.`, C.yellow);
+    addFooter(pptx, s4, page++);
 
+    // 5. Scenario
     const s5 = pptx.addSlide();
-    addBg(pptx, s5);
-    addTitle(s5, "Simulación comercial", `Escenario de test · ${selected?.zone ?? "—"}`, "Impacto económico con supuestos editables de precio, volumen y costo unitario.");
-    addCard(pptx, s5, 0.6, 1.75, 2.9, 1.2, "Precio actual", currentPrice ? money(currentPrice) : "—", "Chilexpress", COLORS.text);
-    addCard(pptx, s5, 3.72, 1.75, 2.9, 1.2, "Nuevo precio", newPrice ? money(newPrice) : "—", `${priceChange > 0 ? "+" : ""}${priceChange}% vs actual`, COLORS.green);
-    addCard(pptx, s5, 6.84, 1.75, 2.9, 1.2, "Nuevo volumen", `${Math.round(newVolume).toLocaleString("es-CL")}`, `${volumeChange > 0 ? "+" : ""}${volumeChange}% vs actual`, COLORS.blue);
-    addCard(pptx, s5, 9.96, 1.75, 2.9, 1.2, "Contribución", money(newContribution), `${newContribution >= currentContribution ? "+" : ""}${pct(currentContribution ? (newContribution / currentContribution - 1) * 100 : 0)} vs actual`, COLORS.yellow);
-    s5.addShape(pptx.ShapeType.roundRect, { x: 0.65, y: 3.55, w: 12.0, h: 1.1, rectRadius: 0.08, fill: { color: COLORS.panel }, line: { color: COLORS.line } });
-    s5.addText("Lectura ejecutiva", { x: 0.9, y: 3.82, w: 2.2, h: 0.22, fontSize: 11, bold: true, color: COLORS.text, margin: 0 });
-    s5.addText(`Con un ajuste de ${priceChange}% en precio y ${volumeChange}% de volumen, la contribución estimada pasa de ${money(currentContribution)} a ${money(newContribution)}. El supuesto de costo unitario usado es ${costShare}% del precio actual.`, { x: 3.1, y: 3.78, w: 9.1, h: 0.32, fontSize: 8.4, color: COLORS.muted, margin: 0, fit: "shrink" });
-    addCard(pptx, s5, 0.65, 5.1, 5.8, 1.0, "Rango recomendado para test", recLow && recHigh ? `${money(recLow)} – ${money(recHigh)}` : "Sin data", `margen mínimo objetivo ${targetMargin}%`, COLORS.green);
-    addCard(pptx, s5, 6.8, 5.1, 5.8, 1.0, "Líder competitivo", selected?.leader ? `${selected.leader.label}` : "—", selected?.leader ? `${money(selected.leader.price)} en ${selected.zone}` : "sin líder", COLORS.blue);
-    addFooter(s5, page++);
+    addBackground(pptx, s5);
+    addPageTitle(s5, "Simulación de impacto", "Precio, volumen y contribución", "Escenario editable exportado desde la pestaña Decisiones.");
+    statCard(pptx, s5, 0.62, 1.8, 2.75, 1.18, "Zona modelada", selected?.zone ?? "—", selected?.action ?? "—", C.green);
+    statCard(pptx, s5, 3.68, 1.8, 2.75, 1.18, "Precio actual", currentPrice ? fmtMoney(currentPrice) : "—", `Líder: ${leaderPrice ? fmtMoney(leaderPrice) : "—"}`, C.text);
+    statCard(pptx, s5, 6.74, 1.8, 2.75, 1.18, "Nuevo precio", newPrice ? fmtMoney(newPrice) : "—", `${priceChange > 0 ? "+" : ""}${fmtPct(priceChange)} vs actual`, C.cyan);
+    statCard(pptx, s5, 9.8, 1.8, 2.75, 1.18, "Volumen", fmtNum(newVolume), `${volumeChange > 0 ? "+" : ""}${fmtPct(volumeChange)} supuesto`, C.yellow);
+    narrativeBox(pptx, s5, 0.62, 3.45, 3.75, 1.25, "Ingresos", `${fmtMoney(currentRevenue)} actual → ${fmtMoney(newRevenue)} modelado. Variación: ${newRevenue >= currentRevenue ? "+" : ""}${fmtPct(currentRevenue ? (newRevenue / currentRevenue - 1) * 100 : 0)}.`, C.cyan);
+    narrativeBox(pptx, s5, 4.78, 3.45, 3.75, 1.25, "Contribución", `${fmtMoney(currentContribution)} actual → ${fmtMoney(newContribution)} modelado. Variación: ${newContribution >= currentContribution ? "+" : ""}${fmtPct(currentContribution ? (newContribution / currentContribution - 1) * 100 : 0)}.`, C.green);
+    narrativeBox(pptx, s5, 8.94, 3.45, 3.75, 1.25, "Margen", `${fmtPct(currentMargin)} actual → ${fmtPct(newMargin)} modelado. Costo supuesto: ${fmtPct(costShare)} del precio actual.`, C.yellow);
+    bullet(s5, "La simulación mantiene costo unitario constante; sirve para discusión de negocio, no para estimar elasticidad real.", 0.72, 5.45, 11.6, C.green);
+    addFooter(pptx, s5, page++);
 
+    // 6. Recommended test range
     const s6 = pptx.addSlide();
-    addBg(pptx, s6);
-    addTitle(s6, "Próximos pasos", "Cómo llevarlo a decisión", "Acciones recomendadas para convertir el benchmark en aprendizaje comercial.");
-    const steps = [
-      ["1", "Elegir zona piloto", `Priorizar ${highestScore?.zone ?? "Norte"} por mayor oportunidad competitiva.`],
-      ["2", "Definir tier de test", "Probar descuento segmentado por recurrencia/volumen sin tocar la tarifa base."],
-      ["3", "Medir impacto", "Comparar conversión, volumen, contribución y retención contra grupo control."],
-      ["4", "Conectar costos reales", "Reemplazar supuestos de costo-to-serve por datos operacionales de Chilexpress."],
-    ];
-    steps.forEach(([num, title, text], i) => {
-      const y = 1.65 + i * 1.15;
-      s6.addShape(pptx.ShapeType.ellipse, { x: 0.78, y: y - 0.05, w: 0.38, h: 0.38, fill: { color: COLORS.green }, line: { color: COLORS.green } });
-      s6.addText(num, { x: 0.78, y: y + 0.05, w: 0.38, h: 0.12, fontSize: 7.5, bold: true, color: COLORS.bg, align: "center", margin: 0 });
-      s6.addText(title, { x: 1.35, y, w: 3.5, h: 0.22, fontSize: 12.5, bold: true, color: COLORS.text, margin: 0 });
-      s6.addText(text, { x: 4.7, y: y + 0.02, w: 7.1, h: 0.2, fontSize: 8.2, color: COLORS.muted, margin: 0, fit: "shrink" });
-    });
-    s6.addShape(pptx.ShapeType.roundRect, { x: 0.78, y: 6.35, w: 11.6, h: 0.4, rectRadius: 0.05, fill: { color: COLORS.panel }, line: { color: COLORS.line } });
-    s6.addText("Nota: los precios son evidencia observada/oficial; márgenes y rangos son simulaciones hasta recibir costos reales.", { x: 1.0, y: 6.47, w: 11.2, h: 0.12, fontSize: 7.4, color: COLORS.muted, margin: 0, fit: "shrink" });
-    addFooter(s6, page++);
+    addBackground(pptx, s6);
+    addPageTitle(s6, "Precio recomendado", "Rango de test, no precio óptimo", "El rango combina líder competitivo, costo supuesto y margen mínimo objetivo.");
+    s6.addShape(S.roundRect, { x: 0.78, y: 1.72, w: 11.78, h: 2.35, fill: { color: C.panel, transparency: 0 }, line: { color: C.green, transparency: 45 } });
+    s6.addText("Rango recomendado para test", { x: 1.08, y: 2.1, w: 4.2, h: 0.22, fontFace: FONT.body, fontSize: 8, bold: true, color: C.green, charSpace: 1, margin: 0 });
+    s6.addText(recLow && recHigh ? `${fmtMoney(recLow)} – ${fmtMoney(recHigh)}` : "Sin data comparable", { x: 1.08, y: 2.48, w: 6.8, h: 0.55, fontFace: FONT.head, fontSize: 30, bold: true, color: C.text, margin: 0, fit: "shrink" });
+    s6.addText(recMid ? `Punto medio sugerido: ${fmtMoney(recMid)} · ajuste vs actual: ${recDelta > 0 ? "+" : ""}${fmtPct(recDelta)}` : "Requiere Chilexpress + líder comparable", { x: 1.1, y: 3.25, w: 7.2, h: 0.24, fontFace: FONT.body, fontSize: 10.3, color: C.muted, margin: 0, fit: "shrink" });
+    statCard(pptx, s6, 8.6, 2.02, 1.68, 0.96, "Actual", currentPrice ? fmtMoney(currentPrice) : "—", selected?.zone ?? "—", C.text);
+    statCard(pptx, s6, 10.55, 2.02, 1.68, 0.96, "Piso margen", floorPrice ? fmtMoney(floorPrice) : "—", `${fmtPct(targetMargin)} objetivo`, C.green);
+    narrativeBox(pptx, s6, 0.72, 4.72, 3.7, 1.2, "1. Test comercial", "Activar oferta controlada por zona y volumen, sin tocar la tarifa base general.", C.green);
+    narrativeBox(pptx, s6, 4.82, 4.72, 3.7, 1.2, "2. Medición", "Comparar conversión, retención y contribución contra grupo control de tarifa actual.", C.cyan);
+    narrativeBox(pptx, s6, 8.92, 4.72, 3.7, 1.2, "3. Escalamiento", "Escalar sólo donde el lift comercial compense la pérdida de precio unitario.", C.yellow);
+    addFooter(pptx, s6, page++);
 
-    const arrayBuffer = await pptx.write({ outputType: "arraybuffer" }) as ArrayBuffer;
-    const safeMonth = selectedMonth.replace("-", "");
-    return new Response(arrayBuffer, {
+    // 7. Methodology
+    const s7 = pptx.addSlide();
+    addBackground(pptx, s7);
+    addPageTitle(s7, "Metodología", "Qué está dentro y qué no", "Criterios para que el análisis sea defendible frente a Pricing y Finanzas.");
+    narrativeBox(pptx, s7, 0.62, 1.82, 3.85, 1.35, "Perfil comparable", "Origen Santiago, paquete ≤ 0,5 kg, entrega a domicilio y tarifa Pyme/Empresa. No se mezclan tarifas punto/sucursal con domicilio.", C.green);
+    narrativeBox(pptx, s7, 4.72, 1.82, 3.85, 1.35, "Tratamiento de data", "Se calcula precio promedio robusto ponderado por confianza. Meses sin observación quedan vacíos; nunca se imputan como $0.", C.cyan);
+    narrativeBox(pptx, s7, 8.82, 1.82, 3.85, 1.35, "Costos y márgenes", "Los márgenes de competencia son supuestos editables del simulador. Para precisión final se requieren costos reales de Chilexpress.", C.yellow);
+    s7.addShape(S.roundRect, { x: 0.62, y: 3.78, w: 12.05, h: 1.45, fill: { color: C.panel, transparency: 0 }, line: { color: C.line, transparency: 12 } });
+    s7.addText("Próximo paso sugerido", { x: 0.92, y: 4.08, w: 3.0, h: 0.22, fontFace: FONT.head, fontSize: 15, bold: true, color: C.text, margin: 0 });
+    s7.addText("Conectar costos reales, conversión por segmento Pyme y resultados de campañas para transformar el rango de test en una recomendación econométrica.", { x: 3.65, y: 4.1, w: 8.55, h: 0.32, fontFace: FONT.body, fontSize: 10, color: C.muted, margin: 0, fit: "shrink" });
+    bullet(s7, "Este deck se genera automáticamente desde la pestaña Decisiones con la data visible del dashboard.", 0.75, 5.72, 11.5, C.green);
+    addFooter(pptx, s7, page++);
+
+    const output = await pptx.write({ outputType: "nodebuffer" });
+    const buffer = Buffer.isBuffer(output) ? output : Buffer.from(output as ArrayBuffer);
+
+    return new Response(buffer, {
+      status: 200,
       headers: {
         "content-type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        "content-disposition": `attachment; filename="chilexpress-pricing-intelligence-${safeMonth}.pptx"`,
+        "content-disposition": `attachment; filename="chilexpress-pricing-intelligence-${selectedMonth.replace("-", "")}.pptx"`,
         "cache-control": "no-store",
       },
     });
   } catch (error) {
-    console.error("executive ppt error", error);
+    console.error("executive_ppt_error", error);
     return Response.json({ error: "No fue posible generar la presentación ejecutiva." }, { status: 500 });
   }
 }
