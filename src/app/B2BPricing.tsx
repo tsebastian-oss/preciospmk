@@ -1,47 +1,37 @@
 "use client";
 
+// COURIER_SEGMENTED_ACCORDION_V1
 import { useCallback, useEffect, useMemo, useState } from "react";
-import styles from "./B2BPricing.module.css";
-import matrixStyles from "./B2BPricingMatrix.module.css";
+import B2BProfitabilitySimulator from "./B2BProfitabilitySimulator";
+import styles from "./CourierPricingAccordion.module.css";
 
 type Numeric = number | string | null;
-type Provider = {
-  providerGroup: string;
-  providerName: string;
-  observations: Numeric;
-  buyers: Numeric;
-  amount: Numeric;
-  sharePct: Numeric;
-  medianUnitPrice: Numeric;
-  minUnitPrice: Numeric;
-  maxUnitPrice: Numeric;
-  latestDate: string | null;
-};
-type Service = { serviceType: string; observations: Numeric; amount: Numeric; medianUnitPrice: Numeric };
+
 type Observation = {
   id: number;
   providerGroup: string;
   providerName: string;
   buyerName: string | null;
   serviceType: string | null;
-  classificationCode: string | null;
   description: string | null;
-  quantity: Numeric;
-  unit: string | null;
   unitPriceClp: Numeric;
   totalAmountClp: Numeric;
-  priceBasis: string | null;
   processDate: string | null;
   sourceUrl: string | null;
   sourceKind: string | null;
 };
+
 type ComparableRow = {
   profileKey: string;
   serviceType: string | null;
   weightBand: string | null;
   distanceBand: string | null;
+  referenceWeightKg?: Numeric;
+  referenceDistanceKm?: Numeric;
   providerGroup: string;
   providerName: string;
+  sourceChannel?: string | null;
+  sourceKinds?: string[];
   observations: Numeric;
   medianShipmentPrice: Numeric;
   medianPricePerKg: Numeric;
@@ -50,6 +40,7 @@ type ComparableRow = {
   marketMedianShipmentPrice: Numeric;
   marketMedianPricePerKg: Numeric;
   marketMedianPricePerKm: Numeric;
+  marketMedianPricePerKgKm?: Numeric;
   providersInProfile: Numeric;
   indexVsMarket: Numeric;
   latestDate: string | null;
@@ -57,18 +48,23 @@ type ComparableRow = {
   originLabel: string | null;
   destinationLabel: string | null;
 };
+
 type NormalizedPayload = {
+  layer?: string;
   summary: {
     comparableRows?: Numeric;
-    fullRows?: Numeric;
     providers?: Numeric;
     profiles?: Numeric;
     competitiveProfiles?: Numeric;
     latestDate?: string | null;
+    b2cRows?: Numeric;
+    b2bRows?: Numeric;
+    pymeRows?: Numeric;
+    observedB2bRows?: Numeric;
   };
-  profiles: Array<{ profileKey: string; weightBand?: string | null; distanceBand?: string | null }>;
   rows: ComparableRow[];
 };
+
 type Payload = {
   category: string;
   days: number;
@@ -77,102 +73,90 @@ type Payload = {
     providers?: Numeric;
     buyers?: Numeric;
     marketAmount?: Numeric;
-    medianUnitPrice?: Numeric;
     latestDate?: string | null;
     lastIngestedAt?: string | null;
   };
-  providers: Provider[];
-  services: Service[];
   recent: Observation[];
   normalized?: NormalizedPayload;
+  annexes?: {
+    detected?: Numeric;
+    candidateRates?: Numeric;
+    latestDate?: string | null;
+  };
   source: string;
   error?: string;
 };
 
-type MatrixMetric = "shipment" | "kg" | "km" | "kgkm" | "index";
-type MatrixLane = {
-  key: string;
-  serviceType: string;
-  weightBand: string;
-  distanceBand: string;
-  originLabel: string;
-  destinationLabel: string;
-  providerRows: Record<string, ComparableRow>;
-  reference: ComparableRow;
+type SegmentStats = {
+  rows: number;
+  providers: number;
+  min: number;
+  max: number;
 };
 
 const nf = new Intl.NumberFormat("es-CL");
 const money = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
-const decimal = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 });
 const compactMoney = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", notation: "compact", maximumFractionDigits: 1 });
-const WEIGHT_BANDS = ["0–0,5 kg", "0,51–1,5 kg", "1,51–3 kg", "3,01–6 kg", "6,01–10 kg", "10,1–15 kg", "15+ kg"];
-const DISTANCE_BANDS = ["0–50 km", "50–200 km", "200–500 km", "500–1.000 km", "1.000+ km"];
-const METRICS: Array<{ key: MatrixMetric; label: string }> = [
-  { key: "shipment", label: "Precio / envío" },
-  { key: "kg", label: "$/kg" },
-  { key: "km", label: "$/km" },
-  { key: "kgkm", label: "$/kg-km" },
-  { key: "index", label: "Índice vs mercado" },
-];
-const PROVIDER_PRIORITY = ["Chilexpress", "Blue Express", "Starken", "CorreosChile"];
+const decimal = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1 });
 
-function n(value: Numeric | undefined) { const x = Number(value ?? 0); return Number.isFinite(x) ? x : 0; }
-function date(value?: string | null) { if (!value) return "—"; const d = new Date(value); return Number.isNaN(d.getTime()) ? value : new Intl.DateTimeFormat("es-CL", { dateStyle: "medium" }).format(d); }
+function n(value: Numeric | undefined) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function date(value?: string | null) {
+  if (!value) return "—";
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime())
+    ? value
+    : new Intl.DateTimeFormat("es-CL", { dateStyle: "medium" }).format(parsed);
+}
+
 function sourceKind(value?: string | null) {
   if (value === "trato_directo") return "Trato directo";
   if (value === "convenio_marco") return "Convenio Marco";
   if (value === "licitacion") return "Licitación";
   return value || "Mercado Público";
 }
-function providerSort(a: string, b: string) {
-  const ai = PROVIDER_PRIORITY.indexOf(a);
-  const bi = PROVIDER_PRIORITY.indexOf(b);
-  if (ai >= 0 || bi >= 0) return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
-  return a.localeCompare(b, "es");
+
+function displayProvider(value: string) {
+  if (value === "Blue Express B2C / Público") return "Blue Express · Tarifa pública";
+  if (value === "Blue Express Ecommerce 1–500") return "Blue Express · Pyme / Ecommerce";
+  if (value === "Chilexpress") return "Chilexpress · Emprendedores";
+  if (value === "Starken Tarifa Simple") return "Starken · Tarifa Simple";
+  if (value === "Starken Partner Colina") return "Starken · Partner Colina";
+  if (value === "Starken Partner Montaña") return "Starken · Partner Montaña";
+  if (value === "Starken Partner Cordillera") return "Starken · Partner Cordillera";
+  return value;
 }
-function metricValue(row: ComparableRow, metric: MatrixMetric) {
-  if (metric === "shipment") return n(row.medianShipmentPrice);
-  if (metric === "kg") return n(row.medianPricePerKg);
-  if (metric === "km") return n(row.medianPricePerKm);
-  if (metric === "kgkm") return n(row.medianPricePerKgKm);
-  return n(row.indexVsMarket);
+
+function segmentStats(rows: ComparableRow[]): SegmentStats {
+  const values = rows.map((row) => n(row.medianShipmentPrice)).filter((value) => value > 0);
+  return {
+    rows: rows.length,
+    providers: new Set(rows.map((row) => row.providerGroup)).size,
+    min: values.length ? Math.min(...values) : 0,
+    max: values.length ? Math.max(...values) : 0,
+  };
 }
-function marketMetricValue(row: ComparableRow, metric: MatrixMetric) {
-  if (metric === "shipment") return n(row.marketMedianShipmentPrice);
-  if (metric === "kg") return n(row.marketMedianPricePerKg);
-  if (metric === "km") return n(row.marketMedianPricePerKm);
-  if (metric === "kgkm") {
-    const kg = n(row.marketMedianPricePerKg);
-    const km = n(row.medianPricePerKm);
-    const providerKg = n(row.medianPricePerKg);
-    return providerKg > 0 && km > 0 ? kg * (km / providerKg) : 0;
-  }
-  return 100;
+
+function indexClass(value: number) {
+  if (!value || Math.abs(value - 100) <= 2) return styles.indexNeutral;
+  return value < 100 ? styles.indexLow : styles.indexHigh;
 }
-function formatMetric(value: number, metric: MatrixMetric) {
-  if (!value) return "—";
-  if (metric === "index") return decimal.format(value);
-  return money.format(value);
-}
-function gapPct(row: ComparableRow, metric: MatrixMetric) {
-  const value = metricValue(row, metric);
-  const market = marketMetricValue(row, metric);
-  if (!value || !market) return null;
-  return metric === "index" ? value - 100 : (value / market - 1) * 100;
-}
-function gapLabel(gap: number | null) {
-  if (gap === null || !Number.isFinite(gap)) return "sin base comparable";
-  if (Math.abs(gap) < 0.1) return "en mercado";
-  return `${gap > 0 ? "+" : ""}${gap.toFixed(1)}% vs mercado`;
+
+function confidenceLabel(value: Numeric) {
+  const score = n(value);
+  return score ? `${decimal.format(score)}% confianza` : "sin score";
 }
 
 export default function B2BPricing() {
   const [days, setDays] = useState(365);
   const [provider, setProvider] = useState("all");
+  const [destination, setDestination] = useState("all");
   const [weightBand, setWeightBand] = useState("all");
-  const [distanceBand, setDistanceBand] = useState("all");
-  const [matrixMetric, setMatrixMetric] = useState<MatrixMetric>("shipment");
-  const [data, setData] = useState<Payload | null>(null);
+  const [b2c, setB2C] = useState<Payload | null>(null);
+  const [b2b, setB2B] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState("");
@@ -180,201 +164,365 @@ export default function B2BPricing() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch(`/api/b2b-pricing?category=courier&days=${days}&live=${Date.now()}`, { cache: "no-store" });
-      const payload = await response.json() as Payload;
-      if (!response.ok) throw new Error(payload.error || "No fue posible cargar Pricing B2B");
-      setData(payload);
+      const stamp = Date.now();
+      const [b2cResponse, b2bResponse] = await Promise.all([
+        fetch(`/api/b2b-pricing?category=courier&days=${days}&layer=b2c&live=${stamp}`, { cache: "no-store" }),
+        fetch(`/api/b2b-pricing?category=courier&days=${days}&layer=b2b&live=${stamp}`, { cache: "no-store" }),
+      ]);
+      const [b2cPayload, b2bPayload] = await Promise.all([
+        b2cResponse.json() as Promise<Payload>,
+        b2bResponse.json() as Promise<Payload>,
+      ]);
+      if (!b2cResponse.ok) throw new Error(b2cPayload.error || "No fue posible cargar tarifas B2C");
+      if (!b2bResponse.ok) throw new Error(b2bPayload.error || "No fue posible cargar tarifas B2B");
+      setB2C(b2cPayload);
+      setB2B(b2bPayload);
       setNotice("");
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Error cargando Pricing B2B");
-    } finally { setLoading(false); }
+      setNotice(error instanceof Error ? error.message : "Error cargando Courier & Logistics");
+    } finally {
+      setLoading(false);
+    }
   }, [days]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const refresh = async () => {
     setRefreshing(true);
     setNotice("");
     try {
-      const response = await fetch("/api/b2b-pricing/refresh", {
+      const requestInit = {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ months: 2, maxPages: 6 }),
-      });
-      const result = await response.json() as { matched?: number; ingested?: number; rateCards?: { ingested?: number }; errors?: string[]; error?: string };
-      if (!response.ok) throw new Error(result.error || "No fue posible actualizar las fuentes");
-      setNotice(`Fuentes actualizadas: ${nf.format(Number(result.matched || 0))} observaciones públicas · ${nf.format(Number(result.rateCards?.ingested || 0))} tarifas comerciales.`);
+        body: JSON.stringify({ months: 2, maxPages: 4 }),
+      } as const;
+      const [marketResponse, publicResponse, annexResponse] = await Promise.all([
+        fetch("/api/b2b-pricing/refresh", requestInit),
+        fetch("/api/b2b-pricing/public-rates/refresh", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }),
+        fetch("/api/b2b-pricing/market-public-rates/refresh", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }),
+      ]);
+      const market = await marketResponse.json() as { matched?: number; error?: string };
+      const publicRates = await publicResponse.json() as { ingested?: number; rows?: number; error?: string };
+      const annexes = await annexResponse.json() as { acceptedComparableRates?: number; candidateRates?: number; error?: string };
+      if (!marketResponse.ok) throw new Error(market.error || "No fue posible actualizar Mercado Público");
+      if (!publicResponse.ok) throw new Error(publicRates.error || "No fue posible actualizar tarifas comerciales");
+      if (!annexResponse.ok) throw new Error(annexes.error || "No fue posible revisar anexos B2B");
+      setNotice(
+        `Actualizado: ${nf.format(Number(publicRates.rows || publicRates.ingested || 0))} tarifas comerciales · ` +
+        `${nf.format(Number(annexes.acceptedComparableRates || 0))} tarifas B2B verificadas · ` +
+        `${nf.format(Number(market.matched || 0))} observaciones de mercado.`
+      );
       await load();
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Error actualizando fuentes");
-    } finally { setRefreshing(false); }
+    } finally {
+      setRefreshing(false);
+    }
   };
 
-  const providers = data?.providers ?? [];
-  const normalized = data?.normalized ?? { summary: {}, profiles: [], rows: [] };
-  const providerOptions = useMemo(() => Array.from(new Set([
-    ...providers.map((item) => item.providerGroup),
-    ...(normalized.rows ?? []).map((item) => item.providerGroup),
-  ])).sort(providerSort), [providers, normalized.rows]);
-  const rows = useMemo(() => (data?.recent ?? []).filter((row) => provider === "all" || row.providerGroup === provider), [data, provider]);
-  const maxShare = Math.max(1, ...providers.map((item) => n(item.sharePct)));
-  const comparableRows = useMemo(() => (normalized.rows ?? []).filter((row) => {
-    if (provider !== "all" && row.providerGroup !== provider) return false;
-    if (weightBand !== "all" && row.weightBand !== weightBand) return false;
-    if (distanceBand !== "all" && row.distanceBand !== distanceBand) return false;
-    return true;
-  }), [normalized.rows, provider, weightBand, distanceBand]);
+  const b2cRows = b2c?.normalized?.rows ?? [];
+  const allB2BRows = b2b?.normalized?.rows ?? [];
+  const pymeRows = allB2BRows.filter((row) => row.sourceChannel === "Pyme / Emprendedores");
+  const observedRows = allB2BRows.filter((row) => row.sourceChannel === "B2B observado");
 
-  const matrixProviders = useMemo(() => Array.from(new Set(comparableRows.map((row) => row.providerGroup))).sort(providerSort), [comparableRows]);
-  const matrixRows = useMemo(() => {
-    const lanes = new Map<string, MatrixLane>();
-    for (const row of comparableRows) {
-      const existing = lanes.get(row.profileKey);
-      if (existing) {
-        existing.providerRows[row.providerGroup] = row;
-        continue;
-      }
-      lanes.set(row.profileKey, {
-        key: row.profileKey,
-        serviceType: row.serviceType || "Courier",
-        weightBand: row.weightBand || "—",
-        distanceBand: row.distanceBand || "—",
-        originLabel: row.originLabel || "?",
-        destinationLabel: row.destinationLabel || "?",
-        providerRows: { [row.providerGroup]: row },
-        reference: row,
-      });
+  const allRows = useMemo(
+    () => [...b2cRows, ...pymeRows, ...observedRows],
+    [b2cRows, pymeRows, observedRows],
+  );
+
+  const providerOptions = useMemo(
+    () => Array.from(new Set(allRows.map((row) => row.providerGroup))).sort((a, b) => displayProvider(a).localeCompare(displayProvider(b), "es")),
+    [allRows],
+  );
+
+  const destinationOptions = useMemo(
+    () => Array.from(new Set(allRows.map((row) => row.destinationLabel).filter((value): value is string => Boolean(value)))).sort((a, b) => a.localeCompare(b, "es")),
+    [allRows],
+  );
+
+  const weightOptions = useMemo(
+    () => Array.from(new Set(allRows.map((row) => row.weightBand).filter((value): value is string => Boolean(value)))),
+    [allRows],
+  );
+
+  const filterRows = useCallback((rows: ComparableRow[]) => rows.filter((row) => {
+    if (provider !== "all" && row.providerGroup !== provider) return false;
+    if (destination !== "all" && row.destinationLabel !== destination) return false;
+    if (weightBand !== "all" && row.weightBand !== weightBand) return false;
+    return true;
+  }), [provider, destination, weightBand]);
+
+  const visibleB2C = filterRows(b2cRows);
+  const visiblePyme = filterRows(pymeRows);
+  const visibleObserved = filterRows(observedRows);
+
+  const b2cStats = segmentStats(visibleB2C);
+  const pymeStats = segmentStats(visiblePyme);
+  const observedStats = segmentStats(visibleObserved);
+  const contextData = b2b || b2c;
+
+  const groupedProviders = (rows: ComparableRow[]) => {
+    const groups = new Map<string, ComparableRow[]>();
+    for (const row of rows) {
+      const current = groups.get(row.providerGroup) || [];
+      current.push(row);
+      groups.set(row.providerGroup, current);
     }
-    return Array.from(lanes.values()).sort((a, b) => {
-      const destination = a.destinationLabel.localeCompare(b.destinationLabel, "es");
-      if (destination !== 0) return destination;
-      return a.weightBand.localeCompare(b.weightBand, "es");
-    });
-  }, [comparableRows]);
+    return Array.from(groups.entries())
+      .sort(([a], [b]) => displayProvider(a).localeCompare(displayProvider(b), "es"))
+      .map(([name, providerRows]) => ({
+        name,
+        rows: providerRows.sort((a, b) => {
+          const destinationOrder = String(a.destinationLabel || "").localeCompare(String(b.destinationLabel || ""), "es");
+          if (destinationOrder !== 0) return destinationOrder;
+          const weightOrder = n(a.referenceWeightKg) - n(b.referenceWeightKg);
+          if (weightOrder !== 0) return weightOrder;
+          return String(a.serviceType || "").localeCompare(String(b.serviceType || ""), "es");
+        }),
+      }));
+  };
+
+  const renderProviderList = (rows: ComparableRow[], emptyCopy: string) => {
+    const groups = groupedProviders(rows);
+    if (!groups.length) return <div className={styles.empty}>{emptyCopy}</div>;
+
+    return <div className={styles.providerList}>
+      {groups.map((group) => {
+        const stats = segmentStats(group.rows);
+        const latest = group.rows.map((row) => row.latestDate).filter(Boolean).sort().at(-1) || null;
+        return <details className={styles.provider} key={group.name}>
+          <summary>
+            <div className={styles.providerName}>
+              <strong>{displayProvider(group.name)}</strong>
+              <small>{group.rows.length} referencias comparables · actualizado {date(latest)}</small>
+            </div>
+            <div className={styles.providerMetric}>
+              <b>{stats.min ? money.format(stats.min) : "—"} – {stats.max ? money.format(stats.max) : "—"}</b>
+              <span>rango observado</span>
+            </div>
+            <div className={styles.providerMetric}>
+              <b>{new Set(group.rows.map((row) => row.destinationLabel)).size}</b>
+              <span>destinos</span>
+            </div>
+            <span className={styles.providerChevron}>⌄</span>
+          </summary>
+          <div className={styles.providerBody}>
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>Ruta</th>
+                    <th>Peso</th>
+                    <th>Servicio</th>
+                    <th>Tarifa</th>
+                    <th>$/kg</th>
+                    <th>Mediana mercado</th>
+                    <th>Índice</th>
+                    <th>Calidad</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {group.rows.map((row, index) => {
+                    const indexValue = n(row.indexVsMarket);
+                    return <tr key={`${row.profileKey}-${row.sourceChannel || ""}-${index}`}>
+                      <td className={styles.routeCell}>
+                        <b>{row.originLabel || "—"} → {row.destinationLabel || "—"}</b>
+                        <small>{row.distanceBand || "sin distancia normalizada"}</small>
+                      </td>
+                      <td>{row.weightBand || "—"}{n(row.referenceWeightKg) ? <small> · {decimal.format(n(row.referenceWeightKg))} kg</small> : null}</td>
+                      <td>{row.serviceType || "Courier"}</td>
+                      <td className={styles.priceCell}>
+                        <strong>{n(row.medianShipmentPrice) ? money.format(n(row.medianShipmentPrice)) : "—"}</strong>
+                        <small>{nf.format(n(row.observations))} obs.</small>
+                      </td>
+                      <td>{n(row.medianPricePerKg) ? money.format(n(row.medianPricePerKg)) : "—"}</td>
+                      <td>{n(row.marketMedianShipmentPrice) ? money.format(n(row.marketMedianShipmentPrice)) : "—"}</td>
+                      <td>
+                        {indexValue
+                          ? <span className={`${styles.index} ${indexClass(indexValue)}`}>{decimal.format(indexValue)}</span>
+                          : <span className={styles.index}>—</span>}
+                      </td>
+                      <td>{confidenceLabel(row.confidence)}</td>
+                    </tr>;
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </details>;
+      })}
+    </div>;
+  };
+
+  const visibleContracts = (contextData?.recent ?? []).filter((row) => provider === "all" || row.providerGroup === provider);
 
   return <section className={styles.shell}>
     <div className={styles.hero}>
       <div>
-        <div className={styles.eyebrow}>B2B PRICE INTELLIGENCE</div>
-        <h1>Pricing B2B</h1>
-        <p>Matriz competitiva de courier para comparar el mismo envío, la misma ruta y la misma banda de peso entre operadores.</p>
+        <div className={styles.eyebrow}>COURIER & LOGISTICS INTELLIGENCE</div>
+        <h1>Pricing Courier</h1>
+        <p>Tarifas separadas por canal comercial. B2C muestra precio público; B2B separa Pyme/Emprendedores de tarifas observadas en compras públicas.</p>
       </div>
-      <div className={styles.sourceBadge}><i/> MERCADO PÚBLICO · RATE CARDS</div>
+      <div className={styles.sourceBadge}><i/> FUENTES OFICIALES · MERCADO PÚBLICO</div>
     </div>
 
     <div className={styles.toolbar}>
-      <label>Vertical<select value="courier" disabled><option>Courier & Logistics</option></select></label>
-      <label>Período<select value={days} onChange={(event) => setDays(Number(event.target.value))}><option value={90}>90 días</option><option value={180}>180 días</option><option value={365}>12 meses</option><option value={730}>24 meses</option></select></label>
-      <label>Proveedor<select value={provider} onChange={(event) => setProvider(event.target.value)}><option value="all">Todos</option>{providerOptions.map((name) => <option key={name} value={name}>{name}</option>)}</select></label>
-      <label>Peso<select value={weightBand} onChange={(event) => setWeightBand(event.target.value)}><option value="all">Todos</option>{WEIGHT_BANDS.map((value) => <option key={value}>{value}</option>)}</select></label>
-      <label>Distancia<select value={distanceBand} onChange={(event) => setDistanceBand(event.target.value)}><option value="all">Todas</option>{DISTANCE_BANDS.map((value) => <option key={value}>{value}</option>)}</select></label>
-      <button className={styles.refresh} onClick={refresh} disabled={refreshing}>{refreshing ? "Actualizando…" : "Actualizar fuentes"}</button>
+      <label>Período
+        <select value={days} onChange={(event) => setDays(Number(event.target.value))}>
+          <option value={90}>90 días</option>
+          <option value={180}>180 días</option>
+          <option value={365}>12 meses</option>
+          <option value={730}>24 meses</option>
+        </select>
+      </label>
+      <label>Operador
+        <select value={provider} onChange={(event) => setProvider(event.target.value)}>
+          <option value="all">Todos</option>
+          {providerOptions.map((name) => <option value={name} key={name}>{displayProvider(name)}</option>)}
+        </select>
+      </label>
+      <label>Destino
+        <select value={destination} onChange={(event) => setDestination(event.target.value)}>
+          <option value="all">Todos</option>
+          {destinationOptions.map((value) => <option value={value} key={value}>{value}</option>)}
+        </select>
+      </label>
+      <label>Peso
+        <select value={weightBand} onChange={(event) => setWeightBand(event.target.value)}>
+          <option value="all">Todos</option>
+          {weightOptions.map((value) => <option value={value} key={value}>{value}</option>)}
+        </select>
+      </label>
+      <button type="button" className={styles.refresh} onClick={refresh} disabled={refreshing}>
+        {refreshing ? "Actualizando…" : "Actualizar fuentes"}
+      </button>
     </div>
 
     {notice ? <div className={styles.notice}>{notice}</div> : null}
-    {loading ? <div className={styles.loading}>Cargando inteligencia B2B…</div> : null}
+    {loading ? <div className={styles.loading}>Cargando tarifas por canal…</div> : null}
 
-    {!loading && data ? <>
-      <article className={styles.normalizedCard}>
-        <header className={styles.normalizedHeader}>
-          <div><span>COURIER PRICE MATRIX</span><h2>Matriz competitiva por ruta y peso</h2><p>Las filas son perfiles homogéneos. Los couriers quedan en columnas para comparar de izquierda a derecha, sin mezclar contratos globales con tarifas unitarias.</p></div>
-          <div className={styles.logicBadge}>MISMO ENVÍO · MISMA RUTA · MISMO PESO</div>
-        </header>
+    {!loading && b2c && b2b ? <>
+      <div className={styles.summaryGrid}>
+        <article className={styles.summaryCard}>
+          <span>B2C · Tarifa pública</span>
+          <strong>{nf.format(b2cStats.rows)}</strong>
+          <small>{nf.format(b2cStats.providers)} operador(es) · {b2cStats.min ? `${money.format(b2cStats.min)} – ${money.format(b2cStats.max)}` : "sin tarifas para los filtros"}</small>
+        </article>
+        <article className={styles.summaryCard}>
+          <span>B2B · Pyme / Emprendedores</span>
+          <strong>{nf.format(pymeStats.rows)}</strong>
+          <small>{nf.format(pymeStats.providers)} operador(es) · {pymeStats.min ? `${money.format(pymeStats.min)} – ${money.format(pymeStats.max)}` : "sin tarifas para los filtros"}</small>
+        </article>
+        <article className={styles.summaryCard}>
+          <span>B2B · Mercado Público</span>
+          <strong>{nf.format(observedStats.rows)}</strong>
+          <small>{nf.format(observedStats.providers)} operador(es) · tarifas unitarias verificadas, no montos globales</small>
+        </article>
+      </div>
 
-        <div className={styles.normalizedKpis}>
-          <div><span>Tarifas comparables</span><strong>{nf.format(n(normalized.summary.comparableRows))}</strong><small>Precios normalizables</small></div>
-          <div><span>Rutas / perfiles</span><strong>{nf.format(n(normalized.summary.profiles))}</strong><small>Perfiles homogéneos</small></div>
-          <div><span>Operadores</span><strong>{nf.format(n(normalized.summary.providers))}</strong><small>Con tarifas comparables</small></div>
-          <div><span>Perfiles competitivos</span><strong>{nf.format(n(normalized.summary.competitiveProfiles))}</strong><small>2+ operadores en la misma fila</small></div>
-        </div>
-
-        <div className={matrixStyles.matrixControls}>
-          <div>
-            <span className={matrixStyles.controlLabel}>Métrica de comparación</span>
-            <div className={matrixStyles.metricTabs}>
-              {METRICS.map((metric) => <button key={metric.key} type="button" className={matrixMetric === metric.key ? matrixStyles.activeMetric : ""} onClick={() => setMatrixMetric(metric.key)}>{metric.label}</button>)}
+      <details className={styles.segment} open>
+        <summary>
+          <div className={styles.segmentTitle}>
+            <span className={`${styles.segmentIcon} ${styles.b2cIcon}`}>B2C</span>
+            <div>
+              <b>Tarifa pública / consumidor</b>
+              <span>Precio abierto, autogestionado o publicado al mercado. No se mezcla con planes Pyme ni contratos negociados.</span>
             </div>
           </div>
-          <div className={matrixStyles.matrixLegend}><span><i className={matrixStyles.belowDot}/> Bajo mercado</span><span><i className={matrixStyles.neutralDot}/> En mercado</span><span><i className={matrixStyles.aboveDot}/> Sobre mercado</span></div>
+          <div className={styles.segmentStats}>
+            <div><strong>{nf.format(b2cStats.rows)}</strong><span>tarifas</span></div>
+            <div><strong>{nf.format(b2cStats.providers)}</strong><span>operadores</span></div>
+          </div>
+          <span className={styles.chevron}>⌄</span>
+        </summary>
+        <div className={styles.segmentBody}>
+          {renderProviderList(visibleB2C, "No hay tarifas B2C públicas para estos filtros.")}
+          <div className={styles.method}><b>Qué entra aquí:</b> tarifas públicas abiertas al consumidor o al canal autogestionado. Blue Express se muestra como “B2C / Público” porque su plataforma de envío sin mínimo aplica también a persona natural.</div>
         </div>
+      </details>
 
-        <div className={matrixStyles.matrixScroller}>
-          <table className={matrixStyles.matrixTable}>
-            <thead>
-              <tr>
-                <th className={matrixStyles.routeHeader}>Ruta / perfil</th>
-                {matrixProviders.map((name) => <th key={name} className={matrixStyles.providerHeader}><b>{name}</b><span>{matrixMetric === "index" ? "Índice 100 = mercado" : METRICS.find((item) => item.key === matrixMetric)?.label}</span></th>)}
-                <th className={matrixStyles.marketHeader}><b>Mediana mercado</b><span>Perfil comparable</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {matrixRows.map((lane) => {
-                const availableValues = matrixProviders.map((name) => lane.providerRows[name] ? metricValue(lane.providerRows[name], matrixMetric) : 0).filter((value) => value > 0);
-                const minValue = availableValues.length ? Math.min(...availableValues) : 0;
-                const marketValue = marketMetricValue(lane.reference, matrixMetric);
-                return <tr key={lane.key}>
-                  <td className={matrixStyles.routeCell}>
-                    <b>{lane.originLabel} → {lane.destinationLabel}</b>
-                    <span>{lane.weightBand} · {lane.distanceBand}</span>
-                    <small>{lane.serviceType}</small>
-                  </td>
-                  {matrixProviders.map((name) => {
-                    const row = lane.providerRows[name];
-                    if (!row) return <td key={name} className={matrixStyles.emptyMatrixCell}>—<span>sin tarifa comparable</span></td>;
-                    const value = metricValue(row, matrixMetric);
-                    const gap = gapPct(row, matrixMetric);
-                    const tone = gap === null || Math.abs(gap) <= 2 ? matrixStyles.neutralCell : gap < 0 ? matrixStyles.belowCell : matrixStyles.aboveCell;
-                    const isLowest = matrixMetric !== "index" && value > 0 && value === minValue && availableValues.length > 1;
-                    return <td key={name} className={`${matrixStyles.metricCell} ${tone}`}>
-                      <strong>{formatMetric(value, matrixMetric)}</strong>
-                      <span>{gapLabel(gap)}</span>
-                      <small>{isLowest ? "MENOR TARIFA" : `${decimal.format(n(row.confidence))}% confianza`}</small>
-                    </td>;
-                  })}
-                  <td className={matrixStyles.marketCell}><strong>{formatMetric(marketValue, matrixMetric)}</strong><span>índice 100</span></td>
-                </tr>;
-              })}
-              {!matrixRows.length ? <tr><td colSpan={Math.max(2, matrixProviders.length + 2)} className={styles.empty}><b>No hay perfiles para estos filtros.</b><br/>Prueba dejando proveedor, peso o distancia en “Todos”.</td></tr> : null}
-            </tbody>
-          </table>
+      <details className={styles.segment} open>
+        <summary>
+          <div className={styles.segmentTitle}>
+            <span className={`${styles.segmentIcon} ${styles.b2bIcon}`}>B2B</span>
+            <div>
+              <b>Pyme / Emprendedores</b>
+              <span>Planes comerciales para negocios: Chilexpress Emprendedores, Blue Ecommerce y Starken Tarifa Simple / Partner.</span>
+            </div>
+          </div>
+          <div className={styles.segmentStats}>
+            <div><strong>{nf.format(pymeStats.rows)}</strong><span>tarifas</span></div>
+            <div><strong>{nf.format(pymeStats.providers)}</strong><span>operadores</span></div>
+          </div>
+          <span className={styles.chevron}>⌄</span>
+        </summary>
+        <div className={styles.segmentBody}>
+          {renderProviderList(visiblePyme, "No hay tarifas Pyme / Emprendedores para estos filtros.")}
+          <div className={styles.method}><b>Qué entra aquí:</b> tarifas publicadas para empresas, ecommerce, Pymes o emprendedores. Los descuentos derivados —por ejemplo Somos Partner— se mantienen separados del precio base.</div>
         </div>
-        <div className={styles.methodStrip}><b>Lectura:</b> cada fila es una comparación manzana-con-manzana. El color indica posición contra la mediana del mismo perfil. “Menor tarifa” identifica el precio más bajo observado en esa fila; no implica por sí solo mejor nivel de servicio.</div>
-      </article>
+      </details>
 
-      <div className={styles.kpis}>
-        <article><span>Monto observado</span><strong>{compactMoney.format(n(data.summary.marketAmount))}</strong><small>Compras públicas clasificadas como courier</small></article>
-        <article><span>Observaciones</span><strong>{nf.format(n(data.summary.observations))}</strong><small>Ítems / adjudicaciones detectadas</small></article>
-        <article><span>Proveedores</span><strong>{nf.format(n(data.summary.providers))}</strong><small>Operadores en Mercado Público</small></article>
-        <article><span>Compradores</span><strong>{nf.format(n(data.summary.buyers))}</strong><small>Organismos públicos distintos</small></article>
-        <article><span>Precio unitario mediano</span><strong>{n(data.summary.medianUnitPrice) > 0 ? money.format(n(data.summary.medianUnitPrice)) : "—"}</strong><small>Contexto; no implica tarifa por envío</small></article>
+      <details className={styles.segment}>
+        <summary>
+          <div className={styles.segmentTitle}>
+            <span className={`${styles.segmentIcon} ${styles.marketIcon}`}>MP</span>
+            <div>
+              <b>B2B observado · Mercado Público</b>
+              <span>Tarifas unitarias extraídas de ofertas, anexos u órdenes públicas; nunca presupuestos globales convertidos artificialmente.</span>
+            </div>
+          </div>
+          <div className={styles.segmentStats}>
+            <div><strong>{nf.format(observedStats.rows)}</strong><span>tarifas</span></div>
+            <div><strong>{nf.format(observedStats.providers)}</strong><span>operadores</span></div>
+          </div>
+          <span className={styles.chevron}>⌄</span>
+        </summary>
+        <div className={styles.segmentBody}>
+          {renderProviderList(visibleObserved, "Todavía no hay tarifas unitarias B2B verificadas para estos filtros.")}
+          <div className={styles.method}><b>Criterio:</b> solo se acepta una tarifa cuando la evidencia permite identificar un precio unitario comparable. Monto total de contrato, presupuesto o garantía no se transforma en precio por envío.</div>
+        </div>
+      </details>
+
+      <details className={styles.context}>
+        <summary>Contexto de Mercado Público y contratos ▾</summary>
+        <div className={styles.contextBody}>
+          <div className={styles.contextKpis}>
+            <div><span>Monto observado</span><strong>{compactMoney.format(n(contextData?.summary.marketAmount))}</strong></div>
+            <div><span>Observaciones</span><strong>{nf.format(n(contextData?.summary.observations))}</strong></div>
+            <div><span>Proveedores</span><strong>{nf.format(n(contextData?.summary.providers))}</strong></div>
+            <div><span>Compradores</span><strong>{nf.format(n(contextData?.summary.buyers))}</strong></div>
+          </div>
+          <div className={styles.contractWrap}>
+            <table className={styles.contractTable}>
+              <thead><tr><th>Fecha</th><th>Proveedor</th><th>Comprador</th><th>Servicio</th><th>Descripción</th><th>Precio unit.</th><th>Monto</th><th>Proceso</th></tr></thead>
+              <tbody>
+                {visibleContracts.map((row) => <tr key={row.id}>
+                  <td>{date(row.processDate)}</td>
+                  <td><b>{row.providerGroup}</b></td>
+                  <td>{row.buyerName || "—"}</td>
+                  <td>{row.serviceType || "—"}</td>
+                  <td>{row.description || "—"}</td>
+                  <td>{n(row.unitPriceClp) ? money.format(n(row.unitPriceClp)) : "—"}</td>
+                  <td>{n(row.totalAmountClp) ? money.format(n(row.totalAmountClp)) : "—"}</td>
+                  <td>{row.sourceUrl ? <a href={row.sourceUrl} target="_blank" rel="noreferrer">{sourceKind(row.sourceKind)} ↗</a> : sourceKind(row.sourceKind)}</td>
+                </tr>)}
+                {!visibleContracts.length ? <tr><td colSpan={8} className={styles.empty}>Sin contratos para los filtros seleccionados.</td></tr> : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </details>
+
+      <details className={styles.profitability}>
+        <summary>Simulador de rentabilidad ▾</summary>
+        <div className={styles.profitabilityBody}><B2BProfitabilitySimulator/></div>
+      </details>
+
+      <div className={styles.footnote}>
+        Clasificación comercial: B2C = tarifa pública/consumidor; B2B = Pyme/Emprendedores + B2B observado en Mercado Público. Última ingestión: {date(contextData?.summary.lastIngestedAt)}.
       </div>
-
-      <div className={styles.grid}>
-        <article className={styles.card}>
-          <header><div><span>MARKET CONTEXT</span><h2>Participación por monto observado</h2></div><small>Último dato {date(data.summary.latestDate)}</small></header>
-          <div className={styles.providerBars}>{providers.length ? providers.map((item) => <div className={styles.providerRow} key={item.providerGroup}>
-            <div className={styles.providerHead}><strong>{item.providerGroup}</strong><span>{n(item.sharePct).toFixed(1)}%</span></div>
-            <div className={styles.track}><i style={{ width: `${Math.max(2, n(item.sharePct) / maxShare * 100)}%` }}/></div>
-            <div className={styles.providerMeta}><span>{compactMoney.format(n(item.amount))}</span><span>{nf.format(n(item.observations))} obs.</span><span>{nf.format(n(item.buyers))} compradores</span></div>
-          </div>) : <div className={styles.empty}>Aún no hay observaciones cargadas. Usa “Actualizar fuentes”.</div>}</div>
-        </article>
-
-        <article className={styles.card}>
-          <header><div><span>DATA QUALITY</span><h2>Qué entra al benchmark</h2></div></header>
-          <div className={styles.services}>{(data.services ?? []).slice(0, 8).map((item) => <div key={item.serviceType}><strong>{item.serviceType}</strong><span>{nf.format(n(item.observations))} obs.</span><b>{compactMoney.format(n(item.amount))}</b></div>)}</div>
-          <div className={styles.method}><strong>Regla de comparabilidad</strong><p>Una adjudicación global puede mostrar quién ganó, pero no cuánto cuesta un envío. La matriz solo usa tarifas con una base comparable de ruta, peso y precio.</p></div>
-        </article>
-      </div>
-
-      <article className={styles.tableCard}>
-        <header><div><span>PUBLIC B2B MARKET</span><h2>Detalle de contratos y órdenes</h2></div><small>{rows.length} registros visibles</small></header>
-        <div className={styles.tableWrap}><table><thead><tr><th>Fecha</th><th>Proveedor</th><th>Comprador</th><th>Servicio</th><th>Descripción</th><th>Precio unit.</th><th>Monto</th><th>Proceso</th></tr></thead><tbody>
-          {rows.map((row) => <tr key={row.id}><td>{date(row.processDate)}</td><td><b>{row.providerGroup}</b></td><td>{row.buyerName || "—"}</td><td>{row.serviceType || "—"}</td><td className={styles.description}>{row.description || "—"}</td><td>{n(row.unitPriceClp) > 0 ? money.format(n(row.unitPriceClp)) : "—"}</td><td>{n(row.totalAmountClp) > 0 ? money.format(n(row.totalAmountClp)) : "—"}</td><td>{row.sourceUrl ? <a href={row.sourceUrl} target="_blank" rel="noreferrer">{sourceKind(row.sourceKind)} ↗</a> : sourceKind(row.sourceKind)}</td></tr>)}
-          {!rows.length ? <tr><td colSpan={8} className={styles.empty}>Sin observaciones para los filtros seleccionados.</td></tr> : null}
-        </tbody></table></div>
-      </article>
-
-      <div className={styles.footnote}>Fuente: Mercado Público / ChileCompra y tarifarios públicos normalizados. La matriz separa tarifas comparables de contratos agregados y no representa contratos privados no publicados. Última ingestión: {date(data.summary.lastIngestedAt)}.</div>
     </> : null}
   </section>;
 }

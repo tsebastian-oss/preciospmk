@@ -3,6 +3,11 @@ import fs from "node:fs";
 const path = "src/app/B2BPricing.tsx";
 let source = fs.readFileSync(path, "utf8");
 
+if (source.includes("COURIER_SEGMENTED_ACCORDION_V1")) {
+  console.log("Segmented Courier & Logistics UI detected; legacy source-layer patch skipped");
+  process.exit(0);
+}
+
 if (source.includes('import ChilexpressMarketPanel from "./ChilexpressMarketPanel";')) {
   console.log("Dedicated Courier & Logistics workspace detected; generic B2B source-layer patch skipped");
   process.exit(0);
