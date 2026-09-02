@@ -562,22 +562,29 @@ async function searchChilexpressDirect(workerToken:string){
   }));
   const rates:any[]=[];
   const diagnostics:string[]=[];
-  for(let i=0;i<profiles.length;i+=4){
-    const batch=profiles.slice(i,i+4);
+  for(let i=0;i<profiles.length;i+=2){
+    const batch=profiles.slice(i,i+2);
     const settled=await Promise.all(batch.map(async item=>{
-      try{
-        const response=await fetch("https://preciospmk.vercel.app/api/internal/chilexpress-smart-quote",{
-          method:"POST",
-          headers:{"content-type":"application/json","x-chilexpress-worker-token":workerToken},
-          body:JSON.stringify({quote:item.quote,connectorEndpoint}),
-          signal:AbortSignal.timeout(55_000)
-        });
-        const payload=await response.json().catch(()=>({}));
-        if(!response.ok)return {destination:item.destination,ok:false,error:String(payload?.error||("http_"+response.status))};
-        return {destination:item.destination,ok:true,payload};
-      }catch(error){
-        return {destination:item.destination,ok:false,error:error instanceof Error?error.message:String(error)};
+      let lastError="quote_failed";
+      for(let attempt=1;attempt<=2;attempt++){
+        try{
+          const response=await fetch("https://preciospmk.vercel.app/api/internal/chilexpress-smart-quote",{
+            method:"POST",
+            headers:{"content-type":"application/json","x-chilexpress-worker-token":workerToken},
+            body:JSON.stringify({quote:item.quote,connectorEndpoint}),
+            signal:AbortSignal.timeout(60_000)
+          });
+          const payload=await response.json().catch(()=>({}));
+          if(response.ok&&Array.isArray(payload?.alternatives)&&payload.alternatives.length){
+            return {destination:item.destination,ok:true,payload};
+          }
+          lastError=String(payload?.error||("http_"+response.status));
+        }catch(error){
+          lastError=error instanceof Error?error.message:String(error);
+        }
+        if(attempt<2)await new Promise(resolve=>setTimeout(resolve,1200));
       }
+      return {destination:item.destination,ok:false,error:lastError};
     }));
     for(const item of settled){
       if(!item.ok){
