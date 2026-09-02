@@ -41,6 +41,9 @@ const BLUE_PYME_URL="https://www.blue.cl/docs/enviar/tarifario-pyme.pdf";
 const BLUE_ECOMMERCE_URL="https://cdn.blue.cl/clientes/1bluex/tarifa-segmento-shopify-api.pdf";
 const BLUE_CONSUMER_PAGE="https://www.blue.cl/nosotros/registro-eventos";
 const BLUE_ECOMMERCE_PAGE="https://www.blue.cl/empresas/soluciones-ecommerce";
+const CORREOS_PUBLIC_RESOLUTION_URL="https://www.correos.cl/documents/51021813/51024715/resolucion-exentaN%C2%B0027.pdf/5c41b3c4-691b-e6c2-3317-23fbbfb9c45b?t=1745868074366";
+const CORREOS_ALIADOS_URL="https://www.correos.cl/home-aliados";
+const CORREOS_ALIADOS_PLAN_URL="https://www.correos.cl/aliados-planes";
 const BLUE_CITY_META:Record<string,{region:string;routeClass:"same"|"center"|"extreme"}>={
   "Santiago Centro":{region:"Metropolitana de Santiago",routeClass:"same"},
   "Rancagua":{region:"O’Higgins",routeClass:"center"},
@@ -86,6 +89,23 @@ const BLUE_ECOMMERCE_RATES:Record<string,{home:number[];point:number[]}>={
   "Los Ríos":{home:[5300,6100,8300,10000,14200],point:[4500,5300,7500,9200,13400]},
   "Los Lagos":{home:[5300,6100,8300,10000,14200],point:[4500,5300,7500,9200,13400]}
 };
+const CORREOS_EXPRESS_AM=[
+  {zone:"INTRA",weightKg:0.5,weightBand:"0–0,5 kg",priceClp:4500},
+  {zone:"INTRA",weightKg:3,weightBand:"1,51–3 kg",priceClp:6000},
+  {zone:"INTRA",weightKg:6,weightBand:"3,1–6 kg",priceClp:7200},
+  {zone:"CERCA",weightKg:0.5,weightBand:"0–0,5 kg",priceClp:6000},
+  {zone:"CERCA",weightKg:3,weightBand:"1,51–3 kg",priceClp:7500},
+  {zone:"CERCA",weightKg:6,weightBand:"3,1–6 kg",priceClp:11000},
+  {zone:"LEJOS",weightKg:0.5,weightBand:"0–0,5 kg",priceClp:18800},
+  {zone:"LEJOS",weightKg:3,weightBand:"1,51–3 kg",priceClp:28500},
+  {zone:"LEJOS",weightKg:6,weightBand:"3,1–6 kg",priceClp:42000}
+] as const;
+const CORREOS_ALIADOS_TIERS=[
+  {name:"Bronce",discountPct:10,volume:"Nuevo emprendedor"},
+  {name:"Crecimiento",discountPct:15,volume:"20–49 envíos/mes"},
+  {name:"Consolidado",discountPct:20,volume:"50–99 envíos/mes"},
+  {name:"Gran volumen",discountPct:25,volume:"100+ envíos/mes"}
+] as const;
 
 function clean(v:string){return String(v??"").replace(/[\u0000-\u001f\u007f]/g,"").trim()}
 function canonicalDestination(v:string){
@@ -109,7 +129,7 @@ function canonicalDestination(v:string){
 function sourceEvidenceValid(key:ProviderKey,x:any){
   const ev=clean(x?.evidence||""),url=clean(x?.source_url||""),fresh=clean(x?.source_freshness||"");
   if(!/\$\s*[0-9]/.test(ev))return false;
-  if(key==="correos")return /\.pdf(?:$|[?#])/i.test(url)&&/2026/.test(fresh);
+  if(key==="correos")return /correos\.cl\/(?:documents\/|home-aliados|aliados-planes)/i.test(url)&&/2026/.test(fresh);
   return true;
 }
 function hostOk(key:ProviderKey,url:string){try{const h=new URL(url).hostname.toLowerCase().replace(/^www\./,"");return PROVIDERS[key].domains.some(d=>h===d||h.endsWith("."+d));}catch{return false}}
@@ -125,6 +145,62 @@ function matrixProfileKey(service:string,origin:string,destination:string,w:numb
   if(w&&w>0)parts.push("Ref "+String(w).replace(".",",")+" kg");
   else parts.push(matrixWeightBand(w));
   return parts.join(" | ");
+}
+
+async function searchCorreosPublished(){
+  const day=new Date().toISOString().slice(0,10);
+  const rates:any[]=[];
+  for(const base of CORREOS_EXPRESS_AM){
+    rates.push({
+      provider_name:"Empresa de Correos de Chile",
+      provider_group:"CorreosChile B2C / Público",
+      origin:"Zona tarifaria CorreosChile",
+      destination:`Zona ${base.zone}`,
+      weight_kg:base.weightKg,
+      weight_band:base.weightBand,
+      service_type:"Paquete Domicilio Express AM",
+      delivery_type:"DOMICILIO",
+      unit_price_clp:base.priceClp,
+      source_url:CORREOS_PUBLIC_RESOLUTION_URL,
+      evidence:`Resolución Exenta N°27 CorreosChile: zona ${base.zone}, ${base.weightBand}, tarifa $ ${base.priceClp.toLocaleString("es-CL")} exenta de IVA.`,
+      rate_explicit:true,
+      normalization_method:"official_resolution_tariff_zone_exact",
+      source_freshness:day,
+      confidence:100,
+      metadata:{segment:"B2C / Público",tariffZone:base.zone,weightRateBand:base.weightBand,ivaIncluded:false,taxTreatment:"Exenta de IVA",resolutionDate:"2025-04-25",comparabilityNote:"Zona tarifaria oficial; no se transforma a ciudad/ruta sin evidencia oficial."}
+    });
+    for(const tier of CORREOS_ALIADOS_TIERS){
+      const price=Math.round(base.priceClp*(1-tier.discountPct/100));
+      rates.push({
+        provider_name:"Empresa de Correos de Chile",
+        provider_group:`CorreosChile Aliados ${tier.name} ${tier.discountPct}%`,
+        origin:"Zona tarifaria CorreosChile",
+        destination:`Zona ${base.zone}`,
+        weight_kg:base.weightKg,
+        weight_band:base.weightBand,
+        service_type:"Paquete Domicilio Express AM",
+        delivery_type:"DOMICILIO",
+        unit_price_clp:price,
+        source_url:CORREOS_ALIADOS_URL,
+        evidence:`CorreosChile Aliados ${tier.name}: ${tier.discountPct}% sobre tarifa oficial zona ${base.zone}, ${base.weightBand}; precio derivado $ ${price.toLocaleString("es-CL")}.`,
+        rate_explicit:true,
+        normalization_method:"official_resolution_base+published_aliados_discount",
+        source_freshness:day,
+        confidence:95,
+        metadata:{segment:"Pyme / Emprendedores",tariffZone:base.zone,weightRateBand:base.weightBand,basePriceClp:base.priceClp,discountPct:tier.discountPct,monthlyShipments:tier.volume,aliadosPlanUrl:CORREOS_ALIADOS_PLAN_URL,ivaIncluded:false,taxTreatment:"Exenta de IVA",comparabilityNote:"Precio derivado aplicando descuento Aliados publicado sobre tarifa base oficial."}
+      });
+    }
+  }
+  return {
+    rates,
+    notes:[
+      "CorreosChile B2C: Resolución Exenta N°27, Paquete Domicilio Express AM por zonas INTRA/CERCA/LEJOS.",
+      "CorreosChile Aliados: 10% nuevo emprendedor, 15% 20–49 envíos, 20% 50–99, 25% 100+."
+    ],
+    coverage_summary:`CorreosChile: ${rates.length} referencias B2C y Aliados por zona/peso.`,
+    backend:"correos_official_resolution_and_aliados",
+    connectorConfigured:true
+  };
 }
 
 async function searchBluePublished(){
@@ -300,6 +376,51 @@ async function searchStarkenTarifaSimple(workerToken:string){
     backend:"starken_tarifa_simple_browser_chile",
     connectorConfigured:true
   };
+}
+
+async function mirrorCorreosToMatrix(rows:any[]){
+  const comparable=rows.filter((row:any)=>String(row?.provider_group||"").startsWith("CorreosChile")).map((row:any)=>{
+    const w=Number(row.weight_kg)>0?Number(row.weight_kg):null;
+    const service=String(row.service_type||"Courier");
+    const origin=String(row.origin_label||"Zona tarifaria CorreosChile");
+    const destination=String(row.destination_label||"");
+    const price=Number(row.shipment_price_clp)||0;
+    const providerGroup=String(row.provider_group||"CorreosChile");
+    const source=providerGroup==="CorreosChile B2C / Público"?"correos_persona_express_am":"correos_aliados";
+    const sourceUrl=providerGroup==="CorreosChile B2C / Público"?CORREOS_PUBLIC_RESOLUTION_URL:CORREOS_ALIADOS_URL;
+    return {
+      source_record_id:"cxmirror:"+String(row.source_record_id),
+      source,
+      source_kind:"published_commercial_rate",
+      source_url:sourceUrl,
+      category:"courier",
+      provider_name:String(row.provider_name||"Empresa de Correos de Chile"),
+      provider_group:providerGroup,
+      buyer_name:null,
+      service_type:service,
+      origin_label:origin,
+      destination_label:destination,
+      weight_kg:w,
+      distance_km:null,
+      shipment_price_clp:price,
+      price_per_kg_clp:w&&w>0?price/w:null,
+      price_per_km_clp:null,
+      price_per_kg_km_clp:null,
+      weight_band:String(row.weight_band||matrixWeightBand(w)),
+      distance_band:"Sin distancia",
+      profile_key:matrixProfileKey(service,origin,destination,w),
+      comparability_level:w&&w>0?"weight":"none",
+      confidence:Number(row.confidence)||95,
+      normalization_method:String(row?.metadata?.normalizationMethod||"official_resolution_tariff_zone_exact"),
+      process_date:String(row.observed_at||new Date().toISOString()).slice(0,10),
+      metadata:{...(row.metadata||{}),mirroredFrom:"chilexpress_b2c_rates",sourceLayer:"published commercial rate"},
+      updated_at:new Date().toISOString()
+    };
+  }).filter((row:any)=>row.shipment_price_clp>0&&row.destination_label&&row.comparability_level!=="none");
+  if(!comparable.length)return 0;
+  const up=await sb.from("b2b_rate_comparables").upsert(comparable,{onConflict:"source_record_id"});
+  if(up.error)throw new Error("correos_matrix_mirror:"+up.error.message);
+  return comparable.length;
 }
 
 async function mirrorStarkenToMatrix(rows:any[]){
@@ -491,6 +612,9 @@ Deno.serve(async(req:Request)=>{
     }else if(key==="blue"){
       result=await searchBluePublished();
       m=String(result?.backend||"direct");
+    }else if(key==="correos"){
+      result=await searchCorreosPublished();
+      m=String(result?.backend||"direct");
     }else{
       const cfg=await runtime();if(!cfg.enabled||!cfg.api_key)throw new Error("ai_runtime_unavailable");
       m=await model(cfg.api_key,cfg.model);
@@ -524,6 +648,7 @@ Deno.serve(async(req:Request)=>{
       if(up.error)throw new Error(up.error.message);
       inserted=rows.length;
       if(key==="starken")matrixMirrored=await mirrorStarkenToMatrix(rows);
+      if(key==="correos")matrixMirrored=await mirrorCorreosToMatrix(rows);
     }
     const status=inserted>0?"ok":"partial";
     const noDataError=key==="starken"&&result?.connectorConfigured===false
