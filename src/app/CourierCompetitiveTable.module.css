@@ -185,3 +185,17 @@
 .aiRichList li{position:relative;padding:8px 10px 8px 24px;border:1px solid #22313d;background:#0d161e;border-radius:9px;color:#cbd8e1;font-size:10px;line-height:1.5}
 .aiRichList li:before{content:"";position:absolute;left:10px;top:13px;width:6px;height:6px;border-radius:50%;background:#7dd3a8}
 .aiAssistantMessage{width:min(900px,92%)}
+
+
+/* Plain-text copilot response */
+.aiAssistantMessage{width:min(900px,92%)}
+.aiAssistantMessage p{
+  margin:0;
+  white-space:pre-wrap;
+  color:#dbe5ec;
+  font-size:12px;
+  line-height:1.75;
+  letter-spacing:0;
+  text-transform:none;
+  font-weight:500;
+}
