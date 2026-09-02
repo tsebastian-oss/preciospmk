@@ -377,7 +377,7 @@ export default function B2BPricing() {
       <article className={styles.card}>
         <header className={styles.cardHeader}>
           <div>
-            <span>{layer === "b2c" ? "B2C · TARIFA PÚBLICA" : `B2B · ${channel.toUpperCase()}`}</span>
+            <span>{`B2B · ${channel.toUpperCase()}`}</span>
             <h2>{competitiveRows[0] ? profileLabel(competitiveRows[0]) : "Sin perfil comparable"}</h2>
             <p>Premium positivo = más caro que el benchmark. Índice 100 = mediana del mercado.</p>
           </div>
@@ -452,7 +452,7 @@ export default function B2BPricing() {
         <div className={styles.correosBody}>
           <div className={styles.correosIntro}>
             <article>
-              <span>{layer === "b2c" ? "Tarifa pública" : channel === "Pyme / Emprendedores" ? "Aliados / Emprendedores" : "B2B observado"}</span>
+              <span>{channel === "Pyme / Emprendedores" ? "Aliados / Emprendedores" : "B2B observado"}</span>
               <strong>{nf.format(correosRows.length)} referencias</strong>
               <small>{correosPrices.length ? `${money.format(Math.min(...correosPrices))} – ${money.format(Math.max(...correosPrices))}` : "sin precios para este filtro"}</small>
             </article>
