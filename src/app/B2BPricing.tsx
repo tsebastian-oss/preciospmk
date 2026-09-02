@@ -4,6 +4,7 @@
 // COURIER_COMPETITIVE_TABLE_V1
 import { useCallback, useEffect, useMemo, useState } from "react";
 import B2BProfitabilitySimulator from "./B2BProfitabilitySimulator";
+import B2CRegionalPricing from "./B2CRegionalPricing";
 import styles from "./CourierCompetitiveTable.module.css";
 
 type Layer = "b2c" | "b2b";
@@ -143,6 +144,12 @@ export default function B2BPricing() {
   const [notice, setNotice] = useState("");
 
   const load = useCallback(async () => {
+    if (layer === "b2c") {
+      setLoading(false);
+      setPayload(null);
+      setNotice("");
+      return;
+    }
     setLoading(true);
     try {
       const response = await fetch(
@@ -303,6 +310,7 @@ export default function B2BPricing() {
       </button>
     </div>
 
+    {layer === "b2c" ? <B2CRegionalPricing/> : <>
     <div className={styles.filters}>
       {layer === "b2b" ? <label>Fuente B2B
         <select value={channel} onChange={(event) => setChannel(event.target.value as B2BChannel)}>
@@ -491,5 +499,6 @@ export default function B2BPricing() {
         Los premiums solo se calculan dentro del perfil seleccionado. La tarifa pública CorreosChile Express AM se conserva por zona oficial INTRA/CERCA/LEJOS y no se fuerza a una ciudad específica; los planes Aliados se derivan únicamente de descuentos publicados sobre esa base.
       </div>
     </> : null}
+    </>}
   </section>;
 }
