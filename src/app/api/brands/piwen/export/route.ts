@@ -1,12 +1,44 @@
 import { NextRequest, NextResponse } from "next/server";
 import { brandScopeAllows, enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
-import { clickHouseConfigured } from "@/lib/clickhouse";
-import { piwenHistoryIntelligence } from "@/lib/piwen-history";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+export const maxDuration = 60;
 
 const FAMILIES = ["Almendras", "Castañas de cajú", "Pistachos"] as const;
+const HISTORY_PAGE_SIZE = 4000;
+const MAX_HISTORY_PAGES = 100;
+
+type GranularHistoryRow = {
+  sourceKey?: string | null;
+  sourceType?: string | null;
+  channel?: string | null;
+  observationId?: string | null;
+  runId?: string | null;
+  runStartedAt?: string | null;
+  runFinishedAt?: string | null;
+  runStatus?: string | null;
+  triggerType?: string | null;
+  observedAt?: string | null;
+  productId?: string | null;
+  sourceProductKey?: string | null;
+  retailer?: string | null;
+  brand?: string | null;
+  seller?: string | null;
+  product?: string | null;
+  family?: string | null;
+  grams?: number | string | null;
+  regularPrice?: number | string | null;
+  offerPrice?: number | string | null;
+  currentPrice?: number | string | null;
+  capturedUnit?: string | null;
+  capturedUnitPrice?: number | string | null;
+  pricePerKg?: number | string | null;
+  promotionPct?: number | string | null;
+  inStock?: boolean | null;
+  directComparable?: boolean | null;
+  url?: string | null;
+};
 
 function csvCell(value: unknown) {
   const text = value == null ? "" : String(value);
@@ -14,8 +46,9 @@ function csvCell(value: unknown) {
 }
 
 function csv(headers: string[], rows: unknown[][]) {
-  return "\uFEFFsep=,\r\n" +
-    [headers, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n");
+  const head = "\uFEFFsep=,\r\n" + headers.map(csvCell).join(",");
+  const body = rows.map((row) => row.map(csvCell).join(",")).join("\r\n");
+  return body ? head + "\r\n" + body : head;
 }
 
 function safeFamily(value: string | null) {
@@ -31,41 +64,120 @@ function slug(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
+async function granularHistory(request: NextRequest, family: string | null) {
+  const rows: GranularHistoryRow[] = [];
+
+  for (let page = 0; page < MAX_HISTORY_PAGES; page += 1) {
+    const offset = page * HISTORY_PAGE_SIZE;
+    const result = await enterpriseRpc<{ rows?: GranularHistoryRow[] }>(
+      request,
+      "brands_piwen_granular_history_page",
+      {
+        p_slug: "piwen",
+        p_offset: offset,
+        p_limit: HISTORY_PAGE_SIZE,
+        p_family: family,
+      },
+    );
+    if (result.response) return { response: result.response };
+
+    const batch = result.data?.rows ?? [];
+    rows.push(...batch);
+    if (batch.length < HISTORY_PAGE_SIZE) break;
+
+    if (page === MAX_HISTORY_PAGES - 1) {
+      throw new Error("piwen_history_export_limit");
+    }
+  }
+
+  return { rows };
+}
+
 export async function GET(request: NextRequest) {
   const authorization = await enterpriseAccess(request, "brand-panel");
   if (authorization.response) return authorization.response;
   if (!authorization.access || !brandScopeAllows(authorization.access, "piwen")) {
     return NextResponse.json({ error: "Piwén no está habilitado para esta cuenta." }, { status: 403 });
   }
+
   const mode = request.nextUrl.searchParams.get("mode") === "history" ? "history" : "current";
   const family = safeFamily(request.nextUrl.searchParams.get("family"));
   const today = new Date().toISOString().slice(0, 10);
 
   try {
     if (mode === "history") {
-      if (!clickHouseConfigured()) {
-        return NextResponse.json({ error: "ClickHouse no está disponible para el histórico." }, { status: 503 });
-      }
-      const payload = await piwenHistoryIntelligence(authorization.access);
-      const points = family ? payload.points.filter((point) => point.family === family) : payload.points;
+      const historyResult = await granularHistory(request, family);
+      if (historyResult.response) return historyResult.response;
+
+      const rows = historyResult.rows ?? [];
       const body = csv(
-        ["Fecha", "Marca", "Familia", "Precio por kg", "SKU considerados", "Retailers", "Fuente"],
-        points.map((point) => [
-          point.date,
-          point.brand,
-          point.family,
-          point.pricePerKg,
-          point.skuCount,
-          point.retailers,
-          point.source === "market_census" ? "Censo histórico supermercados" : "Referencia pública Piwén",
+        [
+          "ID corrida",
+          "Inicio corrida",
+          "Fin corrida",
+          "Estado corrida",
+          "Tipo corrida",
+          "Fecha observacion",
+          "Fuente",
+          "Canal",
+          "Marca",
+          "Retailer",
+          "Seller",
+          "Producto",
+          "Familia",
+          "SKU fuente",
+          "ID producto",
+          "Gramos",
+          "Precio actual",
+          "Precio regular",
+          "Precio oferta",
+          "Precio por kg",
+          "Unidad capturada",
+          "Precio unitario capturado",
+          "Promocion %",
+          "Stock",
+          "Comparable directo",
+          "URL",
+          "ID observacion",
+        ],
+        rows.map((row) => [
+          row.runId,
+          row.runStartedAt,
+          row.runFinishedAt,
+          row.runStatus,
+          row.triggerType,
+          row.observedAt,
+          row.sourceType,
+          row.channel,
+          row.brand,
+          row.retailer,
+          row.seller,
+          row.product,
+          row.family,
+          row.sourceProductKey,
+          row.productId,
+          row.grams,
+          row.currentPrice,
+          row.regularPrice,
+          row.offerPrice,
+          row.pricePerKg,
+          row.capturedUnit,
+          row.capturedUnitPrice,
+          row.promotionPct,
+          row.inStock === true ? "Disponible" : row.inStock === false ? "Sin stock" : "Sin confirmar",
+          row.directComparable === true ? "Sí" : row.directComparable === false ? "No" : "",
+          row.url,
+          row.observationId,
         ]),
       );
+
       const familySuffix = family ? "-" + slug(family) : "-completo";
       return new NextResponse(body, {
         headers: {
           "content-type": "text/csv; charset=utf-8",
-          "content-disposition": `attachment; filename="piwen-historico${familySuffix}-${today}.csv"`,
+          "content-disposition": `attachment; filename="piwen-historico-granular${familySuffix}-${today}.csv"`,
           "cache-control": "private, no-store",
+          "x-piwen-export-rows": String(rows.length),
         },
       });
     }
