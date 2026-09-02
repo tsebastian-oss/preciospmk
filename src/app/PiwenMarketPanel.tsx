@@ -81,7 +81,7 @@ type MarketplaceSnapshot = {
   products: number;
   pricedProducts: number;
   inStockProducts: number;
-  brands: number;
+  brands?: number;
   listings: MarketplaceListing[];
 };
 
@@ -100,6 +100,7 @@ type Payload = {
   insights: string[];
   note: string;
   marketplace?: MarketplaceSnapshot | null;
+  official?: MarketplaceSnapshot | null;
   error?: string;
 };
 
@@ -241,9 +242,9 @@ export default function PiwenMarketPanel() {
         <p>Lectura de mercado normalizada por <strong>marca, producto y formato</strong>, usando precio por kilo para comparar packs distintos.</p>
       </div>
       <div className={styles.liveBox}>
-        <span><i/> CLICKHOUSE LIVE</span>
-        <strong>{payload.scope.retailers.join(" · ")}</strong>
-        <small>Última observación {date(payload.lastObservedAt)}</small>
+        <span><i/> PIWÉN + MERCADO</span>
+        <strong>Última medición Piwén {date(payload.official?.lastCrawledAt ?? payload.official?.observedAt)}</strong>
+        <small>Mercado competitivo {date(payload.lastObservedAt)} · próxima corrida Piwén: martes 06:35</small>
       </div>
     </header>
 
