@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { gzipSync } from "node:zlib";
 import { brandScopeAllows, enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
 
 export const dynamic = "force-dynamic";
@@ -6,7 +7,7 @@ export const revalidate = 0;
 export const maxDuration = 60;
 
 const FAMILIES = ["Almendras", "Castañas de cajú", "Pistachos"] as const;
-const HISTORY_PAGE_SIZE = 4000;
+const HISTORY_PAGE_SIZE = 5000;
 const MAX_HISTORY_PAGES = 100;
 
 type GranularHistoryRow = {
@@ -172,12 +173,15 @@ export async function GET(request: NextRequest) {
       );
 
       const familySuffix = family ? "-" + slug(family) : "-completo";
-      return new NextResponse(body, {
+      const compressed = gzipSync(Buffer.from(body, "utf8"), { level: 6 });
+      return new NextResponse(new Uint8Array(compressed), {
         headers: {
           "content-type": "text/csv; charset=utf-8",
+          "content-encoding": "gzip",
           "content-disposition": `attachment; filename="piwen-historico-granular${familySuffix}-${today}.csv"`,
           "cache-control": "private, no-store",
           "x-piwen-export-rows": String(rows.length),
+          "vary": "accept-encoding",
         },
       });
     }
