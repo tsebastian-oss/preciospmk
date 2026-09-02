@@ -290,6 +290,27 @@ async function runBrowser(input: QuoteInput, browserWs: string) {
     }
     alternatives = [...unique.values()].sort((a, b) => a.priceClp - b.priceClp);
 
+    const formDiagnostics = await page.locator("select, ng-select, .ng-select, [role=combobox], input").evaluateAll((nodes) =>
+      nodes.slice(0, 30).map((el: any) => ({
+        tag: el.tagName,
+        id: el.id || "",
+        cls: el.className || "",
+        role: el.getAttribute?.("role") || "",
+        value: el.value ?? "",
+        text: String(el.innerText || el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 180),
+        html: String(el.outerHTML || "").replace(/\s+/g, " ").slice(0, 450),
+      })),
+    ).catch(() => []);
+
+    const otherMatches = await page.getByText("OTROS", { exact: true }).evaluateAll((nodes) =>
+      nodes.slice(0, 10).map((el: any) => ({
+        tag: el.tagName,
+        cls: el.className || "",
+        text: String(el.innerText || el.textContent || "").trim(),
+        html: String(el.outerHTML || "").replace(/\s+/g, " ").slice(0, 450),
+      })),
+    ).catch(() => []);
+
     return {
       backend: "brightdata_browser_ui_chilexpress",
       url: page.url(),
@@ -298,7 +319,9 @@ async function runBrowser(input: QuoteInput, browserWs: string) {
         capturedResponses: captured.length,
         responseUrls: [...new Set(urls)].slice(0, 12),
         inputCount,
-        bodyPreview: body.replace(/\s+/g, " ").slice(0, 800),
+        formDiagnostics,
+        otherMatches,
+        bodyPreview: body.replace(/\s+/g, " ").slice(0, 1200),
       },
     };
   } finally {
