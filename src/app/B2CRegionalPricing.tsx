@@ -42,7 +42,8 @@ type Payload = {
   notes?: string[];
 };
 
-const PROVIDERS = ["Chilexpress", "Starken", "Blue Express", "CorreosChile"] as const;\nconst providerLabel = (provider: string) => provider === "Chilexpress" ? "Chilexpress · Estándar" : provider;
+const PROVIDERS = ["Chilexpress", "Starken", "Blue Express", "CorreosChile"] as const;
+const providerLabel = (provider: string) => provider === "Chilexpress" ? "Chilexpress · Estándar" : provider;
 const money = new Intl.NumberFormat("es-CL", {
   style: "currency",
   currency: "CLP",
