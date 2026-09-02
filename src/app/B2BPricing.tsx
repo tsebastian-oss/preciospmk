@@ -4,10 +4,10 @@
 // COURIER_COMPETITIVE_TABLE_V1
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import B2CRegionalPricing from "./B2CRegionalPricing";
+import B2BProfitabilitySimulator from "./B2BProfitabilitySimulator";
 import styles from "./CourierCompetitiveTable.module.css";
 
-type Layer = "b2c" | "b2b";
+type Layer = "simulator" | "b2b";
 type Numeric = number | string | null;
 type MacroZone = "Norte" | "Centro" | "Sur";
 
@@ -429,9 +429,9 @@ export default function B2BPricing() {
     </div>
 
     <div className={styles.segmentTabs}>
-      <button type="button" className={layer === "b2c" ? styles.active : ""} onClick={() => setLayer("b2c")}>
-        B2C
-        <span>Tarifa pública / consumidor</span>
+      <button type="button" className={layer === "simulator" ? styles.active : ""} onClick={() => setLayer("simulator")}>
+        Simulador
+        <span>Precio, costo y margen competitivo</span>
       </button>
       <button type="button" className={layer === "b2b" ? styles.active : ""} onClick={() => setLayer("b2b")}>
         B2B
@@ -439,7 +439,7 @@ export default function B2BPricing() {
       </button>
     </div>
 
-    {layer === "b2c" ? <B2CRegionalPricing/> : <>
+    {layer === "simulator" ? <B2BProfitabilitySimulator/> : <>
       <article className={`${styles.card} ${styles.regionalCard}`}>
         <header className={styles.regionalHeader}>
           <div>
