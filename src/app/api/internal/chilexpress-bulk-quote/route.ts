@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-export const maxDuration = 120;
+export const maxDuration = 60;
 export const preferredRegion = "gru1";
 
 const TOKEN_SHA256 = "3baad96cf068bc2221726a3732e9012dd20e5474b6a8249a7bc62161427551c7";
@@ -88,16 +88,11 @@ export async function POST(request:NextRequest){
 
   const {chromium}=await import("playwright-core");
   let browser:any=null;
-  let connectError="";
-  for(let attempt=1;attempt<=3&&!browser;attempt++){
-    try{
-      browser=await chromium.connectOverCDP(chileBrowserEndpoint(browserWs),{timeout:22000});
-    }catch(error){
-      connectError=error instanceof Error?error.message:String(error);
-      if(attempt<3)await new Promise(resolve=>setTimeout(resolve,1000));
-    }
+  try{
+    browser=await chromium.connectOverCDP(chileBrowserEndpoint(browserWs),{timeout:15000});
+  }catch(error){
+    return NextResponse.json({error:"browser_connect_failed",detail:error instanceof Error?error.message:String(error)},{status:502});
   }
-  if(!browser)return NextResponse.json({error:"browser_connect_failed",detail:connectError},{status:502});
 
   let coverage:unknown=null;
   let quoteRequest:{url:string;headers:Record<string,string>}|null=null;
@@ -123,8 +118,9 @@ export async function POST(request:NextRequest){
       }catch{}
     });
 
-    await page.goto(QUOTER_URL,{waitUntil:"domcontentloaded",timeout:28000});
-    await page.waitForTimeout(1200);
+    await page.goto(QUOTER_URL,{waitUntil:"commit",timeout:10000}).catch(()=>null);
+    await page.locator('input[placeholder="Origen"]:visible').first().waitFor({state:"visible",timeout:14000});
+    await page.waitForTimeout(500);
 
     async function exactCity(kind:"origin"|"destination",value:string){
       const input=kind==="origin"
@@ -133,7 +129,7 @@ export async function POST(request:NextRequest){
       if(!(await input.count()))throw new Error(kind+"_input_missing");
       await input.click({force:true});
       await input.fill(value);
-      await page.waitForTimeout(700);
+      await page.waitForTimeout(450);
       const options=page.locator("mat-option:visible, [role=option]:visible");
       const count=await options.count();
       const target=normalize(value);
@@ -150,7 +146,7 @@ export async function POST(request:NextRequest){
       }
       if(index<0)throw new Error(kind+"_option_missing:"+value);
       await options.nth(index).click({force:true,timeout:5000});
-      await page.waitForTimeout(180);
+      await page.waitForTimeout(100);
       const selected=normalize(await input.inputValue().catch(()=>""));
       if(!(selected===target||selected.startsWith(target)||target.startsWith(selected))){
         throw new Error(kind+"_selection_mismatch:"+selected+"!="+target);
@@ -198,14 +194,14 @@ export async function POST(request:NextRequest){
       if(await field.count())await field.fill(value).catch(()=>undefined);
     }
 
-    for(let attempt=0;attempt<4&&!quoteRequest;attempt++){
+    for(let attempt=0;attempt<3&&!quoteRequest;attempt++){
       await forceValue(height,"10");
       await forceValue(width,"10");
       await forceValue(length,"20");
       await forceValue(weight,"0.5");
       await forceValue(declared,"20000");
       await page.keyboard.press("Tab").catch(()=>undefined);
-      await page.waitForTimeout(attempt===0?1700:900);
+      await page.waitForTimeout(attempt===0?1200:650);
     }
 
     anchorBody=(await page.locator("body").innerText().catch(()=>"")).replace(/\s+/g," ").slice(-1800);
@@ -248,7 +244,7 @@ export async function POST(request:NextRequest){
       url.searchParams.set("iNDTARIFAGENERICA","0");
       url.searchParams.set("COD_TCC_CLIENTE",anchorUrl.searchParams.get("COD_TCC_CLIENTE")||"18911542");
       try{
-        const response=await fetch(url.toString(),{headers,signal:AbortSignal.timeout(9000)});
+        const response=await fetch(url.toString(),{headers,signal:AbortSignal.timeout(6000)});
         const payload=await response.json().catch(()=>null);
         return {destination:item.destination,destinationCode:item.match!.code,ok:response.ok&&!!payload,status:response.status,services:payload?extractQuote(payload):[]};
       }catch(error){
