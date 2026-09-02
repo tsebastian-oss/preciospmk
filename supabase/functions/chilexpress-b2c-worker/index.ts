@@ -544,6 +544,91 @@ async function searchStarkenDirect(workerToken:string,triggerKind:string,maxQuot
   return {rates,notes:[`Cotizador oficial Starken (${backend}): ${rates.length}/${queue.length} escenarios con precio válido.`,...diagnostics.map((d:string)=>`Diagnóstico: ${d}`)],coverage_summary:`Cotización directa de ${origins.length} origen(es) × ${destinations.length} destinos, ${STARKEN_PROFILES.length} perfiles de peso y entrega domicilio/agencia. Ejecutados ${queue.length} escenarios en esta corrida.`,rawResults:results.length,backend,connectorConfigured:true};
 }
 
+async function searchChilexpressDirect(workerToken:string){
+  const browserConfig=await sb.rpc("get_chilexpress_starken_browser_secret_service");
+  const connectorEndpoint=typeof browserConfig.data==="string"?browserConfig.data.trim():"";
+  const day=new Date().toISOString().slice(0,10);
+  const profiles=DESTINATIONS.map(destination=>({
+    destination,
+    quote:{
+      origin:"Santiago Centro",
+      destination,
+      weightKg:0.5,
+      heightCm:10,
+      widthCm:10,
+      lengthCm:20,
+      declaredValue:20000
+    }
+  }));
+  const rates:any[]=[];
+  const diagnostics:string[]=[];
+  for(let i=0;i<profiles.length;i+=4){
+    const batch=profiles.slice(i,i+4);
+    const settled=await Promise.all(batch.map(async item=>{
+      try{
+        const response=await fetch("https://preciospmk.vercel.app/api/internal/chilexpress-smart-quote",{
+          method:"POST",
+          headers:{"content-type":"application/json","x-chilexpress-worker-token":workerToken},
+          body:JSON.stringify({quote:item.quote,connectorEndpoint}),
+          signal:AbortSignal.timeout(55_000)
+        });
+        const payload=await response.json().catch(()=>({}));
+        if(!response.ok)return {destination:item.destination,ok:false,error:String(payload?.error||("http_"+response.status))};
+        return {destination:item.destination,ok:true,payload};
+      }catch(error){
+        return {destination:item.destination,ok:false,error:error instanceof Error?error.message:String(error)};
+      }
+    }));
+    for(const item of settled){
+      if(!item.ok){
+        diagnostics.push(`${item.destination}: ${item.error}`);
+        continue;
+      }
+      const alternatives=Array.isArray(item.payload?.alternatives)?item.payload.alternatives:[];
+      for(const alt of alternatives){
+        const service=clean(alt?.service||"");
+        const price=Math.round(Number(alt?.priceClp)||0);
+        if(!service||price<=0)continue;
+        rates.push({
+          provider_name:"Chilexpress",
+          provider_group:"Chilexpress",
+          origin:"Santiago Centro",
+          destination:item.destination,
+          weight_kg:0.5,
+          weight_band:"0–0,5 kg",
+          service_type:service,
+          delivery_type:"DOMICILIO",
+          unit_price_clp:price,
+          source_url:"https://emprendedores.chilexpress.cl/cotizar",
+          evidence:`Cotizador oficial Chilexpress: Santiago Centro → ${item.destination}, 0,5 kg, servicio ${service}: $ ${price.toLocaleString("es-CL")}.`,
+          rate_explicit:true,
+          normalization_method:"official_interactive_quote_residential_browser",
+          source_freshness:day,
+          confidence:98,
+          metadata:{
+            segment:"B2C / Público",
+            serviceLevel:service,
+            etaText:clean(alt?.etaText||"")||null,
+            dimensions:{heightCm:10,widthCm:10,lengthCm:20},
+            declaredValueClp:20000,
+            backend:String(item.payload?.backend||"brightdata_browser_ui_chilexpress")
+          }
+        });
+      }
+    }
+  }
+  return {
+    rates,
+    notes:[
+      `Chilexpress: ${rates.length} tarifas capturadas desde el cotizador por servicio Básico/Estándar/Prioritario.`,
+      ...diagnostics.slice(0,8).map(d=>`Diagnóstico: ${d}`)
+    ],
+    coverage_summary:`Chilexpress: ${new Set(rates.map((r:any)=>r.destination)).size}/${DESTINATIONS.length} destinos con alternativas de servicio capturadas.`,
+    backend:"chilexpress_brightdata_multiservice",
+    connectorConfigured:true
+  };
+}
+
 async function searchRates(apiKey:string,modelName:string,key:ProviderKey){
   const p=PROVIDERS[key];
   const prompt=`
@@ -616,9 +701,13 @@ Deno.serve(async(req:Request)=>{
       result=await searchCorreosPublished();
       m=String(result?.backend||"direct");
     }else{
-      const cfg=await runtime();if(!cfg.enabled||!cfg.api_key)throw new Error("ai_runtime_unavailable");
-      m=await model(cfg.api_key,cfg.model);
-      result=await searchRates(cfg.api_key,m,key);
+      result=await searchChilexpressDirect(supplied);
+      m=String(result?.backend||"direct");
+      if(!(Array.isArray(result?.rates)&&result.rates.length)){
+        const cfg=await runtime();if(!cfg.enabled||!cfg.api_key)throw new Error("ai_runtime_unavailable");
+        m=await model(cfg.api_key,cfg.model);
+        result=await searchRates(cfg.api_key,m,key);
+      }
     }
     const raw=Array.isArray(result?.rates)?result.rates:[];
     const valid=raw.filter((x:any)=>x?.rate_explicit===true&&Number(x?.unit_price_clp)>0&&hostOk(key,String(x?.source_url||""))&&String(x?.destination||"").trim()&&sourceEvidenceValid(key,x));
