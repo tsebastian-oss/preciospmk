@@ -42,7 +42,7 @@ type Payload = {
   notes?: string[];
 };
 
-const PROVIDERS = ["Chilexpress", "Starken", "Blue Express", "CorreosChile"] as const;
+const PROVIDERS = ["Chilexpress", "Starken", "Blue Express", "CorreosChile"] as const;\nconst providerLabel = (provider: string) => provider === "Chilexpress" ? "Chilexpress · Estándar" : provider;
 const money = new Intl.NumberFormat("es-CL", {
   style: "currency",
   currency: "CLP",
@@ -113,7 +113,7 @@ export default function B2CRegionalPricing() {
       <div>
         <span>B2C · BENCHMARK HOMOLOGADO</span>
         <h2>El mismo envío, comparado en los 4 couriers</h2>
-        <p>Origen fijo en Santiago Centro, entrega a domicilio y paquete de 0,5 kg. Los promedios por zona usan solo regiones donde existen precios para Chilexpress, Starken, Blue Express y CorreosChile.</p>
+        <p>Origen fijo en Santiago Centro, entrega a domicilio y paquete de 0,5 kg. La referencia Chilexpress usada hoy corresponde al servicio Estándar; Básico y Prioritario se tratarán como niveles de servicio separados. Los promedios por zona usan solo regiones donde existen precios para los cuatro couriers.</p>
       </div>
       <div className={styles.coverage}>
         <b>{payload?.coverage?.completeRegions ?? 0}/{payload?.coverage?.totalRegions ?? 16}</b>
@@ -154,13 +154,13 @@ export default function B2CRegionalPricing() {
             <h3>Precio promedio por zona</h3>
             <p>Norte, Centro y Sur calculados sobre la misma canasta regional comparable.</p>
           </div>
-          <small>Ref. {payload.weightKg} kg · {payload.delivery}</small>
+          <small>Ref. {payload.weightKg} kg · {payload.delivery} · Chilexpress Estándar</small>
         </header>
         <div className={styles.tableWrap}>
           <table className={styles.zoneTable}>
             <thead><tr>
               <th>Zona</th>
-              {PROVIDERS.map((provider) => <th key={provider}>{provider}</th>)}
+              {PROVIDERS.map((provider) => <th key={provider}>{providerLabel(provider)}</th>)}
               <th>Líder</th>
               <th>Chilexpress vs líder</th>
               <th>Cobertura</th>
@@ -196,7 +196,7 @@ export default function B2CRegionalPricing() {
             <thead><tr>
               <th>Región</th>
               <th>Zona</th>
-              {PROVIDERS.map((provider) => <th key={provider}>{provider}</th>)}
+              {PROVIDERS.map((provider) => <th key={provider}>{providerLabel(provider)}</th>)}
               <th>Líder</th>
               <th>Chilexpress vs líder</th>
               <th>Estado</th>
