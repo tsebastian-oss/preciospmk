@@ -129,6 +129,7 @@ async function persistVariant(
   product: ShopifyProduct,
   variant: ShopifyVariant,
   observedAt: string,
+  discoveryRunId: string | null,
 ) {
   const currentPrice = numberValue(variant.price);
   const regularPriceRaw = numberValue(variant.compare_at_price);
@@ -174,26 +175,6 @@ async function persistVariant(
     .single();
   if (productError) throw productError;
 
-  const startOfDay = observedAt.slice(0, 10) + "T00:00:00.000Z";
-  const { data: latest } = await supabase
-    .from("brands_vertical_listings")
-    .select("id,current_price,regular_price,in_stock,observed_at")
-    .eq("source_id", sourceId)
-    .eq("source_product_key", sourceKey)
-    .gte("observed_at", startOfDay)
-    .order("observed_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const sameToday = latest
-    && Number(latest.current_price ?? 0) === Number(currentPrice ?? 0)
-    && Number(latest.regular_price ?? 0) === Number(regularPrice ?? 0)
-    && latest.in_stock === Boolean(variant.available);
-
-  if (sameToday) {
-    return { inserted: false, priced: currentPrice != null && currentPrice > 0, available: Boolean(variant.available) };
-  }
-
   const { error: listingError } = await supabase.from("brands_vertical_listings").insert({
     brand_id: brandId,
     source_id: sourceId,
@@ -223,13 +204,15 @@ async function persistVariant(
       shopifyProductId: String(product.id),
       shopifyVariantId: String(variant.id),
       variantTitle: variant.title,
+      discoveryRunId,
       tags: product.tags ?? [],
       publishedAt: product.published_at ?? null,
       productUpdatedAt: product.updated_at ?? null,
       variantUpdatedAt: variant.updated_at ?? null,
     },
     raw: {
-      collector: "piwen-official-shopify-worker-v1",
+      collector: "piwen-official-shopify-worker-v2",
+      discoveryRunId,
       endpoint: PRODUCTS_URL,
       shopifyProductId: product.id,
       shopifyVariantId: variant.id,
@@ -257,7 +240,7 @@ async function collect() {
     status: "running",
     started_at: observedAt,
     sources_attempted: 1,
-    notes: JSON.stringify({ collector: "piwen-official-shopify-worker-v1", source: "piwen.cl" }),
+    notes: JSON.stringify({ collector: "piwen-official-shopify-worker-v2", source: "piwen.cl" }),
   }).select("id").single();
 
   try {
@@ -274,7 +257,7 @@ async function collect() {
         variants += 1;
         const family = familyFor(product.title, product.product_type ?? "");
         families.add(family);
-        const result = await persistVariant(brand.id, sourceId, product, variant, observedAt);
+        const result = await persistVariant(brand.id, sourceId, product, variant, observedAt, run?.id ?? null);
         if (result.inserted) inserted += 1;
         if (result.priced) priced += 1;
         if (result.available) available += 1;
@@ -295,7 +278,7 @@ async function collect() {
         products_found: variants,
         finished_at: new Date().toISOString(),
         notes: JSON.stringify({
-          collector: "piwen-official-shopify-worker-v1",
+          collector: "piwen-official-shopify-worker-v2",
           products: products.length,
           variants,
           inserted,
@@ -328,7 +311,7 @@ async function collect() {
         status: "failed",
         sources_succeeded: 0,
         finished_at: new Date().toISOString(),
-        notes: JSON.stringify({ collector: "piwen-official-shopify-worker-v1", error: message }),
+        notes: JSON.stringify({ collector: "piwen-official-shopify-worker-v2", error: message }),
       }).eq("id", run.id);
     }
     throw error;
