@@ -701,13 +701,9 @@ Deno.serve(async(req:Request)=>{
       result=await searchCorreosPublished();
       m=String(result?.backend||"direct");
     }else{
-      result=await searchChilexpressDirect(supplied);
-      m=String(result?.backend||"direct");
-      if(!(Array.isArray(result?.rates)&&result.rates.length)){
-        const cfg=await runtime();if(!cfg.enabled||!cfg.api_key)throw new Error("ai_runtime_unavailable");
-        m=await model(cfg.api_key,cfg.model);
-        result=await searchRates(cfg.api_key,m,key);
-      }
+      const cfg=await runtime();if(!cfg.enabled||!cfg.api_key)throw new Error("ai_runtime_unavailable");
+      m=await model(cfg.api_key,cfg.model);
+      result=await searchRates(cfg.api_key,m,key);
     }
     const raw=Array.isArray(result?.rates)?result.rates:[];
     const valid=raw.filter((x:any)=>x?.rate_explicit===true&&Number(x?.unit_price_clp)>0&&hostOk(key,String(x?.source_url||""))&&String(x?.destination||"").trim()&&sourceEvidenceValid(key,x));
