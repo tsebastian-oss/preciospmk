@@ -10,6 +10,9 @@ const BLUE_ECOMMERCE_URL = "https://cdn.blue.cl/clientes/1bluex/tarifa-segmento-
 const BLUE_PYME_URL = "https://www.blue.cl/docs/enviar/tarifario-pyme.pdf";
 const BLUE_ECOMMERCE_PAGE = "https://www.blue.cl/empresas/soluciones-ecommerce";
 const BLUE_CONSUMER_PAGE = "https://www.blue.cl/nosotros/registro-eventos";
+const CORREOS_PUBLIC_RESOLUTION_URL = "https://www.correos.cl/documents/51021813/51024715/resolucion-exentaN%C2%B0027.pdf/5c41b3c4-691b-e6c2-3317-23fbbfb9c45b?t=1745868074366";
+const CORREOS_ALIADOS_URL = "https://www.correos.cl/home-aliados";
+const CORREOS_ALIADOS_PLAN_URL = "https://www.correos.cl/aliados-planes";
 const SERVICE = "Domicilio estándar / express";
 const REFERENCE_WEIGHT_KG = 0.5;
 
@@ -84,6 +87,25 @@ const BLUE_ECOMMERCE_RATES: Record<string, { home: number[]; point: number[] }> 
   "Los Ríos": { home: [5300, 6100, 8300, 10000, 14200], point: [4500, 5300, 7500, 9200, 13400] },
   "Los Lagos": { home: [5300, 6100, 8300, 10000, 14200], point: [4500, 5300, 7500, 9200, 13400] },
 };
+const CORREOS_EXPRESS_AM = [
+  { zone: "INTRA", weightKg: 0.5, weightBand: "0–0,5 kg", priceClp: 4500 },
+  { zone: "INTRA", weightKg: 3, weightBand: "1,51–3 kg", priceClp: 6000 },
+  { zone: "INTRA", weightKg: 6, weightBand: "3,1–6 kg", priceClp: 7200 },
+  { zone: "CERCA", weightKg: 0.5, weightBand: "0–0,5 kg", priceClp: 6000 },
+  { zone: "CERCA", weightKg: 3, weightBand: "1,51–3 kg", priceClp: 7500 },
+  { zone: "CERCA", weightKg: 6, weightBand: "3,1–6 kg", priceClp: 11000 },
+  { zone: "LEJOS", weightKg: 0.5, weightBand: "0–0,5 kg", priceClp: 18800 },
+  { zone: "LEJOS", weightKg: 3, weightBand: "1,51–3 kg", priceClp: 28500 },
+  { zone: "LEJOS", weightKg: 6, weightBand: "3,1–6 kg", priceClp: 42000 },
+] as const;
+
+const CORREOS_ALIADOS_TIERS = [
+  { name: "Bronce", discountPct: 10, volume: "Nuevo emprendedor" },
+  { name: "Crecimiento", discountPct: 15, volume: "20–49 envíos/mes" },
+  { name: "Consolidado", discountPct: 20, volume: "50–99 envíos/mes" },
+  { name: "Gran volumen", discountPct: 25, volume: "100+ envíos/mes" },
+] as const;
+
 
 function normalize(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
@@ -255,6 +277,78 @@ export async function POST(request: NextRequest) {
   }
 
 
+
+  // CorreosChile public B2C: official 2025 resolution for Paquete Domicilio Express AM.
+  // The source publishes tariff zones (INTRA/CERCA/LEJOS), not a city-by-city mapping,
+  // so we preserve those zone labels instead of inventing route assignments.
+  for (const rate of CORREOS_EXPRESS_AM) {
+    rateRows.push({
+      source_record_id: `correos-b2c-express-am-${today}-${rate.zone.toLowerCase()}-${String(rate.weightKg).replace(".","_")}`,
+      source: "correos_persona_express_am",
+      source_kind: "published_commercial_rate",
+      source_url: CORREOS_PUBLIC_RESOLUTION_URL,
+      category: "courier",
+      provider_name: "Empresa de Correos de Chile",
+      provider_group: "CorreosChile B2C / Público",
+      buyer_name: null,
+      service_type: "Paquete Domicilio Express AM",
+      origin_label: "Zona tarifaria CorreosChile",
+      destination_label: `Zona ${rate.zone}`,
+      weight_kg: rate.weightKg,
+      distance_km: null,
+      shipment_price_clp: rate.priceClp,
+      confidence: 100,
+      normalization_method: "official_resolution_tariff_zone_exact",
+      process_date: today,
+      metadata: {
+        segment: "B2C / Público",
+        tariffZone: rate.zone,
+        weightRateBand: rate.weightBand,
+        ivaIncluded: false,
+        taxTreatment: "Exenta de IVA",
+        sourceLayer: "published commercial rate",
+        resolutionDate: "2025-04-25",
+        comparabilityNote: "Zona tarifaria oficial; no se transforma a ciudad/ruta sin evidencia oficial.",
+      },
+    });
+
+    for (const tier of CORREOS_ALIADOS_TIERS) {
+      const discounted = Math.round(rate.priceClp * (1 - tier.discountPct / 100));
+      rateRows.push({
+        source_record_id: `correos-aliados-${tier.discountPct}-${today}-${rate.zone.toLowerCase()}-${String(rate.weightKg).replace(".","_")}`,
+        source: "correos_aliados",
+        source_kind: "published_commercial_rate",
+        source_url: CORREOS_ALIADOS_URL,
+        category: "courier",
+        provider_name: "Empresa de Correos de Chile",
+        provider_group: `CorreosChile Aliados ${tier.name} ${tier.discountPct}%`,
+        buyer_name: null,
+        service_type: "Paquete Domicilio Express AM",
+        origin_label: "Zona tarifaria CorreosChile",
+        destination_label: `Zona ${rate.zone}`,
+        weight_kg: rate.weightKg,
+        distance_km: null,
+        shipment_price_clp: discounted,
+        confidence: 95,
+        normalization_method: "official_resolution_base+published_aliados_discount",
+        process_date: today,
+        metadata: {
+          segment: "Pyme / Emprendedores",
+          tariffZone: rate.zone,
+          weightRateBand: rate.weightBand,
+          basePriceClp: rate.priceClp,
+          discountPct: tier.discountPct,
+          monthlyShipments: tier.volume,
+          aliadosPlanUrl: CORREOS_ALIADOS_PLAN_URL,
+          ivaIncluded: false,
+          taxTreatment: "Exenta de IVA",
+          sourceLayer: "published commercial rate",
+          comparabilityNote: "Precio derivado aplicando descuento Aliados publicado sobre tarifa base oficial; no se mapea a ciudad/ruta sin evidencia oficial.",
+        },
+      });
+    }
+  }
+
   const result = await enterpriseRpc<number>(request, "b2b_upsert_rate_comparables", { p_rows: rateRows });
   if (result.response) return result.response;
 
@@ -266,6 +360,8 @@ export async function POST(request: NextRequest) {
     chilexpressRows: rateRows.filter((row) => row.provider_group === "Chilexpress").length,
     blueB2CRows: rateRows.filter((row) => row.provider_group === "Blue Express B2C / Público").length,
     blueEntrepreneurRows: rateRows.filter((row) => row.provider_group === "Blue Express Ecommerce 1–500").length,
+    correosB2CRows: rateRows.filter((row) => row.provider_group === "CorreosChile B2C / Público").length,
+    correosAliadosRows: rateRows.filter((row) => row.provider_group.startsWith("CorreosChile Aliados ")).length,
     referenceWeightKg: REFERENCE_WEIGHT_KG,
     warnings,
   }, { headers: { "cache-control": "private, no-store, max-age=0" } });
