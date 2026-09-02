@@ -295,7 +295,31 @@ async function runBrowser(input: QuoteInput, browserWs: string) {
       }
     }
 
-    await page.waitForTimeout(5_000);
+    // Chilexpress recalculates reactively. Residential browser sessions can miss the
+    // first Angular change event, so re-dispatch the exact values and blur until the
+    // service cards or quote request appears. No price is inferred in this retry.
+    async function forceAngularValue(locator: any, value: string) {
+      if (!(await locator.count().catch(() => 0))) return;
+      await locator.evaluate((el: HTMLInputElement, next: string) => {
+        const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+        setter?.call(el, next);
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        el.blur();
+      }, value).catch(() => undefined);
+    }
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      await page.waitForTimeout(attempt === 0 ? 3_000 : 1_500);
+      const text = await page.locator("body").innerText().catch(() => "");
+      if (/PRIORITARIO/i.test(text) && /EST[ÁA]NDAR/i.test(text) && /B[ÁA]SICO/i.test(text)) break;
+      await forceAngularValue(height, String(input.heightCm));
+      await forceAngularValue(width, String(input.widthCm));
+      await forceAngularValue(length, String(input.lengthCm));
+      await forceAngularValue(weight, String(input.weightKg));
+      await forceAngularValue(declared, String(input.declaredValue || 20_000));
+      await page.keyboard.press("Tab").catch(() => undefined);
+    }
 
     let alternatives = captured.flatMap(extractAlternatives);
 
