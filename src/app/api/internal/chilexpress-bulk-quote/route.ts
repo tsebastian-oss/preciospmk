@@ -216,16 +216,17 @@ export async function POST(request:NextRequest){
     await browser.close().catch(()=>undefined);
   }
 
-  if(!quoteRequest)return NextResponse.json({error:"anchor_quote_not_captured",anchor,bodyPreview:anchorBody},{status:502});
+  const capturedQuote=quoteRequest as {url:string;headers:Record<string,string>}|null;
+  if(!capturedQuote)return NextResponse.json({error:"anchor_quote_not_captured",anchor,bodyPreview:anchorBody},{status:502});
   if(!coverage)return NextResponse.json({error:"coverage_not_captured",anchor},{status:502});
 
-  const anchorUrl=new URL(quoteRequest.url);
+  const anchorUrl=new URL(capturedQuote.url);
   const originCode=anchorUrl.searchParams.get("CIUDAD_ORIGEN");
   if(!originCode)return NextResponse.json({error:"origin_code_missing_from_anchor"},{status:502});
 
   const headers:Record<string,string>={};
   for(const key of ["ocp-apim-subscription-key","x-api-key","authorization","accept","origin","referer","user-agent"]){
-    const value=quoteRequest.headers[key];if(value)headers[key]=value;
+    const value=capturedQuote.headers[key];if(value)headers[key]=value;
   }
 
   const mapped=requested.map(destination=>({destination,match:cityCode(coverage,destination)}));
