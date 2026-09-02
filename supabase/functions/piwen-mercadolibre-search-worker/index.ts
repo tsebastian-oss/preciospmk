@@ -195,7 +195,7 @@ async function ensureSource(brandId:string){
   if(existing?.id){const {error}=await supabase.from("brands_vertical_sources").update(payload).eq("id",existing.id);if(error)throw error;return existing.id as string;}
   const {data,error}=await supabase.from("brands_vertical_sources").insert({brand_id:brandId,...payload}).select("id").single();if(error)throw error;return data.id as string;
 }
-async function persist(brandId:string,sourceId:string,target:Target,row:AiRow){
+async function persist(brandId:string,sourceId:string,target:Target,row:AiRow,runId:string|null,observedAt:string){
   const sourceKey=keyFor(row.product_url);
   const canonical=`mercadolibre:${sourceKey.toLowerCase()}`;
   const family=familyFor(row.title,row.family);
@@ -209,25 +209,13 @@ async function persist(brandId:string,sourceId:string,target:Target,row:AiRow){
   const pricePerKg=row.current_price&&row.grams?Math.round(row.current_price*1000/row.grams):null;
   const discountPct=row.regular_price&&row.current_price&&row.regular_price>row.current_price?Math.round((1-row.current_price/row.regular_price)*1000)/10:null;
 
-  const {data:latest}=await supabase.from("brands_vertical_listings")
-    .select("current_price,regular_price,in_stock,observed_at")
-    .eq("source_id",sourceId).eq("source_product_key",sourceKey)
-    .order("observed_at",{ascending:false}).limit(1).maybeSingle();
-
-  const same=latest
-    && Number(latest.current_price??0)===Number(row.current_price??0)
-    && Number(latest.regular_price??0)===Number(row.regular_price??0)
-    && latest.in_stock===row.in_stock
-    && Date.now()-new Date(latest.observed_at).getTime()<20*60*60*1000;
-  if(same) return {inserted:false,key:sourceKey};
-
   const {error:lErr}=await supabase.from("brands_vertical_listings").insert({
     brand_id:brandId,source_id:sourceId,product_id:product.id,source_product_key:sourceKey,title:row.title,brand_name:target.brand,
     seller_name:row.seller_name,category:family,product_url:row.product_url,regular_price:row.regular_price,current_price:row.current_price,
     currency:"CLP",in_stock:row.in_stock,
-    attributes:{actualBrand:target.brand,role:target.role,marketplace:"MercadoLibre Chile",family,grams:row.grams,pricePerKg,discountPct,snapshotType:"automatic",verification:"openai_web_search_mercadolibre",sourceFreshness:row.source_freshness},
-    raw:{collector:"piwen-mercadolibre-search-worker-v1",retrieval:"OpenAI Responses web_search",sourceFreshness:row.source_freshness},
-    observed_at:new Date().toISOString()
+    attributes:{actualBrand:target.brand,role:target.role,marketplace:"MercadoLibre Chile",family,grams:row.grams,pricePerKg,discountPct,snapshotType:"automatic",verification:"openai_web_search_mercadolibre",sourceFreshness:row.source_freshness,discoveryRunId:runId},
+    raw:{collector:"piwen-mercadolibre-search-worker-v2",retrieval:"OpenAI Responses web_search",sourceFreshness:row.source_freshness,discoveryRunId:runId},
+    observed_at:observedAt
   });
   if(lErr) throw lErr;
   return {inserted:true,key:sourceKey};
@@ -237,40 +225,73 @@ async function run(onlyBrand?:string){
   const {data:subject,error:bErr}=await supabase.from("brands_vertical_brands").select("id").eq("slug",SUBJECT_SLUG).single();
   if(bErr||!subject) throw new Error("brand_not_found:piwen");
   const sourceId=await ensureSource(subject.id);
+  const observedAt=new Date().toISOString();
 
-  const runtime=await runtimeConfig();
-  const cfg=(runtime.data??{}) as Runtime;
-  if(runtime.error||!cfg.enabled||!cfg.api_key) throw new Error("ai_runtime_unavailable:"+String(runtime.error??"missing_config"));
-  const model=await chooseModel(cfg.api_key);
+  const {data:discoveryRun,error:runErr}=await supabase.from("brands_vertical_discovery_runs").insert({
+    brand_id:subject.id,
+    status:"running",
+    started_at:observedAt,
+    sources_attempted:1,
+    notes:JSON.stringify({collector:"piwen-mercadolibre-search-worker-v2",source:"mercadolibre.cl",onlyBrand:onlyBrand??null})
+  }).select("id").single();
+  if(runErr) throw runErr;
 
-  const targets=onlyBrand?TARGETS.filter(x=>norm(x.brand)===norm(onlyBrand)):TARGETS;
-  if(!targets.length) throw new Error("unknown_brand");
-  const results:any[]=[];
-  let found=0,inserted=0,priced=0;
+  try{
+    const runtime=await runtimeConfig();
+    const cfg=(runtime.data??{}) as Runtime;
+    if(runtime.error||!cfg.enabled||!cfg.api_key) throw new Error("ai_runtime_unavailable:"+String(runtime.error??"missing_config"));
+    const model=await chooseModel(cfg.api_key);
 
-  for(const target of targets){
-    try{
-      const rows=await webSearch(cfg.api_key,model,target);
-      let targetInserted=0,targetPriced=0;
-      for(const row of rows){
-        const saved=await persist(subject.id,sourceId,target,row);
-        if(saved.inserted) targetInserted++;
-        if(row.current_price) targetPriced++;
+    const targets=onlyBrand?TARGETS.filter(x=>norm(x.brand)===norm(onlyBrand)):TARGETS;
+    if(!targets.length) throw new Error("unknown_brand");
+    const results:any[]=[];
+    let found=0,inserted=0,priced=0;
+
+    for(const target of targets){
+      try{
+        const rows=await webSearch(cfg.api_key,model,target);
+        let targetInserted=0,targetPriced=0;
+        for(const row of rows){
+          const saved=await persist(subject.id,sourceId,target,row,discoveryRun?.id??null,observedAt);
+          if(saved.inserted) targetInserted++;
+          if(row.current_price) targetPriced++;
+        }
+        found+=rows.length;inserted+=targetInserted;priced+=targetPriced;
+        results.push({brand:target.brand,status:rows.length?"ok":"no_data",found:rows.length,inserted:targetInserted,priced:targetPriced});
+      }catch(error){
+        results.push({brand:target.brand,status:"error",error:error instanceof Error?error.message:String(error)});
       }
-      found+=rows.length;inserted+=targetInserted;priced+=targetPriced;
-      results.push({brand:target.brand,status:rows.length?"ok":"no_data",found:rows.length,inserted:targetInserted,priced:targetPriced});
-    }catch(error){
-      results.push({brand:target.brand,status:"error",error:error instanceof Error?error.message:String(error)});
     }
-  }
 
-  const status=found>0?"completed":"failed";
-  await supabase.from("brands_vertical_sources").update({
-    last_crawled_at:new Date().toISOString(),
-    last_status:found>0?`ok:${found}:inserted:${inserted}:priced:${priced}`:"degraded:last-valid-retained",
-    last_error:found>0?null:JSON.stringify(results).slice(0,900)
-  }).eq("id",sourceId);
-  return {status,model,found,inserted,priced,results};
+    const status=found>0?"completed":"failed";
+    const finishedAt=new Date().toISOString();
+    await supabase.from("brands_vertical_sources").update({
+      last_crawled_at:finishedAt,
+      last_status:found>0?`ok:${found}:inserted:${inserted}:priced:${priced}`:"degraded:last-valid-retained",
+      last_error:found>0?null:JSON.stringify(results).slice(0,900)
+    }).eq("id",sourceId);
+    if(discoveryRun?.id){
+      await supabase.from("brands_vertical_discovery_runs").update({
+        status,
+        sources_succeeded:found>0?1:0,
+        listings_found:found,
+        products_found:found,
+        finished_at:finishedAt,
+        notes:JSON.stringify({collector:"piwen-mercadolibre-search-worker-v2",model,found,inserted,priced,results})
+      }).eq("id",discoveryRun.id);
+    }
+    return {status,model,found,inserted,priced,results,runId:discoveryRun?.id??null};
+  }catch(error){
+    if(discoveryRun?.id){
+      await supabase.from("brands_vertical_discovery_runs").update({
+        status:"failed",
+        sources_succeeded:0,
+        finished_at:new Date().toISOString(),
+        notes:JSON.stringify({collector:"piwen-mercadolibre-search-worker-v2",error:error instanceof Error?error.message:String(error)})
+      }).eq("id",discoveryRun.id);
+    }
+    throw error;
+  }
 }
 
 Deno.serve(async(request:Request)=>{
