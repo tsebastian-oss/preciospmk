@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { brandScopeAllows, enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
 import { clickHouseConfigured } from "@/lib/clickhouse";
-import { piwenMarketIntelligence } from "@/lib/piwen-market";
 import { piwenHistoryIntelligence } from "@/lib/piwen-history";
 
 export const dynamic = "force-dynamic";
@@ -38,16 +37,15 @@ export async function GET(request: NextRequest) {
   if (!authorization.access || !brandScopeAllows(authorization.access, "piwen")) {
     return NextResponse.json({ error: "Piwén no está habilitado para esta cuenta." }, { status: 403 });
   }
-  if (!clickHouseConfigured()) {
-    return NextResponse.json({ error: "ClickHouse no está disponible." }, { status: 503 });
-  }
-
   const mode = request.nextUrl.searchParams.get("mode") === "history" ? "history" : "current";
   const family = safeFamily(request.nextUrl.searchParams.get("family"));
   const today = new Date().toISOString().slice(0, 10);
 
   try {
     if (mode === "history") {
+      if (!clickHouseConfigured()) {
+        return NextResponse.json({ error: "ClickHouse no está disponible para el histórico." }, { status: 503 });
+      }
       const payload = await piwenHistoryIntelligence(authorization.access);
       const points = family ? payload.points.filter((point) => point.family === family) : payload.points;
       const body = csv(
@@ -72,33 +70,31 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    const [payload, marketplaceResult] = await Promise.all([
-      piwenMarketIntelligence(authorization.access),
+    const [supermarketResult, officialResult, marketplaceResult] = await Promise.all([
+      enterpriseRpc<{ listings?: Array<Record<string, unknown>> }>(
+        request,
+        "brands_piwen_supermarket_snapshot",
+        { p_slug: "piwen" },
+      ),
+      enterpriseRpc<{ listings?: Array<Record<string, unknown>> }>(
+        request,
+        "brands_piwen_official_snapshot",
+        { p_slug: "piwen" },
+      ),
       enterpriseRpc<{ listings?: Array<Record<string, unknown>> }>(
         request,
         "brands_piwen_marketplace_snapshot",
         { p_slug: "piwen" },
       ),
     ]);
-    const marketRows = [...payload.subject, ...payload.listings].map((row) => ({
-      brand: row.brand,
-      retailer: row.retailer,
-      name: row.name,
-      family: row.family,
-      format: row.format,
-      grams: row.grams,
-      currentPrice: row.currentPrice,
-      regularPrice: row.regularPrice,
-      pricePerKg: row.pricePerKg,
-      promotionPct: row.promotionPct,
-      inStock: row.inStock,
-      observedAt: row.observedAt,
-      url: row.url,
-      dataType: row.brand === "Piwén" ? "Referencia Piwén" : "Censo supermercados",
-    }));
-    const marketplaceRows = marketplaceResult.response ? [] : (marketplaceResult.data?.listings ?? []).map((raw) => ({
+
+    const normalizeRows = (
+      rawRows: Array<Record<string, unknown>>,
+      dataType: string,
+      fallbackRetailer: string,
+    ) => rawRows.map((raw) => ({
       brand: String(raw.brand ?? ""),
-      retailer: String(raw.retailer ?? "MercadoLibre Chile"),
+      retailer: String(raw.retailer ?? fallbackRetailer),
       name: String(raw.name ?? ""),
       family: String(raw.family ?? ""),
       format: String(raw.format ?? "Sin formato"),
@@ -110,9 +106,22 @@ export async function GET(request: NextRequest) {
       inStock: raw.inStock ?? null,
       observedAt: raw.observedAt ?? null,
       url: String(raw.url ?? ""),
-      dataType: "MercadoLibre Chile",
+      dataType,
     }));
-    const allRows = [...marketRows, ...marketplaceRows];
+
+    const supermarketRows = supermarketResult.response
+      ? []
+      : normalizeRows(supermarketResult.data?.listings ?? [], "Censo supermercados", "Supermercado");
+
+    const officialRows = officialResult.response
+      ? []
+      : normalizeRows(officialResult.data?.listings ?? [], "Piwén.cl oficial", "Piwén.cl");
+
+    const marketplaceRows = marketplaceResult.response
+      ? []
+      : normalizeRows(marketplaceResult.data?.listings ?? [], "MercadoLibre Chile", "MercadoLibre Chile");
+
+    const allRows = [...officialRows, ...supermarketRows, ...marketplaceRows];
     const rows = family ? allRows.filter((row) => row.family === family) : allRows;
     const body = csv(
       ["Marca", "Retailer", "Producto", "Familia", "Formato", "Gramos", "Precio actual", "Precio regular", "Precio por kg", "Promocion %", "Stock", "Observado", "URL", "Tipo dato"],
