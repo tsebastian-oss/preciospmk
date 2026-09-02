@@ -6,7 +6,7 @@ export const maxDuration = 30;
 export const preferredRegion = "gru1";
 
 const TOKEN_SHA256 = "3baad96cf068bc2221726a3732e9012dd20e5474b6a8249a7bc62161427551c7";
-const URL = "https://emprendedores.chilexpress.cl/cotizar";
+const QUOTER_URL = "https://emprendedores.chilexpress.cl/cotizar";
 
 async function sha256(value:string){
   const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value));
@@ -43,7 +43,7 @@ export async function POST(request:NextRequest){
       const u=response.url();
       if(/chilexpress|cotiz|tarif|servic|api/i.test(u))urls.push(u);
     });
-    await page.goto(URL,{waitUntil:"domcontentloaded",timeout:18000});
+    await page.goto(QUOTER_URL,{waitUntil:"domcontentloaded",timeout:18000});
     await page.waitForTimeout(2500);
     const inputs=await page.locator("input").evaluateAll(nodes=>nodes.slice(0,30).map((el:any)=>({
       type:el.type,placeholder:el.placeholder,name:el.name,id:el.id,value:el.value,
