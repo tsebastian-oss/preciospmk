@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "next": "15.5.22",
-    "pdf-parse": "1.1.1",
+    "pdf-parse": "2.4.5",
     "playwright-core": "1.55.0",
     "pptxgenjs": "^3.12.0",
     "react": "19.1.1",
