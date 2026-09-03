@@ -25,6 +25,17 @@ type Props = {
   zones: DecisionZone[];
   selectedMonth: string;
   months: string[];
+  history: Array<{
+    month: string;
+    zone: string;
+    company: string;
+    priceClp: number;
+    confidence: number;
+    destinations: number;
+    observations: number;
+    channel: string;
+    plan: string;
+  }>;
   onMonthChange: (month: string) => void;
 };
 
@@ -60,7 +71,7 @@ function actionForPremium(premium: number | null) {
   return "Defender posición";
 }
 
-export default function B2BDecisionLab({ zones, selectedMonth, months, onMonthChange }: Props) {
+export default function B2BDecisionLab({ zones, selectedMonth, months, history, onMonthChange }: Props) {
   const [selectedZone, setSelectedZone] = useState<MacroZone>("Norte");
   const [monthlyVolume, setMonthlyVolume] = useState(5000);
   const [priceChange, setPriceChange] = useState(-10);
@@ -69,6 +80,7 @@ export default function B2BDecisionLab({ zones, selectedMonth, months, onMonthCh
   const [targetMargin, setTargetMargin] = useState(28);
   const [pptLoading, setPptLoading] = useState(false);
   const [pptNotice, setPptNotice] = useState("");
+  const [excelLoading, setExcelLoading] = useState(false);
   const [beautifulDeck, setBeautifulDeck] = useState<BeautifulDeck | null>(null);
 
   const opportunityRows = useMemo(() => zones.map(({ zone, rows }) => {
@@ -105,6 +117,7 @@ export default function B2BDecisionLab({ zones, selectedMonth, months, onMonthCh
   const presentationPayload = {
     selectedMonth,
     zones,
+    history,
     scenario: { selectedZone, monthlyVolume, priceChange, volumeChange, costShare, targetMargin },
   };
 
@@ -137,6 +150,39 @@ export default function B2BDecisionLab({ zones, selectedMonth, months, onMonthCh
       setPptNotice(error instanceof Error ? error.message : "No fue posible generar la presentación.");
     } finally {
       setPptLoading(false);
+    }
+  };
+
+  const downloadExecutiveExcel = async () => {
+    if (excelLoading) return;
+    setExcelLoading(true);
+    setPptNotice("");
+    try {
+      const response = await fetch("/api/b2b-pricing/executive-excel", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(presentationPayload),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => null);
+        throw new Error(error?.error || "No fue posible generar el reporte Excel.");
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `chilexpress-pricing-directorio-${selectedMonth.replace("-", "")}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setPptNotice("Reporte Excel para directorio generado.");
+    } catch (error) {
+      setPptNotice(error instanceof Error ? error.message : "No fue posible generar el reporte Excel.");
+    } finally {
+      setExcelLoading(false);
     }
   };
 
@@ -191,6 +237,9 @@ export default function B2BDecisionLab({ zones, selectedMonth, months, onMonthCh
         <div className={styles.presentationButtons}>
           <button type="button" className={styles.pptButton} disabled={pptLoading || !zones.some((zone) => zone.rows.length)} onClick={() => void generateExecutivePpt()}>
             {pptLoading ? "Generando…" : "Crear con Beautiful.ai"}
+          </button>
+          <button type="button" className={styles.excelButton} disabled={excelLoading || !zones.some((zone) => zone.rows.length)} onClick={() => void downloadExecutiveExcel()}>
+            {excelLoading ? "Generando Excel…" : "Excel Directorio"}
           </button>
           <button type="button" className={styles.legacyPptButton} disabled={pptLoading || !zones.some((zone) => zone.rows.length)} onClick={() => void downloadLegacyPpt()}>
             PPTX respaldo
