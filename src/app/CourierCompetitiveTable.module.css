@@ -201,3 +201,4 @@
 }
 
 @media(max-width:820px){.segmentTabs{grid-template-columns:1fr}}
+.aiHistoryBar{display:flex;justify-content:space-between;gap:10px;align-items:center;margin:-2px 0 8px;padding:0 2px;color:#657487;font-size:8px}.aiHistoryBar span{font-weight:750;letter-spacing:.03em}.aiHistoryBar button{border:0;background:transparent;color:#7f91a2;font-size:8px;font-weight:800;cursor:pointer;padding:4px 0}.aiHistoryBar button:hover{color:#c5d2dc}.aiHistoryBar button:disabled{opacity:.45;cursor:not-allowed}@media(max-width:720px){.aiHistoryBar{align-items:flex-start;flex-direction:column}}
