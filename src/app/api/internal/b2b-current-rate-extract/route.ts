@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { denyUnlessInternal } from "@/lib/internal-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -54,6 +55,8 @@ function outputText(payload: any) {
 }
 
 export async function GET(request: NextRequest) {
+  const denied = await denyUnlessInternal(request);
+  if (denied) return denied;
   const key = request.nextUrl.searchParams.get("key") as TargetKey | null;
   if (!key || !(key in TARGETS)) return NextResponse.json({ error: "unknown target", keys: Object.keys(TARGETS) }, { status: 400 });
   const apiKey = process.env.OPENAI_API_KEY ?? "";

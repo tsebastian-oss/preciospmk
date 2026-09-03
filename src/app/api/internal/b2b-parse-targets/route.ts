@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { denyUnlessInternal } from "@/lib/internal-auth";
 import { inflateRawSync, inflateSync } from "node:zlib";
 
 export const dynamic = "force-dynamic";
@@ -153,7 +154,9 @@ function xlsxSheets(buffer: Buffer) {
   return sheets;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const denied = await denyUnlessInternal(request);
+  if (denied) return denied;
   const results: Array<Record<string, unknown>> = [];
   for (const target of TARGETS) {
     try {
