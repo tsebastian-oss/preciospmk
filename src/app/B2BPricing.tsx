@@ -10,6 +10,7 @@ import B2BAgentZone from "./B2BAgentZone";
 import styles from "./CourierCompetitiveTable.module.css";
 
 type Layer = "simulator" | "b2b" | "decisions" | "agents";
+type DashboardTheme = "dark" | "light";
 type Numeric = number | string | null;
 type MacroZone = "Norte" | "Centro" | "Sur";
 
@@ -265,8 +266,30 @@ export default function B2BPricing() {
   const [assistantQuestion, setAssistantQuestion] = useState("");
   const [assistantLoading, setAssistantLoading] = useState(false);
   const [assistantHistoryLoading, setAssistantHistoryLoading] = useState(true);
+  const [dashboardTheme, setDashboardTheme] = useState<DashboardTheme>("dark");
 
   const regionalMonths = useMemo(() => augustToDecemberKeys(), []);
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("mgp-courier-dashboard-theme");
+      if (saved === "light" || saved === "dark") setDashboardTheme(saved);
+    } catch {
+      // Mantener modo oscuro por defecto si localStorage no está disponible.
+    }
+  }, []);
+
+  const toggleDashboardTheme = () => {
+    setDashboardTheme((current) => {
+      const next = current === "dark" ? "light" : "dark";
+      try {
+        window.localStorage.setItem("mgp-courier-dashboard-theme", next);
+      } catch {
+        // El cambio visual sigue funcionando aunque no se pueda persistir.
+      }
+      return next;
+    });
+  };
 
   const loadRegional = useCallback(async () => {
     setRegionalLoading(true);
@@ -482,14 +505,20 @@ export default function B2BPricing() {
     }
   };
 
-  return <section className={styles.shell}>
+  return <section className={`${styles.shell} ${dashboardTheme === "light" ? styles.lightTheme : ""}`}>
     <div className={styles.hero}>
       <div>
         <div className={styles.eyebrow}>COURIER & LOGISTICS · COMPETITIVE PRICING</div>
         <h1>Matriz competitiva</h1>
         <p>Benchmark de precios B2B por macrozona, con histórico mensual, posición competitiva e inteligencia accionable para Chilexpress.</p>
       </div>
-      <div className={styles.sourceBadge}><i/> PRECIOS VERIFICADOS</div>
+      <div className={styles.heroControls}>
+        <button type="button" className={styles.themeToggle} onClick={toggleDashboardTheme} aria-label={dashboardTheme === "dark" ? "Cambiar a vista clara" : "Cambiar a vista oscura"}>
+          <span className={styles.themeIcon} aria-hidden="true">{dashboardTheme === "dark" ? "☀" : "☾"}</span>
+          <span>{dashboardTheme === "dark" ? "Vista clara" : "Vista oscura"}</span>
+        </button>
+        <div className={styles.sourceBadge}><i/> PRECIOS VERIFICADOS</div>
+      </div>
     </div>
 
     <div className={styles.segmentTabs}>
