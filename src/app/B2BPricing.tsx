@@ -448,6 +448,7 @@ export default function B2BPricing() {
       zones={chartZones}
       selectedMonth={selectedMonth}
       months={regionalMonths}
+      history={historicalContext as Array<{month:string;zone:string;company:string;priceClp:number;confidence:number;destinations:number;observations:number;channel:string;plan:string}>}
       onMonthChange={setSelectedMonth}
     /> : <>
       <article className={`${styles.card} ${styles.regionalCard}`}>
