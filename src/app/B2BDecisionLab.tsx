@@ -28,6 +28,16 @@ type Props = {
   onMonthChange: (month: string) => void;
 };
 
+type BeautifulDeck = {
+  presentationId: string;
+  title?: string;
+  editorUrl?: string;
+  playerUrl?: string;
+  pptxUrl?: string;
+  pdfUrl?: string;
+  exportWarning?: string;
+};
+
 const money = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
 const pct = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 1, minimumFractionDigits: 1 });
 
@@ -59,6 +69,7 @@ export default function B2BDecisionLab({ zones, selectedMonth, months, onMonthCh
   const [targetMargin, setTargetMargin] = useState(28);
   const [pptLoading, setPptLoading] = useState(false);
   const [pptNotice, setPptNotice] = useState("");
+  const [beautifulDeck, setBeautifulDeck] = useState<BeautifulDeck | null>(null);
 
   const opportunityRows = useMemo(() => zones.map(({ zone, rows }) => {
     const sorted = [...rows].sort((a, b) => a.price - b.price);
@@ -91,7 +102,45 @@ export default function B2BDecisionLab({ zones, selectedMonth, months, onMonthCh
   const recommendedMid = recommendedLow > 0 && recommendedHigh > 0 ? Math.round((recommendedLow + recommendedHigh) / 2) : 0;
   const discountVsCurrent = currentPrice > 0 && recommendedMid > 0 ? (recommendedMid / currentPrice - 1) * 100 : 0;
 
+  const presentationPayload = {
+    selectedMonth,
+    zones,
+    scenario: { selectedZone, monthlyVolume, priceChange, volumeChange, costShare, targetMargin },
+  };
+
   const generateExecutivePpt = async () => {
+    if (pptLoading) return;
+    setPptLoading(true);
+    setPptNotice("");
+    setBeautifulDeck(null);
+    try {
+      const response = await fetch("/api/b2b-pricing/beautiful-presentation", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(presentationPayload),
+      });
+      const result = await response.json().catch(() => null) as (BeautifulDeck & { error?: string }) | null;
+
+      if (!response.ok || !result) {
+        throw new Error(result?.error || "No fue posible generar la presentación en Beautiful.ai.");
+      }
+
+      setBeautifulDeck(result);
+      setPptNotice(result.exportWarning
+        ? `Presentación creada en Beautiful.ai. ${result.exportWarning}`
+        : "Presentación creada en Beautiful.ai.");
+
+      if (result.editorUrl) {
+        window.open(result.editorUrl, "_blank", "noopener,noreferrer");
+      }
+    } catch (error) {
+      setPptNotice(error instanceof Error ? error.message : "No fue posible generar la presentación.");
+    } finally {
+      setPptLoading(false);
+    }
+  };
+
+  const downloadLegacyPpt = async () => {
     if (pptLoading) return;
     setPptLoading(true);
     setPptNotice("");
@@ -99,16 +148,12 @@ export default function B2BDecisionLab({ zones, selectedMonth, months, onMonthCh
       const response = await fetch("/api/b2b-pricing/executive-ppt", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          selectedMonth,
-          zones,
-          scenario: { selectedZone, monthlyVolume, priceChange, volumeChange, costShare, targetMargin },
-        }),
+        body: JSON.stringify(presentationPayload),
       });
 
       if (!response.ok) {
         const error = await response.json().catch(() => null);
-        throw new Error(error?.error || "No fue posible generar la presentación.");
+        throw new Error(error?.error || "No fue posible generar el PPTX de respaldo.");
       }
 
       const blob = await response.blob();
@@ -120,9 +165,9 @@ export default function B2BDecisionLab({ zones, selectedMonth, months, onMonthCh
       link.click();
       link.remove();
       URL.revokeObjectURL(url);
-      setPptNotice("PPT ejecutiva generada.");
+      setPptNotice("PPTX de respaldo generado.");
     } catch (error) {
-      setPptNotice(error instanceof Error ? error.message : "No fue posible generar la presentación.");
+      setPptNotice(error instanceof Error ? error.message : "No fue posible generar el PPTX.");
     } finally {
       setPptLoading(false);
     }
@@ -143,9 +188,20 @@ export default function B2BDecisionLab({ zones, selectedMonth, months, onMonthCh
             {months.map((month) => <option key={month} value={month}>{monthLabel(month)}</option>)}
           </select>
         </label>
-        <button type="button" className={styles.pptButton} disabled={pptLoading || !zones.some((zone) => zone.rows.length)} onClick={() => void generateExecutivePpt()}>
-          {pptLoading ? "Generando PPT…" : "Generar PPT ejecutiva"}
-        </button>
+        <div className={styles.presentationButtons}>
+          <button type="button" className={styles.pptButton} disabled={pptLoading || !zones.some((zone) => zone.rows.length)} onClick={() => void generateExecutivePpt()}>
+            {pptLoading ? "Generando…" : "Crear con Beautiful.ai"}
+          </button>
+          <button type="button" className={styles.legacyPptButton} disabled={pptLoading || !zones.some((zone) => zone.rows.length)} onClick={() => void downloadLegacyPpt()}>
+            PPTX respaldo
+          </button>
+        </div>
+        {beautifulDeck ? <div className={styles.deckActions}>
+          {beautifulDeck.editorUrl ? <a href={beautifulDeck.editorUrl} target="_blank" rel="noreferrer">Editar en Beautiful.ai ↗</a> : null}
+          {beautifulDeck.playerUrl ? <a href={beautifulDeck.playerUrl} target="_blank" rel="noreferrer">Ver presentación ↗</a> : null}
+          {beautifulDeck.pptxUrl ? <a href={beautifulDeck.pptxUrl} target="_blank" rel="noreferrer">Descargar PPTX ↓</a> : null}
+          {beautifulDeck.pdfUrl ? <a href={beautifulDeck.pdfUrl} target="_blank" rel="noreferrer">Descargar PDF ↓</a> : null}
+        </div> : null}
         {pptNotice ? <span className={styles.pptNotice}>{pptNotice}</span> : null}
       </div>
     </section>
