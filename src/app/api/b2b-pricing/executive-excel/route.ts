@@ -317,10 +317,6 @@ export async function POST(request: NextRequest) {
         summary.getCell(r,c).alignment = { vertical: "middle", horizontal: c===1||c===4||c===8||c===10 ? "left":"center", wrapText: true };
       }
     });
-    summary.addConditionalFormatting({
-      ref: "G12:G14",
-      rules: [{ type: "dataBar", cfvo: [{ type: "num", value: 0 }, { type: "num", value: 100 }], color: { argb: C.green }, showValue: true }],
-    });
 
     summary.mergeCells("A17:J17");
     summary.getCell("A17").value = "RECOMENDACIÓN PARA DIRECTORIO";
@@ -376,14 +372,6 @@ export async function POST(request: NextRequest) {
       }
     });
     benchmark.autoFilter = { from: "A5", to: `L${Math.max(6,5+historySource.length)}` };
-    benchmark.addConditionalFormatting({
-      ref: `K6:K${Math.max(6,5+historySource.length)}`,
-      rules: [{ type: "colorScale", cfvo: [{type:"min"},{type:"percentile",value:50},{type:"max"}], color: [{argb:"DDF5E8"},{argb:"FFF2CC"},{argb:"FADBD8"}] }],
-    });
-    benchmark.addConditionalFormatting({
-      ref: `E6:E${Math.max(6,5+historySource.length)}`,
-      rules: [{ type: "dataBar", cfvo: [{ type: "num", value: 0 }, { type: "num", value: 1 }], color: { argb: C.cyan }, showValue: true }],
-    });
 
     // 3. Oportunidades
     const opp = workbook.addWorksheet("Oportunidades", { views: [{ state: "frozen", ySplit: 5 }] });
@@ -405,7 +393,6 @@ export async function POST(request: NextRequest) {
       opp.getCell(r,2).numFmt=moneyFmt; opp.getCell(r,3).numFmt=moneyFmt; opp.getCell(r,5).numFmt=pctFmt; opp.getCell(r,6).numFmt=pctFmt;
       for(let c=1;c<=9;c++){thinGrid(opp.getCell(r,c));opp.getCell(r,c).alignment={vertical:"middle",horizontal:c===4||c===8?"left":"center",wrapText:true};}
     });
-    opp.addConditionalFormatting({ref:"G6:G8",rules:[{type:"dataBar",cfvo:[{type:"num",value:0},{type:"num",value:100}],color:{argb:C.green},showValue:true}]});
 
     // 4. Escenario formulado
     const scenarioWs = workbook.addWorksheet("Escenario", { views: [{ state: "frozen", ySplit: 3 }] });
