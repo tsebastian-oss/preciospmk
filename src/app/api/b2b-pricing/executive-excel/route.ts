@@ -318,13 +318,6 @@ export async function POST(request: NextRequest) {
       }
     });
     summary.addConditionalFormatting({
-      ref: "E12:E14",
-      rules: [
-        { type: "cellIs", operator: "greaterThanOrEqual", formulae: [0.45], style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "FFE4E8" }, fgColor: { argb: "FFE4E8" } }, font: { color: { argb: "B4233B" }, bold: true } } },
-        { type: "cellIs", operator: "lessThan", formulae: [0.15], style: { fill: { type: "pattern", pattern: "solid", bgColor: { argb: "EAF8F1" }, fgColor: { argb: "EAF8F1" } }, font: { color: { argb: "17633F" }, bold: true } } },
-      ],
-    });
-    summary.addConditionalFormatting({
       ref: "G12:G14",
       rules: [{ type: "dataBar", cfvo: [{ type: "num", value: 0 }, { type: "num", value: 100 }], color: { argb: C.green }, showValue: true }],
     });
