@@ -6,9 +6,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import B2BProfitabilitySimulator from "./B2BProfitabilitySimulator";
 import B2BDecisionLab from "./B2BDecisionLab";
+import B2BAgentZone from "./B2BAgentZone";
 import styles from "./CourierCompetitiveTable.module.css";
 
-type Layer = "simulator" | "b2b" | "decisions";
+type Layer = "simulator" | "b2b" | "decisions" | "agents";
 type Numeric = number | string | null;
 type MacroZone = "Norte" | "Centro" | "Sur";
 
@@ -286,7 +287,7 @@ export default function B2BPricing() {
   }, []);
 
   useEffect(() => {
-    if (layer === "b2b" || layer === "decisions") void loadRegional();
+    if (layer === "b2b" || layer === "decisions" || layer === "agents") void loadRegional();
   }, [layer, loadRegional]);
 
   const loadAssistantHistory = useCallback(async () => {
@@ -504,9 +505,17 @@ export default function B2BPricing() {
         Decisiones
         <span>Oportunidades, impacto y precio recomendado</span>
       </button>
+      <button type="button" className={layer === "agents" ? styles.active : ""} onClick={() => setLayer("agents")}>
+        Agentes IA
+        <span>Reportes, análisis, matching y tareas</span>
+      </button>
     </div>
 
-    {layer === "simulator" ? <B2BProfitabilitySimulator/> : layer === "decisions" ? <B2BDecisionLab
+    {layer === "simulator" ? <B2BProfitabilitySimulator/> : layer === "agents" ? <B2BAgentZone
+      selectedMonth={selectedMonth}
+      pricingContext={historicalContext}
+      rawPricingContext={regionalPoints as unknown as Array<Record<string, unknown>>}
+    /> : layer === "decisions" ? <B2BDecisionLab
       zones={chartZones}
       selectedMonth={selectedMonth}
       months={regionalMonths}
