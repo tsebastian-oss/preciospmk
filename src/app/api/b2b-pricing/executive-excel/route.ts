@@ -213,7 +213,6 @@ export async function POST(request: NextRequest) {
     workbook.created = new Date();
     workbook.modified = new Date();
     workbook.calcProperties.fullCalcOnLoad = true;
-    workbook.calcProperties.forceFullCalc = true;
 
     const metrics = zoneMetrics(zones);
     const validMetrics = metrics.filter((item) => item.premium != null);
