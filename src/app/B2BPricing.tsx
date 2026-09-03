@@ -43,8 +43,11 @@ type RegionalB2BCell = {
 };
 
 type AssistantMessage = {
+  id?: string;
   role: "user" | "assistant";
   content: string;
+  createdAt?: string;
+  selectedMonth?: string | null;
 };
 
 const B2B_COMPANIES = ["Chilexpress", "Starken", "Blue Express", "CorreosChile"] as const;
@@ -114,6 +117,18 @@ function monthShortLabel(key: string) {
   if (Number.isNaN(parsed.getTime())) return key;
   const label = new Intl.DateTimeFormat("es-CL", { month: "short" }).format(parsed).replace(".", "");
   return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+function assistantTime(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("es-CL", {
+    day: "2-digit",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date).replace(".", "");
 }
 
 function companyLabel(company: string) {
@@ -248,6 +263,7 @@ export default function B2BPricing() {
   const [assistantMessages, setAssistantMessages] = useState<AssistantMessage[]>([]);
   const [assistantQuestion, setAssistantQuestion] = useState("");
   const [assistantLoading, setAssistantLoading] = useState(false);
+  const [assistantHistoryLoading, setAssistantHistoryLoading] = useState(true);
 
   const regionalMonths = useMemo(() => augustToDecemberKeys(), []);
 
@@ -272,6 +288,40 @@ export default function B2BPricing() {
   useEffect(() => {
     if (layer === "b2b" || layer === "decisions") void loadRegional();
   }, [layer, loadRegional]);
+
+  const loadAssistantHistory = useCallback(async () => {
+    setAssistantHistoryLoading(true);
+    try {
+      const response = await fetch("/api/b2b-pricing/chat-history", { cache: "no-store" });
+      const result = await response.json() as { messages?: AssistantMessage[]; error?: string };
+      if (!response.ok) throw new Error(result.error || "No fue posible cargar el historial.");
+      setAssistantMessages(result.messages ?? []);
+    } catch {
+      // El chat sigue operativo aunque el historial no pueda cargarse.
+    } finally {
+      setAssistantHistoryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadAssistantHistory();
+  }, [loadAssistantHistory]);
+
+  const clearAssistantHistory = async () => {
+    if (assistantLoading || assistantHistoryLoading) return;
+    if (!window.confirm("¿Borrar todo el historial de este chat?")) return;
+
+    setAssistantHistoryLoading(true);
+    try {
+      const response = await fetch("/api/b2b-pricing/chat-history", { method: "DELETE" });
+      if (!response.ok) throw new Error("No fue posible borrar el historial.");
+      setAssistantMessages([]);
+    } catch {
+      // Mantener la conversación visible si el borrado falla.
+    } finally {
+      setAssistantHistoryLoading(false);
+    }
+  };
 
   const regionalCells = useMemo(
     () => buildRegionalB2B(regionalPoints, regionalMonths),
@@ -379,10 +429,15 @@ export default function B2BPricing() {
     const question = (preset ?? assistantQuestion).trim();
     if (!question || assistantLoading) return;
 
-    const nextMessages: AssistantMessage[] = [
-      ...assistantMessages,
-      { role: "user" as const, content: question },
-    ].slice(-10);
+    const createdAt = new Date().toISOString();
+    const userMessage: AssistantMessage = {
+      role: "user",
+      content: question,
+      createdAt,
+      selectedMonth,
+    };
+    const nextMessages: AssistantMessage[] = [...assistantMessages, userMessage].slice(-80);
+    const contextMessages = nextMessages.slice(-10);
 
     setAssistantMessages(nextMessages);
     setAssistantQuestion("");
@@ -393,27 +448,34 @@ export default function B2BPricing() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          messages: nextMessages,
+          messages: contextMessages,
           selectedMonth,
           rows: historicalContext,
         }),
       });
 
-      const result = await response.json() as { answer?: string; error?: string };
+      const result = await response.json() as { answer?: string; error?: string; historySaved?: boolean };
       if (!response.ok) throw new Error(result.error || "No fue posible consultar el asistente.");
 
       setAssistantMessages((current) => [
         ...current,
-        { role: "assistant" as const, content: result.answer || "Sin respuesta." },
-      ].slice(-10));
+        {
+          role: "assistant" as const,
+          content: result.answer || "Sin respuesta.",
+          createdAt: new Date().toISOString(),
+          selectedMonth,
+        },
+      ].slice(-80));
     } catch (error) {
       setAssistantMessages((current) => [
         ...current,
         {
           role: "assistant" as const,
           content: error instanceof Error ? error.message : "No fue posible consultar el asistente.",
+          createdAt: new Date().toISOString(),
+          selectedMonth,
         },
-      ].slice(-10));
+      ].slice(-80));
     } finally {
       setAssistantLoading(false);
     }
@@ -616,6 +678,11 @@ export default function B2BPricing() {
           >{suggestion}</button>)}
         </div>
 
+        <div className={styles.aiHistoryBar}>
+          <span>{assistantHistoryLoading ? "Cargando historial…" : `Historial guardado · ${assistantMessages.length} mensaje${assistantMessages.length === 1 ? "" : "s"}`}</span>
+          {assistantMessages.length ? <button type="button" disabled={assistantHistoryLoading || assistantLoading} onClick={() => void clearAssistantHistory()}>Borrar historial</button> : null}
+        </div>
+
         <div className={styles.aiConversation}>
           {!assistantMessages.length ? <div className={styles.aiPlaceholder}>
             <strong>Pregunta lo que quieras sobre la posición competitiva.</strong>
@@ -626,7 +693,7 @@ export default function B2BPricing() {
             key={`${message.role}-${index}`}
             className={message.role === "user" ? styles.aiUserMessage : styles.aiAssistantMessage}
           >
-            <span>{message.role === "user" ? "Tú" : "MGP Pricing Copilot"}</span>
+            <span>{message.role === "user" ? "Tú" : "MGP Pricing Copilot"}{message.createdAt ? ` · ${assistantTime(message.createdAt)}` : ""}</span>
             <p>{message.content}</p>
           </div>)}
 
