@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { enterpriseAccess } from "@/lib/enterprise-auth";
+import { enterpriseAccess, enterpriseRest } from "@/lib/enterprise-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -58,6 +58,40 @@ function cleanRows(value: unknown): PricingRow[] {
     );
 }
 
+async function persistTurn(
+  request: NextRequest,
+  organizationId: string,
+  userMessage: string,
+  assistantMessage: string,
+  selectedMonth: string,
+  model: string,
+) {
+  const result = await enterpriseRest<unknown>(request, "b2b_chat_messages", {
+    method: "POST",
+    body: [
+      {
+        organization_id: organizationId,
+        module: "courier_b2b",
+        role: "user",
+        content: userMessage.slice(0, 12000),
+        selected_month: selectedMonth || null,
+        metadata: {},
+      },
+      {
+        organization_id: organizationId,
+        module: "courier_b2b",
+        role: "assistant",
+        content: assistantMessage.slice(0, 12000),
+        selected_month: selectedMonth || null,
+        metadata: { model },
+      },
+    ],
+    prefer: "return=minimal",
+  });
+
+  return !result.response;
+}
+
 function outputText(payload: any) {
   return (payload?.output ?? [])
     .filter((x: any) => x?.type === "message")
@@ -113,6 +147,7 @@ ${JSON.stringify(rows)}`;
 export async function POST(request: NextRequest) {
   const auth = await enterpriseAccess(request, "overview");
   if (auth.response) return auth.response;
+  if (!auth.access) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
   try {
     const body = await request.json();
@@ -157,7 +192,14 @@ export async function POST(request: NextRequest) {
         if (!response.ok) continue;
 
         const answer = outputText(data);
-        if (answer) return NextResponse.json({ answer, model });
+        if (answer) {
+          const lastUserMessage = [...messages].reverse().find((message) => message.role === "user")?.content ?? "";
+          const historySaved = lastUserMessage
+            ? await persistTurn(request, auth.access.organizationId, lastUserMessage, answer, selectedMonth, model)
+            : false;
+
+          return NextResponse.json({ answer, model, historySaved });
+        }
       } catch {
         // Try next configured model.
       }
