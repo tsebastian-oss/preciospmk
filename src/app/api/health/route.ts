@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseRest } from "@/lib/supabase";
+import { clickHouseConfigured, clickHousePing } from "@/lib/clickhouse";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -52,6 +53,24 @@ export async function GET() {
       HEALTH_TIMEOUT_MS,
     );
 
+    let clickhouse: { configured: boolean; reachable: boolean; database: string | null } = {
+      configured: clickHouseConfigured(),
+      reachable: false,
+      database: null,
+    };
+    if (clickhouse.configured) {
+      try {
+        const ping = await withTimeout(clickHousePing(), 4_000);
+        clickhouse = {
+          configured: true,
+          reachable: ping?.ok === 1,
+          database: ping?.database_name ?? null,
+        };
+      } catch {
+        clickhouse = { configured: true, reachable: false, database: null };
+      }
+    }
+
     const healthy = database.status === "ok" && database.dispatcherActive === true;
 
     return response({
@@ -62,6 +81,7 @@ export async function GET() {
         commitSha: process.env.VERCEL_GIT_COMMIT_SHA ?? null,
       },
       supabase: database,
+      clickhouse,
       latencyMs: Date.now() - startedAt,
       checkedAt: new Date().toISOString(),
     }, healthy ? 200 : 503);
@@ -76,6 +96,11 @@ export async function GET() {
       supabase: {
         status: "unreachable",
         error: error instanceof Error ? error.message : String(error),
+      },
+      clickhouse: {
+        configured: clickHouseConfigured(),
+        reachable: false,
+        database: null,
       },
       latencyMs: Date.now() - startedAt,
       checkedAt: new Date().toISOString(),

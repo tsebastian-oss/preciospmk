@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { denyUnlessInternal } from "@/lib/internal-auth";
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
 
 export const dynamic = "force-dynamic";
@@ -30,4 +31,4 @@ async function downloadQuote(url:string,html:string,cookie:string,eventTarget:st
   return out;
 }
 
-export async function GET(){const results:any[]=[]; for(const page of PAGES){try{const src=await pageHtml(page.qs); for(const c of page.controls){try{const d=await downloadQuote(src.url,src.html,src.cookie,c.ctl);results.push({po:page.id,rut:c.rut,provider:c.provider,...d});}catch(e){results.push({po:page.id,rut:c.rut,provider:c.provider,error:e instanceof Error?e.message:"download error"});}}}catch(e){results.push({po:page.id,error:e instanceof Error?e.message:"page error"});}} return NextResponse.json({ok:true,results},{headers:{"cache-control":"no-store"}});}
+export async function GET(request: NextRequest){const denied=await denyUnlessInternal(request);if(denied)return denied;const results:any[]=[]; for(const page of PAGES){try{const src=await pageHtml(page.qs); for(const c of page.controls){try{const d=await downloadQuote(src.url,src.html,src.cookie,c.ctl);results.push({po:page.id,rut:c.rut,provider:c.provider,...d});}catch(e){results.push({po:page.id,rut:c.rut,provider:c.provider,error:e instanceof Error?e.message:"download error"});}}}catch(e){results.push({po:page.id,error:e instanceof Error?e.message:"page error"});}} return NextResponse.json({ok:true,results},{headers:{"cache-control":"no-store"}});}

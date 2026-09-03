@@ -380,7 +380,7 @@ export async function POST(request: NextRequest) {
     const output = await pptx.write({ outputType: "nodebuffer" });
     const buffer = Buffer.isBuffer(output) ? output : Buffer.from(output as ArrayBuffer);
 
-    return new Response(buffer, {
+    return new Response(new Uint8Array(buffer), {
       status: 200,
       headers: {
         "content-type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
