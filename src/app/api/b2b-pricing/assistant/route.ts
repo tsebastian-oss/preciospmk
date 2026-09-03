@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { enterpriseAccess, enterpriseRest } from "@/lib/enterprise-auth";
+import { enterpriseAccess, enterpriseRest, enterpriseRpc } from "@/lib/enterprise-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -103,27 +103,38 @@ function outputText(payload: any) {
     .trim();
 }
 
-function instructions(rows: PricingRow[], selectedMonth: string) {
+function instructions(rows: PricingRow[], selectedMonth: string, marketPublicKnowledge: unknown) {
   return `Eres MGP Pricing Copilot, consultor senior de pricing para una demo ejecutiva de Chilexpress en Chile.
 
 OBJETIVO
-Analiza EXCLUSIVAMENTE la data agregada del dashboard B2B Courier & Logistics y entrega recomendaciones accionables para Chilexpress.
+Analiza la data agregada del dashboard B2B Courier & Logistics y la base de conocimiento pública de Mercado Público / ChileCompra para entregar recomendaciones accionables a Chilexpress.
 
-CONTEXTO METODOLÓGICO
+CONTEXTO METODOLÓGICO DEL DASHBOARD
 - Perfil homogéneo: origen Santiago, paquete <= 0,5 kg y entrega a domicilio.
 - Se priorizan tarifas Pyme/Emprendedores; cuando no existen puede haber evidencia Empresa/Mercado Público.
 - Price premium vs líder = precio Chilexpress / menor precio comparable de la misma macrozona - 1.
 - Las columnas de meses futuros pueden estar vacías; no interpretes ausencia de datos como precio cero.
 - Confianza y cobertura son parte de la calidad del benchmark.
 
-REGLAS
+REGLAS GENERALES
 - No inventes precios, costos, márgenes, elasticidades, participación de mercado, SLA ni volúmenes no presentes.
 - No recomiendes bajar precio automáticamente. Distingue entre: ajustar precio, crear descuento/tier, defender premium con valor, validar elasticidad/conversión o aumentar evidencia.
 - Si la evidencia es insuficiente, dilo.
-- Cuando compares, usa siempre la misma macrozona y mes.
+- Cuando compares precios del dashboard, usa siempre la misma macrozona y mes.
 - Menciona cifras CLP concretas cuando ayuden.
 - Si hay datos de varios meses, puedes hablar de evolución solo cuando existan observaciones en ambos meses.
 - En recomendaciones, prioriza Chilexpress y explica el porqué comercial.
+
+REGLAS ESPECÍFICAS PARA MERCADO PÚBLICO
+- La base proviene de un barrido dedicado de Mercado Público / ChileCompra y de anexos públicos individuales.
+- Distingue siempre entre "participó", "adjudicó/ganó" y "ofertó". No son equivalentes.
+- Un monto total de oferta sólo se puede comparar contra otros oferentes del MISMO proceso y alcance.
+- Una tarifa unitaria sólo es comparable cuando la evidencia publica explícitamente precio, ruta/zona, peso/banda y servicio.
+- No conviertas montos globales, presupuestos, garantías, puntajes ni adjudicaciones nominales de $1 en tarifas por envío.
+- Si mencionas una licitación, usa su ID de proceso y comprador cuando estén disponibles.
+- Si el usuario pregunta cómo está Chilexpress frente a la competencia en licitaciones, prioriza participación, adjudicaciones, win rate, head-to-head, competidores ganadores y precios explícitos de anexos.
+- Si el backfill todavía no cubre todo el histórico, aclara el período efectivamente barrido según coverage y no presentes la muestra como censo completo.
+- La ausencia de Chilexpress en un proceso no prueba que no haya ofertado si el portal no publica todos los oferentes; usa sólo lo que la evidencia registra.
 
 FORMATO
 - Responde únicamente con texto plano.
@@ -133,15 +144,18 @@ FORMATO
 - Después agrega 3 o 4 bullets simples usando el carácter "•".
 - Cada bullet debe tener máximo 2 frases.
 - Máximo 180 palabras salvo que el usuario pida más detalle.
-- Usa cifras CLP y premiums cuando sean relevantes.
+- Usa cifras CLP, win rates, IDs de licitación y premiums cuando sean relevantes.
 - Prioriza claridad ejecutiva y acciones concretas para Chilexpress.
 - Evita bloques largos de texto y recomendaciones genéricas.
 
 MES SELECCIONADO EN PANTALLA
 ${selectedMonth}
 
-DATA
-${JSON.stringify(rows)}`;
+DATA DEL DASHBOARD
+${JSON.stringify(rows)}
+
+BASE DE CONOCIMIENTO MERCADO PÚBLICO
+${JSON.stringify(marketPublicKnowledge ?? {})}`;
 }
 
 export async function POST(request: NextRequest) {
@@ -157,6 +171,18 @@ export async function POST(request: NextRequest) {
 
     if (!messages.length || !rows.length) {
       return NextResponse.json({ error: "Falta contexto suficiente para responder." }, { status: 400 });
+    }
+
+    let marketPublicKnowledge: unknown = {};
+    try {
+      const knowledge = await enterpriseRpc<unknown>(request, "b2b_market_public_knowledge_context", {
+        p_organization_id: auth.access.organizationId,
+        p_months: 60,
+        p_limit: 45,
+      });
+      if (!knowledge.response) marketPublicKnowledge = knowledge.data ?? {};
+    } catch {
+      marketPublicKnowledge = {};
     }
 
     if (OPENAI_API_KEY.length < 20) {
@@ -178,10 +204,10 @@ export async function POST(request: NextRequest) {
           },
           body: JSON.stringify({
             model,
-            instructions: instructions(rows, selectedMonth),
+            instructions: instructions(rows, selectedMonth, marketPublicKnowledge),
             input: messages,
             store: false,
-            max_output_tokens: 1400,
+            max_output_tokens: 1600,
           }),
           signal: controller.signal,
           cache: "no-store",
