@@ -1,0 +1,738 @@
+.shell {
+  min-height: 100dvh;
+  background:
+    radial-gradient(circle at top left, rgba(77, 255, 180, 0.16), transparent 34rem),
+    #07110d;
+  color: #f5fbf8;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.phone {
+  width: min(100%, 760px);
+  min-height: 100dvh;
+  margin: 0 auto;
+  background: linear-gradient(180deg, #0a1711 0%, #07100c 100%);
+  position: relative;
+  padding-bottom: 94px;
+  box-shadow: 0 0 80px rgba(0, 0, 0, 0.32);
+}
+
+.topbar {
+  min-height: 76px;
+  padding: max(18px, env(safe-area-inset-top)) 20px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(7, 16, 12, 0.88);
+  backdrop-filter: blur(18px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.brandLockup {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.brandLockup > div:last-child {
+  display: grid;
+  gap: 2px;
+}
+
+.brandLockup strong {
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+
+.brandLockup span {
+  color: #81978c;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+.logoMark {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  background: #43f79e;
+  color: #031009;
+  font-weight: 900;
+  font-size: 18px;
+  box-shadow: 0 8px 28px rgba(67, 247, 158, 0.2);
+}
+
+.profileButton {
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.05);
+  color: #dbe7e1;
+  font-weight: 750;
+  font-size: 10px;
+}
+
+.content {
+  padding: 16px 18px 34px;
+}
+
+.hero {
+  padding: 28px 4px 20px;
+}
+
+.eyebrow {
+  display: inline-flex;
+  color: #53f5a5;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hero h1,
+.listView h1 {
+  margin: 10px 0 12px;
+  font-size: clamp(38px, 10vw, 62px);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+  font-weight: 760;
+}
+
+.hero p,
+.listView > p {
+  margin: 0;
+  max-width: 540px;
+  color: #9caf a5;
+  color: #9cafa5;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+.searchBox {
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px 7px 14px;
+  border-radius: 20px;
+  background: #f5faf7;
+  border: 1px solid rgba(255, 255, 255, 0.7);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.22);
+}
+
+.searchBoxCompact {
+  min-height: 52px;
+  border-radius: 17px;
+}
+
+.searchIcon {
+  color: #0d2419;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.searchBox input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #0c2117;
+  font: inherit;
+  font-size: 15px;
+  font-weight: 620;
+}
+
+.searchBox input::placeholder {
+  color: #789086;
+}
+
+.searchBox button {
+  height: 42px;
+  padding: 0 17px;
+  border: 0;
+  border-radius: 13px;
+  background: #0b2016;
+  color: #effaf4;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.searchBox button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.suggestions {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 13px 2px 6px;
+  scrollbar-width: none;
+}
+
+.suggestions::-webkit-scrollbar { display: none; }
+
+.suggestions button {
+  flex: 0 0 auto;
+  padding: 9px 13px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.045);
+  color: #c6d4cd;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.valueCard {
+  margin-top: 24px;
+  padding: 22px;
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  gap: 16px;
+  border: 1px solid rgba(83, 245, 165, 0.17);
+  border-radius: 24px;
+  background:
+    linear-gradient(135deg, rgba(83, 245, 165, 0.09), transparent 65%),
+    rgba(255, 255, 255, 0.035);
+}
+
+.valueIcon {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 15px;
+  background: #43f79e;
+  color: #04150b;
+  font-size: 24px;
+  font-weight: 900;
+}
+
+.valueCard > div:last-child {
+  display: grid;
+  gap: 5px;
+}
+
+.valueCard span {
+  color: #7e9b8d;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.valueCard strong {
+  font-size: 19px;
+  letter-spacing: -0.025em;
+}
+
+.valueCard p {
+  margin: 2px 0 0;
+  color: #93a89e;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.featureGrid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.featureGrid article {
+  min-height: 138px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.025);
+  display: flex;
+  flex-direction: column;
+}
+
+.featureGrid article > span {
+  color: #4bf3a1;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.featureGrid strong {
+  margin-top: auto;
+  font-size: 14px;
+}
+
+.featureGrid p {
+  margin: 5px 0 0;
+  color: #7f9389;
+  font-size: 11px;
+  line-height: 1.42;
+}
+
+.searchSticky {
+  position: sticky;
+  top: 76px;
+  z-index: 15;
+  padding: 5px 0 14px;
+  background: linear-gradient(180deg, #07100c 72%, rgba(7, 16, 12, 0));
+}
+
+.summaryCard {
+  margin: 8px 0 22px;
+  padding: 22px;
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 88% 8%, rgba(83, 245, 165, 0.22), transparent 42%),
+    #10291d;
+  border: 1px solid rgba(83, 245, 165, 0.19);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.2);
+}
+
+.summaryCard > div:first-child {
+  display: grid;
+}
+
+.summaryCard > div:first-child span,
+.savingBubble span {
+  color: #9bb3a7;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.summaryCard > div:first-child strong {
+  margin-top: 2px;
+  font-size: 42px;
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.summaryCard > div:first-child p {
+  margin: 6px 0 0;
+  color: #c1d0c9;
+  font-size: 13px;
+}
+
+.savingBubble {
+  margin-top: 20px;
+  padding: 13px 15px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: 15px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.savingBubble strong {
+  color: #55f5a6;
+  font-size: 18px;
+}
+
+.summaryMeta {
+  margin-top: 14px;
+  display: flex;
+  gap: 8px;
+}
+
+.summaryMeta span {
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
+  color: #9eb1a7;
+  font-size: 10px;
+}
+
+.resultsSection {
+  padding-bottom: 16px;
+}
+
+.sectionHeading {
+  margin-bottom: 12px;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.sectionHeading span {
+  color: #789087;
+  font-size: 11px;
+}
+
+.sectionHeading h2 {
+  margin: 2px 0 0;
+  font-size: 23px;
+  letter-spacing: -0.035em;
+}
+
+.sectionHeading small {
+  color: #6f877d;
+  font-size: 10px;
+}
+
+.resultsList {
+  display: grid;
+  gap: 10px;
+}
+
+.priceCard {
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.cardTopline,
+.priceRow,
+.cardActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.bestBadge,
+.storeBadge,
+.discount,
+.stock,
+.noStock {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.bestBadge {
+  background: #48f4a0;
+  color: #04150b;
+}
+
+.storeBadge {
+  background: rgba(255, 255, 255, 0.07);
+  color: #a9bbb2;
+}
+
+.discount {
+  background: rgba(83, 245, 165, 0.11);
+  color: #58f1a7;
+}
+
+.productInfo {
+  padding: 15px 0 14px;
+}
+
+.productInfo > span {
+  color: #50eaa0;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.productInfo h3 {
+  margin: 4px 0 5px;
+  color: #f0f7f3;
+  font-size: 16px;
+  line-height: 1.28;
+  letter-spacing: -0.02em;
+}
+
+.productInfo p {
+  margin: 0;
+  color: #768d82;
+  font-size: 10px;
+}
+
+.priceRow {
+  padding: 12px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.priceRow > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.priceRow strong {
+  font-size: 25px;
+  letter-spacing: -0.035em;
+}
+
+.priceRow del {
+  color: #667d72;
+  font-size: 11px;
+}
+
+.stock {
+  background: rgba(83, 245, 165, 0.08);
+  color: #6aefad;
+}
+
+.noStock {
+  background: rgba(255, 255, 255, 0.05);
+  color: #7d8d85;
+}
+
+.cardActions {
+  padding-top: 12px;
+}
+
+.cardActions button,
+.cardActions a,
+.emptyState button {
+  min-height: 38px;
+  padding: 0 13px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 750;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.saveButton {
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(255, 255, 255, 0.05);
+  color: #dce8e2;
+}
+
+.savedButton {
+  border: 1px solid rgba(83, 245, 165, 0.18);
+  background: rgba(83, 245, 165, 0.1);
+  color: #61f3aa;
+}
+
+.cardActions a {
+  display: inline-flex;
+  align-items: center;
+  background: #eaf7f0;
+  color: #0c2016;
+}
+
+.emptyState {
+  margin-top: 24px;
+  padding: 28px 22px;
+  border: 1px dashed rgba(255, 255, 255, 0.13);
+  border-radius: 22px;
+  text-align: center;
+  color: #a8bbb1;
+}
+
+.emptyState strong {
+  display: block;
+  color: #edf5f1;
+  font-size: 16px;
+}
+
+.emptyState p {
+  margin: 7px auto 14px;
+  max-width: 330px;
+  color: #80948a;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.emptyState button {
+  border: 0;
+  background: #48f4a0;
+  color: #04150b;
+}
+
+.listView {
+  padding: 24px 2px 0;
+}
+
+.listTotal {
+  margin-top: 24px;
+  padding: 20px;
+  display: grid;
+  border-radius: 22px;
+  background: #10281d;
+  border: 1px solid rgba(83, 245, 165, 0.15);
+}
+
+.listTotal span,
+.listTotal small {
+  color: #8ca399;
+  font-size: 11px;
+}
+
+.listTotal strong {
+  margin: 4px 0;
+  font-size: 32px;
+  letter-spacing: -0.04em;
+}
+
+.savedList {
+  margin-top: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.savedList article {
+  padding: 15px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.savedList article > div {
+  display: grid;
+  gap: 3px;
+}
+
+.savedList article > div:last-child {
+  text-align: right;
+  justify-items: end;
+}
+
+.savedList span,
+.savedList small {
+  color: #71877c;
+  font-size: 10px;
+}
+
+.savedList strong {
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.savedList button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #6beeb0;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.bottomNav {
+  position: fixed;
+  z-index: 30;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  width: min(100%, 760px);
+  min-height: 72px;
+  padding: 8px 15px max(8px, env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  background: rgba(8, 18, 13, 0.94);
+  backdrop-filter: blur(20px);
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.bottomNav button {
+  position: relative;
+  border: 0;
+  background: transparent;
+  color: #62796e;
+  font-size: 9px;
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.bottomNav button > span {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.bottomNav button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.bottomNav .activeNav {
+  color: #59f2a7;
+}
+
+.bottomNav b {
+  position: absolute;
+  top: 2px;
+  left: calc(50% + 8px);
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #4cf3a2;
+  color: #06120b;
+  font-size: 8px;
+}
+
+.skeletonWrap {
+  display: grid;
+  gap: 10px;
+  padding-top: 8px;
+}
+
+.skeletonHero,
+.skeletonCard {
+  position: relative;
+  overflow: hidden;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.skeletonHero { height: 170px; }
+.skeletonCard { height: 165px; }
+
+.skeletonHero::after,
+.skeletonCard::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.06), transparent);
+  animation: shimmer 1.25s infinite;
+}
+
+.skeletonWrap p {
+  margin: 2px 0;
+  color: #71877c;
+  font-size: 11px;
+  text-align: center;
+}
+
+@keyframes shimmer {
+  to { transform: translateX(100%); }
+}
+
+@media (max-width: 560px) {
+  .featureGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .featureGrid article {
+    min-height: 100px;
+  }
+
+  .sectionHeading small {
+    display: none;
+  }
+}
+
+@media (min-width: 761px) {
+  .phone {
+    border-left: 1px solid rgba(255, 255, 255, 0.05);
+    border-right: 1px solid rgba(255, 255, 255, 0.05);
+  }
+}
