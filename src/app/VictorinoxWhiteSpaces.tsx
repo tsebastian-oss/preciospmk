@@ -1,8 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import styles from "./VictorinoxMarketPanel.module.css";
+import baseStyles from "./VictorinoxMarketPanel.module.css";
+import executiveStyles from "./VictorinoxExecutive.module.css";
 import { trackUsageEvent } from "@/lib/usage-client";
+
+const styles={...baseStyles,...executiveStyles};
 
 type Row = {
   id: string;
