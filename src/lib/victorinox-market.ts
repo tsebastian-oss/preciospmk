@@ -81,14 +81,8 @@ function categoryFor(brand: string, text: string) {
     return "Equipo de viaje";
   }
 
-  if (pocketSignal && !pocketAccessory) {
-    return "Navajas y multiherramientas";
-  }
-
-  if (knifeSignal && !kitchenAccessory) {
-    return "Cuchillos";
-  }
-
+  if (pocketSignal && !pocketAccessory) return "Navajas y multiherramientas";
+  if (knifeSignal && !kitchenAccessory) return "Cuchillos";
   return null;
 }
 
@@ -114,6 +108,15 @@ function median(values: number[]) {
   const ordered = [...values].sort((a,b)=>a-b);
   const middle = Math.floor(ordered.length/2);
   return ordered.length % 2 ? ordered[middle] : (ordered[middle-1]+ordered[middle])/2;
+}
+
+function quantile(values:number[],q:number){
+  if(!values.length)return null;
+  const ordered=[...values].sort((a,b)=>a-b);
+  const pos=(ordered.length-1)*q;
+  const base=Math.floor(pos);
+  const rest=pos-base;
+  return ordered[base+1]==null?ordered[base]:ordered[base]+rest*(ordered[base+1]-ordered[base]);
 }
 
 function round(value: number | null, digits = 0) {
@@ -200,12 +203,30 @@ export async function victorinoxMarketIntelligence(_access: EnterpriseAccessCont
     const competitorMedians = categoryRows.filter(row=>row.brand!=="Victorinox" && row.medianPrice).map(row=>row.medianPrice as number);
     const benchmark = median(competitorMedians);
     const priceIndex = own?.medianPrice && benchmark ? round(own.medianPrice/benchmark*100,1) : null;
+
+    const categoryListings=market.filter(row=>row.category===category&&row.inStock!==false&&row.currentPrice>0);
+    const ownPrices=categoryListings.filter(row=>row.brand==="Victorinox").map(row=>row.currentPrice);
+    const competitorPrices=categoryListings.filter(row=>row.brand!=="Victorinox").map(row=>row.currentPrice);
+    const ownP10=quantile(ownPrices,.10);
+    const ownP90=quantile(ownPrices,.90);
+    const comparablePrices=ownP10!=null&&ownP90!=null
+      ? competitorPrices.filter(price=>price>=ownP10&&price<=ownP90)
+      : [];
+    const comparablePool=comparablePrices.length>=5?comparablePrices:competitorPrices;
+    const comparableBenchmark=median(comparablePool);
+    const comparablePriceIndex=own?.medianPrice&&comparableBenchmark?round(own.medianPrice/comparableBenchmark*100,1):null;
+
     return {
       category,
       own,
       benchmarkMedian: round(benchmark),
       priceIndex,
       premiumPct: priceIndex == null ? null : round(priceIndex-100,1),
+      comparableBenchmarkMedian:round(comparableBenchmark),
+      comparablePriceIndex,
+      comparablePremiumPct:comparablePriceIndex==null?null:round(comparablePriceIndex-100,1),
+      comparableSample:comparablePool.length,
+      comparableBand:{low:round(ownP10),high:round(ownP90)},
       competitors: categoryRows.filter(row=>row.brand!=="Victorinox").sort((a,b)=>(a.medianPrice??Infinity)-(b.medianPrice??Infinity)),
     };
   });
@@ -215,10 +236,10 @@ export async function victorinoxMarketIntelligence(_access: EnterpriseAccessCont
   const lastObservedAt = market.map(row=>row.observedAt).filter((v):v is string=>Boolean(v)).sort().at(-1) ?? null;
 
   const insights: string[] = [];
-  const strongestPremium = [...position].filter(x=>x.priceIndex!=null).sort((a,b)=>(b.priceIndex??0)-(a.priceIndex??0))[0];
-  if (strongestPremium) insights.push(`El mayor premium relativo de Victorinox aparece en ${strongestPremium.category}: índice ${strongestPremium.priceIndex} con benchmark = 100.`);
-  const lowest = [...position].filter(x=>x.priceIndex!=null).sort((a,b)=>(a.priceIndex??Infinity)-(b.priceIndex??Infinity))[0];
-  if (lowest && lowest.category !== strongestPremium?.category) insights.push(`La categoría más cercana al mercado es ${lowest.category}: índice ${lowest.priceIndex}.`);
+  const strongestPremium = [...position].filter(x=>x.comparablePriceIndex!=null).sort((a,b)=>(b.comparablePriceIndex??0)-(a.comparablePriceIndex??0))[0];
+  if (strongestPremium) insights.push(`El mayor premium comparable de Victorinox aparece en ${strongestPremium.category}: índice ${strongestPremium.comparablePriceIndex} con benchmark comparable = 100.`);
+  const closest = [...position].filter(x=>x.comparablePriceIndex!=null).sort((a,b)=>Math.abs((a.comparablePriceIndex??100)-100)-Math.abs((b.comparablePriceIndex??100)-100))[0];
+  if (closest && closest.category !== strongestPremium?.category) insights.push(`La categoría más cercana a paridad comparable es ${closest.category}: índice ${closest.comparablePriceIndex}.`);
   const promoted = market.filter(row=>row.brand==="Victorinox" && (row.promotionPct??0)>0);
   if (promoted.length) insights.push(`${promoted.length} SKU Victorinox aparecen con precio promocional en la última muestra.`);
   insights.push(`El universo competitivo visible reúne ${brands.length} marcas en ${retailers.length} retailers.`);
