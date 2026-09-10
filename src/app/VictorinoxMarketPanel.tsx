@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import styles from "./VictorinoxMarketPanel.module.css";
+import baseStyles from "./VictorinoxMarketPanel.module.css";
+import executiveStyles from "./VictorinoxExecutive.module.css";
 import VictorinoxCopilot from "./VictorinoxCopilot";
 import VictorinoxMatrix from "./VictorinoxMatrix";
 import VictorinoxHistory from "./VictorinoxHistory";
@@ -9,6 +10,8 @@ import VictorinoxDownloads from "./VictorinoxDownloads";
 import VictorinoxPositioning from "./VictorinoxPositioning";
 import VictorinoxWhiteSpaces from "./VictorinoxWhiteSpaces";
 import { trackUsageEvent } from "@/lib/usage-client";
+
+const styles={...baseStyles,...executiveStyles};
 
 type SummaryRow = {
   category: string;
@@ -163,7 +166,7 @@ export default function VictorinoxMarketPanel(){
       </section>
 
       <section className={styles.positionGrid}>
-        {payload.position.map(row=><article className={styles.positionCard} key={row.category}>
+        {payload.position.map(row=><article className={`${styles.positionCard} ${styles.executivePositionCard}`} key={row.category}>
           <span>{row.category.toUpperCase()}</span>
           <h2>{clp(row.own?.medianPrice)}</h2>
           <p>Mediana Victorinox</p>
