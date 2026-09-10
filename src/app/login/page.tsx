@@ -13,9 +13,15 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [nextPath, setNextPath] = useState("/entry");
+  const [client, setClient] = useState("");
+
+  const isVictorinox = client === "victorinox";
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
+    const clientParam = query.get("client") || "";
+    setClient(clientParam);
+    if (clientParam === "victorinox") setEmail("victorinox@mgp-retail.internal");
     if (query.get("confirmed") === "1") {
       setNotice("Correo confirmado correctamente. Ya puedes ingresar con tu contraseña.");
     }
@@ -29,33 +35,20 @@ export default function LoginPage() {
     event.preventDefault();
     setLoading(true);
     setError("");
-
     try {
       const response = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-
       const raw = await response.text();
       let payload: LoginResponse = {};
       if (raw) {
-        try {
-          payload = JSON.parse(raw) as LoginResponse;
-        } catch {
-          payload = {};
-        }
+        try { payload = JSON.parse(raw) as LoginResponse; } catch { payload = {}; }
       }
-
       if (!response.ok) {
-        throw new Error(
-          payload.error ||
-            (response.status >= 500
-              ? "El servicio de acceso está temporalmente no disponible. Intenta nuevamente en unos segundos."
-              : "No fue posible iniciar sesión")
-        );
+        throw new Error(payload.error || (response.status >= 500 ? "El servicio de acceso está temporalmente no disponible. Intenta nuevamente en unos segundos." : "No fue posible iniciar sesión"));
       }
-
       window.location.href = nextPath;
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Error de autenticación");
@@ -65,18 +58,22 @@ export default function LoginPage() {
   }
 
   return (
-    <main className={styles.page}>
+    <main className={`${styles.page} ${isVictorinox ? styles.victorinoxPage : ""}`}>
       <Link href="/landing" className={styles.brand}>
-        <span>M</span>
-        <div><strong>MGP Super Precios</strong><small>Price Intelligence Platform</small></div>
+        {isVictorinox ? (
+          <img className={styles.clientLogo} src="/victorinox-brand.svg" alt="Victorinox" />
+        ) : (
+          <><span>M</span><div><strong>MGP Super Precios</strong><small>Price Intelligence Platform</small></div></>
+        )}
       </Link>
 
-      <section className={styles.card}>
-        <span className={styles.eyebrow}>ACCESO CLIENTES</span>
-        <h1>Ingresa a tu plataforma.</h1>
-        <p>Usa el correo y contraseña asociados a tu cuenta.</p>
+      <section className={`${styles.card} ${isVictorinox ? styles.victorinoxCard : ""}`}>
+        {isVictorinox && <img className={styles.heroLogo} src="/victorinox-brand.svg" alt="Victorinox" />}
+        <span className={styles.eyebrow}>{isVictorinox ? "COMMERCIAL & PRICING INTELLIGENCE" : "ACCESO CLIENTES"}</span>
+        <h1>{isVictorinox ? "Bienvenido a Victorinox Intelligence." : "Ingresa a tu plataforma."}</h1>
+        <p>{isVictorinox ? "Accede a pricing, competencia, surtido, retailers, promociones e inteligencia de mercado para Chile." : "Usa el correo y contraseña asociados a tu cuenta."}</p>
 
-        {notice && <div style={{ marginBottom: 18, padding: "13px 14px", borderRadius: 12, border: "1px solid rgba(189,243,75,.28)", background: "rgba(189,243,75,.08)", color: "#dfffa0", fontSize: 12, lineHeight: 1.55 }}>{notice}</div>}
+        {notice && <div className={styles.success}>{notice}</div>}
 
         <form onSubmit={submit}>
           <label>
@@ -87,14 +84,12 @@ export default function LoginPage() {
             Contraseña
             <input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" required minLength={6} />
           </label>
-          <div style={{ marginTop: -8, textAlign: "right", fontSize: 12 }}>
-            <Link href="/forgot-password" style={{ color: "#bdf34b", fontWeight: 800 }}>¿Olvidaste tu contraseña?</Link>
-          </div>
+          <div className={styles.forgot}><Link href="/forgot-password">¿Olvidaste tu contraseña?</Link></div>
           {error && <div className={styles.error}>{error}</div>}
           <button type="submit" disabled={loading}>{loading ? "Validando…" : "Ingresar"}</button>
         </form>
 
-        <small className={styles.notice}>El acceso y las consultas quedan restringidos a usuarios autenticados.</small>
+        <small className={styles.notice}>{isVictorinox ? "Acceso privado · Victorinox Chile · Powered by MGP" : "El acceso y las consultas quedan restringidos a usuarios autenticados."}</small>
       </section>
     </main>
   );
