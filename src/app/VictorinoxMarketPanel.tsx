@@ -45,6 +45,11 @@ type Position = {
   benchmarkMedian: number | null;
   priceIndex: number | null;
   premiumPct: number | null;
+  comparableBenchmarkMedian: number | null;
+  comparablePriceIndex: number | null;
+  comparablePremiumPct: number | null;
+  comparableSample: number;
+  comparableBand: { low:number|null; high:number|null };
   competitors: SummaryRow[];
 };
 
@@ -110,9 +115,9 @@ export default function VictorinoxMarketPanel(){
 
   const executive=useMemo(()=>{
     if(!payload)return null;
-    const valid=payload.position.filter(row=>row.priceIndex!=null);
-    const highest=[...valid].sort((a,b)=>(b.priceIndex??0)-(a.priceIndex??0))[0]??null;
-    const closest=[...valid].sort((a,b)=>Math.abs((a.priceIndex??100)-100)-Math.abs((b.priceIndex??100)-100))[0]??null;
+    const valid=payload.position.filter(row=>row.comparablePriceIndex!=null);
+    const highest=[...valid].sort((a,b)=>(b.comparablePriceIndex??0)-(a.comparablePriceIndex??0))[0]??null;
+    const closest=[...valid].sort((a,b)=>Math.abs((a.comparablePriceIndex??100)-100)-Math.abs((b.comparablePriceIndex??100)-100))[0]??null;
     let bestGap:{retailer:string;category:string;own:number;leader:number;brand:string;score:number}|null=null;
     for(const retailer of payload.retailers){
       for(const cat of payload.categories){
@@ -161,7 +166,7 @@ export default function VictorinoxMarketPanel(){
 
     {tab==="overview"&&<>
       <section className={styles.executiveHeader}>
-        <div><span>EXECUTIVE OVERVIEW</span><h2>Posición de mercado por categoría</h2><p>Price Index compara la mediana Victorinox con el benchmark competitivo de cada vertical. Mercado = 100.</p></div>
+        <div><span>EXECUTIVE OVERVIEW</span><h2>Posición de mercado por categoría</h2><p>Comparable Price Index usa competidores dentro del corredor central de precios Victorinox (P10–P90). El Market Index completo queda como referencia secundaria.</p></div>
         <button onClick={()=>setTab("copilot")}>Preguntar al AI Analyst →</button>
       </section>
 
@@ -170,16 +175,16 @@ export default function VictorinoxMarketPanel(){
           <span>{row.category.toUpperCase()}</span>
           <h2>{clp(row.own?.medianPrice)}</h2>
           <p>Mediana Victorinox</p>
-          <div className={styles.cardBenchmark}><small>Benchmark</small><strong>{clp(row.benchmarkMedian)}</strong></div>
+          <div className={styles.cardBenchmark}><small>Benchmark comparable</small><strong>{clp(row.comparableBenchmarkMedian)}</strong></div>
           <div className={styles.cardMeta}><span>{row.own?.skuCount??0} SKU</span><span>{row.own?.retailers??0} retailers</span><span>{row.own?.promoPct.toFixed(1)??"0.0"}% promo</span></div>
-          <em className={indexClass(row.priceIndex)}>{row.priceIndex==null?"—":row.priceIndex.toFixed(1)}</em>
-          <footer>{row.premiumPct==null?"Sin comparable":`${signedPct(row.premiumPct)} vs benchmark`} · Price Index</footer>
+          <em className={indexClass(row.comparablePriceIndex)}>{row.comparablePriceIndex==null?"—":row.comparablePriceIndex.toFixed(1)}</em>
+          <footer>{row.comparablePremiumPct==null?"Sin comparable":`${signedPct(row.comparablePremiumPct)} comparable`} · Market Index {row.priceIndex?.toFixed(1)??"—"}</footer>
         </article>)}
       </section>
 
       <section className={styles.signalGrid}>
-        <article><span>MAYOR PREMIUM</span><strong>{executive?.highest?.category??"—"}</strong><small>{executive?.highest?.premiumPct==null?"sin comparable":`${signedPct(executive.highest.premiumPct)} vs mercado`}</small></article>
-        <article><span>MÁS CERCA DE PARIDAD</span><strong>{executive?.closest?.category??"—"}</strong><small>{executive?.closest?.priceIndex==null?"sin comparable":`Index ${executive.closest.priceIndex.toFixed(1)}`}</small></article>
+        <article><span>MAYOR PREMIUM COMPARABLE</span><strong>{executive?.highest?.category??"—"}</strong><small>{executive?.highest?.comparablePremiumPct==null?"sin comparable":`${signedPct(executive.highest.comparablePremiumPct)} vs corredor comparable`}</small></article>
+        <article><span>MÁS CERCA DE PARIDAD</span><strong>{executive?.closest?.category??"—"}</strong><small>{executive?.closest?.comparablePriceIndex==null?"sin comparable":`Comparable Index ${executive.closest.comparablePriceIndex.toFixed(1)}`}</small></article>
         <article><span>WHITE SPACE #1</span><strong>{executive?.bestGap?.retailer??"—"}</strong><small>{executive?.bestGap?`${executive.bestGap.category} · ${executive.bestGap.own} vs ${executive.bestGap.leader} SKU ${executive.bestGap.brand}`:"sin brecha relevante"}</small></article>
         <article><span>PROMO VICTORINOX</span><strong>{payload.kpis.promotedOwnSkus}</strong><small>SKU promocionados observados</small></article>
       </section>
