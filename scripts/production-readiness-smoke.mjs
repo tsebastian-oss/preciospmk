@@ -65,7 +65,7 @@ async function main() {
   const protectedReset = await expectStatus("/reset-password", [307, 308], { redirect: "manual" });
   assert((protectedReset.headers.get("location") || "").includes("/forgot-password"), "/reset-password no protege correctamente una sesión ausente");
 
-  const privateApis = ["/api/products", "/api/brand-chat/history", "/api/price-map-ai/history", "/api/data-exports", "/api/alerts", "/api/enterprise/account"];
+  const privateApis = ["/api/products", "/api/brand-chat/history", "/api/price-map-ai/history", "/api/data-exports", "/api/alerts", "/api/enterprise/account", "/api/clickhouse-dashboard", "/api/internal/b2b-crawl-once"];
   for (const path of privateApis) await expectStatus(path, [401]);
 
   const health = await expectStatus("/api/health", [200]);

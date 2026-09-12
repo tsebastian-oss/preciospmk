@@ -29,11 +29,17 @@ export type CommercialAccountPayload = {
 const VIEW_MODULE: Record<string, string | null> = {
   overview: "overview",
   "category-intelligence": "brand-intelligence",
-  "price-map": "optimizer",
-  promotions: "promotions",
+  "price-evolution": "overview",
+  "retailer-benchmark": "overview",
+  "market-coverage": "overview",
+  "price-gaps": "overview",
+  "price-alerts": "alerts",
+  products: "overview",
   downloads: "downloads",
   alerts: "alerts",
   scraping: "data-quality",
+  automotive: "overview",
+  "pricing-b2b": "overview",
   settings: null,
 };
 
@@ -43,7 +49,7 @@ export function requiredModuleForView(view: string) {
 
 export function minimumPlanForView(view: string) {
   if (view === "scraping") return "Enterprise";
-  if (["category-intelligence", "price-map"].includes(view)) return "Business";
+  if (["category-intelligence", "price-evolution", "price-gaps", "pricing-b2b", "automotive"].includes(view)) return "Business";
   return "Starter";
 }
 
@@ -112,9 +118,9 @@ export function CommercialBanner({ account }: { account: CommercialAccountPayloa
 }
 
 const TRIAL_STEPS = [
-  { view: "promotions", title: "Revisa promociones", copy: "Detecta ofertas vigentes dentro de tu alcance." },
   { view: "category-intelligence", title: "Analiza una categoría", copy: "Compara precio, surtido y promociones usando ClickHouse." },
-  { view: "price-map", title: "Construye un AI Price Map", copy: "Compara posicionamiento, cobertura y precio relativo." },
+  { view: "price-evolution", title: "Revisa evolución de precios", copy: "Mira el histórico real de una marca o producto en tu alcance." },
+  { view: "alerts", title: "Revisa alertas", copy: "Prioriza alzas, bajas y brechas que importan a tu equipo." },
   { view: "downloads", title: "Exporta un análisis", copy: "Lleva los datos a Excel o CSV para tu equipo." },
 ] as const;
 

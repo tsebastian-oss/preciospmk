@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
+import { denyUnlessInternal } from "@/lib/internal-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -13,7 +14,9 @@ const PAGES = [
 function decode(v:string){return v.replace(/&amp;/g,"&").replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&nbsp;/g," ");}
 function clip(html:string, needle:string, radius=2500){const p=html.toLowerCase().indexOf(needle.toLowerCase()); return p<0?null:html.slice(Math.max(0,p-radius),Math.min(html.length,p+radius));}
 
-export async function GET(){
+export async function GET(request: NextRequest){
+  const denied=await denyUnlessInternal(request); if(denied) return denied;
+
   const results:any[]=[];
   for(const page of PAGES){
     const url=`https://www.mercadopublico.cl/PurchaseOrder/Modules/PO/DetailsPurchaseOrder.aspx?qs=${encodeURIComponent(page.qs)}`;

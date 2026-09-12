@@ -51,13 +51,13 @@ if (fs.existsSync(overviewPath)) {
   overview = overview
     .replace(
       "Pricing, promociones y movimientos competitivos calculados en ClickHouse sobre un dataset demo congelado.",
-      "Pricing, promociones y movimientos competitivos calculados directamente en ClickHouse sobre el histórico sincronizado.",
+      "Pricing, promociones y movimientos competitivos calculados en ClickHouse sobre el histórico sincronizado de tu alcance.",
     )
-    .replace("<small>DATASET DEMO</small>", "<small>CLICKHOUSE LIVE</small>")
+    .replace("<small>DATASET DEMO</small>", "<small>DATOS EN VIVO</small>")
     .replace("CLICKHOUSE DEMO", "CLICKHOUSE LIVE")
     .replace(
       "Los KPI, gráficos, rankings y alertas se calculan en ClickHouse sobre el dataset demo congelado. Supabase continúa capturando la data nueva por separado hasta reactivar la sincronización.",
-      "Los KPI, gráficos, rankings y alertas se calculan directamente en ClickHouse sobre el histórico sincronizado. La actualización se ejecuta bajo demanda para evitar consumo innecesario de compute.",
+      "Los KPI, gráficos, rankings y alertas se calculan en ClickHouse sobre el histórico sincronizado. La vista se actualiza bajo demanda para no consumir compute innecesario.",
     )
     .replace("Datos hasta {datasetLabel}", "Último dato {datasetLabel}");
   fs.writeFileSync(overviewPath, overview);
@@ -73,7 +73,12 @@ if (fs.existsSync(dailyTrendPath)) {
       "Agrega o quita líneas para comparar categorías y marcas sobre el histórico congelado de la demo. La vista se recalcula solo cuando cambias filtros o período.",
       "Agrega o quita líneas para comparar categorías y marcas sobre el histórico sincronizado. La vista se recalcula cuando cambias filtros o período, sin polling automático.",
     )
-    .replace('syncing ? "Actualizando vista" : "Sin actualización automática"', 'syncing ? "Actualizando vista" : "Actualización bajo demanda"');
+    .replace('syncing ? "Actualizando vista" : "Sin actualización automática"', 'syncing ? "Actualizando vista" : "Actualización bajo demanda"')
+    .replace("<span>Dataset demo</span>", "<span>Cobertura observada</span>")
+    .replace(
+      "Sin actualización automática; la vista consulta el histórico congelado solo al entrar o cambiar filtros.",
+      "La vista consulta ClickHouse al entrar o cambiar filtros, sin polling automático.",
+    );
   fs.writeFileSync(dailyTrendPath, dailyTrend);
 }
 

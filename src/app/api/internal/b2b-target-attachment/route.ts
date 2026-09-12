@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { denyUnlessInternal } from "@/lib/internal-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -42,6 +43,8 @@ function cookieHeader(headers: Headers) {
 }
 
 export async function GET(request: NextRequest) {
+  const denied = await denyUnlessInternal(request);
+  if (denied) return denied;
   const key = request.nextUrl.searchParams.get("key") as TargetKey | null;
   if (!key || !(key in TARGETS)) return NextResponse.json({ error: "unknown target" }, { status: 400 });
 

@@ -333,16 +333,16 @@ export default function DailyPricingChartPortal() {
         <div>
           <div className={styles.eyebrowRow}>
             <span>DAILY PRICING TREND</span>
-            <b className={styles.liveBadge}><i />DATASET DEMO</b>
-            <b>HISTÓRICO CONGELADO</b>
+            <b className={styles.liveBadge}><i />LIVE DATA</b>
+            <b>ACTUALIZACIÓN BAJO DEMANDA</b>
           </div>
           <h2>Evolución diaria de precios por categoría y marca</h2>
-          <p>Agrega o quita líneas para comparar categorías y marcas sobre el histórico congelado de la demo. La vista se recalcula solo cuando cambias filtros o período.</p>
+          <p>Agrega o quita líneas para comparar categorías y marcas sobre el histórico sincronizado. La vista se recalcula cuando cambias filtros o período, sin polling automático.</p>
         </div>
         <div className={styles.headerControls}>
           <div className={styles.liveMeta}>
             <i className={syncing ? styles.syncing : ""} />
-            <div><strong>{syncWarning || (syncing ? "Actualizando vista" : "Sin actualización automática")}</strong><small>Último dato {dataTimestampLabel(payload?.latestObservationAt ?? payload?.refreshedAt)}</small></div>
+            <div><strong>{syncWarning || (syncing ? "Actualizando vista" : "Actualización bajo demanda")}</strong><small>Último dato {dataTimestampLabel(payload?.latestObservationAt ?? payload?.refreshedAt)}</small></div>
           </div>
           <div className={styles.rangeControl} aria-label="Rango del gráfico">
             {[30, 60, 90].map((period) => <button key={period} className={days === period ? styles.rangeActive : ""} onClick={() => setDays(period)}>{period}D</button>)}
@@ -446,7 +446,7 @@ export default function DailyPricingChartPortal() {
 
         <footer className={styles.footer}>
           <div><span>Metodología</span><strong>Promedio recortado 5%–95%</strong><small>Cada línea usa los SKU de la categoría o marca elegida; las fechas cerradas no vuelven a modificarse.</small></div>
-          <div><span>Dataset demo</span><strong>{count.format(payload?.currentDayObservations ?? 0)} SKU en el último día disponible</strong><small>Sin actualización automática; la vista consulta el histórico congelado solo al entrar o cambiar filtros.</small></div>
+          <div><span>Cobertura observada</span><strong>{count.format(payload?.currentDayObservations ?? 0)} SKU en el último día disponible</strong><small>La vista consulta ClickHouse al entrar o cambiar filtros, sin polling automático.</small></div>
         </footer>
       </>}
     </article>,
