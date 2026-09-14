@@ -13,7 +13,7 @@ function round1(value:number){return Math.round(value*10)/10}
 export function victorinoxDemoMarket(){
  const now=new Date().toISOString(),listings:DemoListing[]=[];
  for(const cfg of CONFIG){
-  const brands:[string,number][]=[["Victorinox",cfg.own],...(cfg.brands as readonly (readonly [string,number])[]).map(x=>[x[0],x[1]])];
+  const brands:[string,number][]=[["Victorinox",cfg.own],...(cfg.brands as readonly (readonly [string,number])[]).map(x=>[x[0],x[1]] as [string,number])];
   brands.forEach(([brand,base],bi)=>RETAILERS.slice(0,brand==="Victorinox"?5:3+(bi%2)).forEach((retailer,ri)=>{
    const count=brand==="Victorinox"?4:3;
    for(let i=0;i<count;i++){const regular=Math.round(base*(.86+i*.085+ri*.018)/1000)*1000;const promo=(i+ri+bi)%4===0;const price=promo?Math.round(regular*.9/1000)*1000:regular;
