@@ -38,6 +38,9 @@ async function handleCompetitionHistory(request: NextRequest, moduleName: "overv
   }
   const requested = Number(request.nextUrl.searchParams.get("days") || 90);
   const days = [30, 90, 180].includes(requested) ? requested : 90;
+  if (requireVictorinoxScope) {
+    return NextResponse.json({ ...victorinoxDemoHistory(days), presentationMode: true }, { headers: { "cache-control": "private, no-store, max-age=0", "x-demo-fallback": "victorinox-presentation" } });
+  }
   const params: ClickHouseParams = { days_back: { type: "UInt16", value: days - 1 } };
 
   if (!clickHouseConfigured()) {
