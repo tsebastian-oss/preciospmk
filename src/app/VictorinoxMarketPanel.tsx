@@ -8,7 +8,6 @@ import VictorinoxMatrix from "./VictorinoxMatrix";
 import VictorinoxHistory from "./VictorinoxHistory";
 import VictorinoxDownloads from "./VictorinoxDownloads";
 import VictorinoxPositioning from "./VictorinoxPositioning";
-import VictorinoxWhiteSpaces from "./VictorinoxWhiteSpaces";
 import { trackUsageEvent } from "@/lib/usage-client";
 
 const styles={...baseStyles,...executiveStyles};
@@ -69,7 +68,7 @@ type Payload = {
   error?: string;
 };
 
-type Tab = "overview" | "positioning" | "whitespace" | "copilot" | "categories" | "matrix" | "history" | "retailers" | "downloads";
+type Tab = "overview" | "positioning" | "copilot" | "categories" | "matrix" | "history" | "retailers" | "downloads";
 
 const money = new Intl.NumberFormat("es-CL",{style:"currency",currency:"CLP",maximumFractionDigits:0});
 const number = new Intl.NumberFormat("es-CL");
@@ -160,7 +159,7 @@ export default function VictorinoxMarketPanel(){
 
     <nav className={styles.tabs}>
       {([
-        ["overview","Executive Overview"],["positioning","Price Positioning"],["whitespace","White Spaces"],["copilot","AI Analyst"],["categories","Categorías"],["matrix","Matriz"],["history","Histórico"],["retailers","Retailers"],["downloads","Exportar"]
+        ["overview","Executive Overview"],["positioning","Price Positioning"],["copilot","AI Analyst"],["categories","Categorías"],["matrix","Matriz"],["history","Histórico"],["retailers","Retailers"],["downloads","Exportar"]
       ] as [Tab,string][]).map(([key,label])=><button key={key} className={tab===key?styles.active:""} onClick={()=>{setTab(key);trackUsageEvent("tab_view",{module:"victorinox-market",metadata:{tab:key}})}}>{label}</button>)}
     </nav>
 
@@ -185,7 +184,6 @@ export default function VictorinoxMarketPanel(){
       <section className={styles.signalGrid}>
         <article><span>MAYOR PREMIUM COMPARABLE</span><strong>{executive?.highest?.category??"—"}</strong><small>{executive?.highest?.comparablePremiumPct==null?"sin comparable":`${signedPct(executive.highest.comparablePremiumPct)} vs corredor comparable`}</small></article>
         <article><span>MÁS CERCA DE PARIDAD</span><strong>{executive?.closest?.category??"—"}</strong><small>{executive?.closest?.comparablePriceIndex==null?"sin comparable":`Comparable Index ${executive.closest.comparablePriceIndex.toFixed(1)}`}</small></article>
-        <article><span>WHITE SPACE #1</span><strong>{executive?.bestGap?.retailer??"—"}</strong><small>{executive?.bestGap?`${executive.bestGap.category} · ${executive.bestGap.own} vs ${executive.bestGap.leader} SKU ${executive.bestGap.brand}`:"sin brecha relevante"}</small></article>
         <article><span>PROMO VICTORINOX</span><strong>{payload.kpis.promotedOwnSkus}</strong><small>SKU promocionados observados</small></article>
       </section>
 
@@ -204,7 +202,6 @@ export default function VictorinoxMarketPanel(){
     </>}
 
     {tab==="positioning"&&<VictorinoxPositioning rows={payload.listings} categories={payload.categories}/>}
-    {tab==="whitespace"&&<VictorinoxWhiteSpaces rows={payload.listings} categories={payload.categories}/>}
     {tab==="copilot"&&<VictorinoxCopilot/>}
 
     {tab==="categories"&&<section className={styles.panel}>
