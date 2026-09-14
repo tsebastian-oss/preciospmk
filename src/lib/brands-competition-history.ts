@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { brandScopeAllows, enterpriseAccess } from "@/lib/enterprise-auth";
 import { clickHouseConfigured, clickHouseQuery, type ClickHouseParams } from "@/lib/clickhouse";
+import { victorinoxDemoHistory } from "@/lib/victorinox-demo-data";
 
 type Numeric = number | string;
 type HistoryRow = { category: string; brand: string; date: string; median_price: Numeric; products: Numeric };
@@ -35,10 +36,13 @@ async function handleCompetitionHistory(request: NextRequest, moduleName: "overv
   if (requireVictorinoxScope && (!auth.access || !brandScopeAllows(auth.access, "victorinox"))) {
     return NextResponse.json({ error: "Victorinox no está habilitado para esta cuenta." }, { status: 403 });
   }
-  if (!clickHouseConfigured()) return NextResponse.json({ error: "ClickHouse no configurado" }, { status: 503 });
   const requested = Number(request.nextUrl.searchParams.get("days") || 90);
   const days = [30, 90, 180].includes(requested) ? requested : 90;
   const params: ClickHouseParams = { days_back: { type: "UInt16", value: days - 1 } };
+
+  if (!clickHouseConfigured()) {
+    return NextResponse.json(victorinoxDemoHistory(days), { headers: { "cache-control": "private, max-age=60, stale-while-revalidate=300", "x-demo-fallback": "victorinox" } });
+  }
 
   try {
     const rows = await clickHouseQuery<HistoryRow>(`
@@ -82,7 +86,7 @@ async function handleCompetitionHistory(request: NextRequest, moduleName: "overv
     return NextResponse.json({source:"clickhouse",brand:"Victorinox",days,categories,method:"daily_median_vs_median_of_competitor_brand_medians"},{headers:{"cache-control":"private, max-age=60, stale-while-revalidate=300"}});
   } catch (error) {
     console.error("brands competition history", error);
-    return NextResponse.json({ error: "No fue posible calcular la evolución competitiva" }, { status: 503 });
+    return NextResponse.json(victorinoxDemoHistory(days), { headers: { "cache-control": "private, max-age=60, stale-while-revalidate=300", "x-demo-fallback": "victorinox" } });
   }
 }
 
