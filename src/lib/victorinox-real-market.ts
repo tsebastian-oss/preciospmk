@@ -16,20 +16,16 @@ function round(value:number|null,digits=0){if(value==null||!Number.isFinite(valu
 function categoryFor(row:VerticalListing){
   const title=normalize(row.title??"");
   const category=normalize(row.category??"");
-  if(category==="relojes"){
-    if(!title.startsWith("reloj "))return null;
-    if(/^(correa|pulsera|brazalete|strap|protector|estuche|repuesto|bateria|battery)\b/.test(title))return null;
-    return "Relojes";
-  }
-  if(category==="equipo de viaje"||category==="mochilas y bolsos")return "Equipo de viaje";
-  if(category==="navajas y multiherramientas"||category==="swiss army knife & tools"){
-    if(/^(funda|estuche|repuesto|aceite|cordon|cadena|multiclip|alfiler)\b/.test(title)||/multiherramientas para navajas|navaja.*juguete/.test(title))return null;
-    return "Navajas y multiherramientas";
-  }
-  if(category==="cuchillos"){
-    if(/^(tijera|pelador|rallador|tabla|afilador|soporte|utensilio)\b/.test(title))return null;
-    return "Cuchillos";
-  }
+  const luggageSignal=/maleta|equipaje|trolley|carry[- ]?on|spinner|luggage|suitcase/.test(title);
+  const luggageAccessory=/repuesto|rueda|candado|cobertor|funda|etiqueta|identificador|adaptador/.test(title);
+  const pocketSignal=/navaj|cortapluma|swisstool|swiss tool|spartan|climber|huntsman|cadet|classic sd|explorer|rambler|fieldmaster|swiss champ|swisschamp|ranger ?grip|cybertool|work champ|outrider|super tinker|hiker|camper|sportsman|recruit|sentinel|evoke|hunter pro|wine master|mountaineer|handyman|minichamp|swiss lite/.test(title);
+  const pocketAccessory=/multiherramientas para navajas|navaja.*juguete|^(funda|estuche|repuesto|aceite|cordon|lanyard|cadena|multiclip|alfiler|palillo|pinza)\b/.test(title);
+  const knifeSignal=/cuchill|\bknife\b|santoku|mondador|paring|\bchef\b|trinchar|filetear|fibrox|bistec|pan y pasteleria|tomate y de mesa/.test(title);
+  const kitchenAccessory=/pelador|rallador|tabla de corte|tijera|cuchara|tenedor|afilador|soporte|olla|sarten|cubierto|vajilla/.test(title);
+  if(category==="relojes")return title.startsWith("reloj ")?"Relojes":null;
+  if(category==="equipo de viaje"||category==="mochilas y bolsos")return luggageSignal&&!luggageAccessory?"Equipo de viaje":null;
+  if(category==="navajas y multiherramientas"||category==="swiss army knife & tools")return pocketSignal&&!pocketAccessory?"Navajas y multiherramientas":null;
+  if(category==="cuchillos")return knifeSignal&&!kitchenAccessory?"Cuchillos":null;
   return null;
 }
 
@@ -65,19 +61,19 @@ export function mergeVictorinoxOfficialMarket(base:any,vertical:any){
   const summary=summarize(market);
   const position=CATEGORIES.map(category=>{
     const rows=summary.filter(x=>x.category===category),own=rows.find(x=>x.brand==="Victorinox")??null;
-    const competitorMedians=rows.filter(x=>x.brand!=="Victorinox"&&x.medianPrice).map(x=>x.medianPrice as number);
+    const eligibleCompetitors=rows.filter(x=>x.brand!=="Victorinox"&&x.medianPrice&&x.skuCount>=5);\n    const competitorMedians=eligibleCompetitors.map(x=>x.medianPrice as number);
     const benchmark=median(competitorMedians),priceIndex=own?.medianPrice&&benchmark?round(own.medianPrice/benchmark*100,1):null;
     const categoryRows=market.filter(x=>x.category===category&&x.inStock!==false&&x.currentPrice>0);
     const ownPrices=categoryRows.filter(x=>x.brand==="Victorinox").map(x=>x.currentPrice);
     const competitorPrices=categoryRows.filter(x=>x.brand!=="Victorinox").map(x=>x.currentPrice);
     const low=quantile(ownPrices,.1),high=quantile(ownPrices,.9);
     const comparable=low!=null&&high!=null?competitorPrices.filter(x=>x>=low&&x<=high):[];
-    const pool=comparable.length>=5?comparable:competitorPrices,comparableBenchmark=median(pool);
+    const pool=comparable.length>=5?comparable:[],comparableBenchmark=median(pool);
     const comparablePriceIndex=own?.medianPrice&&comparableBenchmark?round(own.medianPrice/comparableBenchmark*100,1):null;
     return {category,own,benchmarkMedian:round(benchmark),priceIndex,premiumPct:priceIndex==null?null:round(priceIndex-100,1),
       comparableBenchmarkMedian:round(comparableBenchmark),comparablePriceIndex,comparablePremiumPct:comparablePriceIndex==null?null:round(comparablePriceIndex-100,1),
       comparableSample:pool.length,comparableBand:{low:round(low),high:round(high)},
-      competitors:rows.filter(x=>x.brand!=="Victorinox").sort((a,b)=>(a.medianPrice??Infinity)-(b.medianPrice??Infinity))};
+      competitors:eligibleCompetitors.sort((a,b)=>(a.medianPrice??Infinity)-(b.medianPrice??Infinity))};
   });
   const retailers=[...new Set(market.map(x=>x.retailer))].sort((a,b)=>a.localeCompare(b,"es"));
   const brands=[...new Set(market.map(x=>x.brand))].sort((a,b)=>a.localeCompare(b,"es"));
@@ -93,5 +89,6 @@ export function mergeVictorinoxOfficialMarket(base:any,vertical:any){
   return {source:"victorinox-official+clickhouse",generatedAt:new Date().toISOString(),lastObservedAt:observed,categories:CATEGORIES,retailers,brands,
     kpis:{marketSkus:market.length,ownSkus:official.length,competitorBrands:new Set(competition.map(x=>x.brand)).size,retailers:retailers.length,promotedOwnSkus:promoted.length},
     position,summary,listings:market,insights,presentationMode:false,
-    dataQuality:{officialSource:"victorinoxstore.cl",officialProducts:official.length,watchProducts:watch?.skuCount??0,watchCurrentMedian:watch?.medianPrice??null,watchListMedian,competitionSource:"ClickHouse",syntheticData:false}};
+    dataQuality:{officialSource:"victorinoxstore.cl",officialProducts:official.length,watchProducts:watch?.skuCount??0,watchCurrentMedian:watch?.medianPrice??null,watchListMedian,competitionSource:"ClickHouse",syntheticData:false,
+      minimumSample:5,categoryCoverage:CATEGORIES.map(category=>{const own=summary.find(x=>x.category===category&&x.brand==="Victorinox");return {category,products:own?.skuCount??0,reliable:(own?.skuCount??0)>=5};})}};
 }
