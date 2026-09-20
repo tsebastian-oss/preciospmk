@@ -23,3 +23,6 @@ select jsonb_build_object(
   'lastRun',(select jsonb_build_object('status',run_status,'sourcesAttempted',sources_attempted,'sourcesSucceeded',sources_succeeded,'listingsFound',listings_found,'productsFound',products_found,'startedAt',started_at,'finishedAt',finished_at,'notes',notes) from lr)
 );
 $function$;
+
+revoke execute on function public.brands_vertical_light_payload(text) from public, anon;
+grant execute on function public.brands_vertical_light_payload(text) to authenticated, service_role;
