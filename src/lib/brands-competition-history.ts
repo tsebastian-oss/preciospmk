@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { brandScopeAllows, enterpriseAccess } from "@/lib/enterprise-auth";
+import { brandScopeAllows, enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
 import { clickHouseConfigured, clickHouseQuery, type ClickHouseParams } from "@/lib/clickhouse";
 
 type Numeric = number | string;
 type HistoryRow = { category: string; brand: string; date: string; median_price: Numeric; products: Numeric };
+type OfficialHistoryRow = { category: string; date: string; median_price: Numeric; products: Numeric };
 
 const WATCH = ["victorinox", "tissot", "seiko", "citizen"];
 const LUGGAGE = ["victorinox", "samsonite", "american tourister", "saxoline"];
@@ -39,6 +40,13 @@ async function handleCompetitionHistory(request: NextRequest, moduleName: "overv
   const requested = Number(request.nextUrl.searchParams.get("days") || 90);
   const days = [30, 90, 180].includes(requested) ? requested : 90;
   const params: ClickHouseParams = { days_back: { type: "UInt16", value: days - 1 } };
+  let officialHistory: OfficialHistoryRow[] = [];
+  if (requireVictorinoxScope) {
+    const official = await enterpriseRpc<OfficialHistoryRow[]>(request, "brands_vertical_official_history", { p_slug: "victorinox", p_days: days });
+    if (official.response) return official.response;
+    officialHistory = Array.isArray(official.data) ? official.data : [];
+    console.info("victorinox-history-supabase", { days, points: officialHistory.length });
+  }
 
   if (!clickHouseConfigured()) {
     return NextResponse.json({ error: "Histórico real no disponible: ClickHouse no está configurado." }, { status: 503 });
@@ -68,22 +76,48 @@ async function handleCompetitionHistory(request: NextRequest, moduleName: "overv
       ORDER BY category,price_date,brand
     `, params, 9_000);
 
-    const categories = ["Relojes", "Equipo de viaje", "Navajas y multiherramientas", "Cuchillos"].map((category) => {
+    const categoryNames = ["Relojes", "Equipo de viaje", "Navajas y multiherramientas", "Cuchillos"];
+    const categories = categoryNames.map((category) => {
+      const competitorByDate = new Map<string, HistoryRow[]>();
+      rows.forEach((row) => {
+        if(row.category!==category||row.brand==="victorinox"||n(row.median_price)<=0)return;
+        competitorByDate.set(row.date,[...(competitorByDate.get(row.date)??[]),row]);
+      });
+
+      if (requireVictorinoxScope) {
+        const competitorDates=[...competitorByDate.keys()].sort();
+        const points=officialHistory.filter(row=>row.category===category&&n(row.median_price)>0).sort((a,b)=>a.date.localeCompare(b.date)).flatMap(own=>{
+          let competitors=competitorByDate.get(own.date)??[];
+          if(!competitors.length&&competitorDates.length){
+            const target=new Date(own.date+"T12:00:00Z").getTime();
+            const nearest=[...competitorDates].sort((a,b)=>Math.abs(new Date(a+"T12:00:00Z").getTime()-target)-Math.abs(new Date(b+"T12:00:00Z").getTime()-target))[0];
+            const gap=Math.abs(new Date(nearest+"T12:00:00Z").getTime()-target)/86400000;
+            if(gap<=7)competitors=competitorByDate.get(nearest)??[];
+          }
+          if(!competitors.length)return [];
+          const ownMedian=n(own.median_price),benchmark=median(competitors.map(row=>n(row.median_price)));
+          if(!benchmark)return [];
+          const index=ownMedian/benchmark*100;
+          return [{date:own.date,ownMedian:Math.round(ownMedian),benchmarkMedian:Math.round(benchmark),priceIndex:round1(index),premiumPct:round1(index-100),ownProducts:n(own.products),competitorProducts:competitors.reduce((sum,row)=>sum+n(row.products),0),competitorBrands:competitors.length}];
+        });
+        return {category,points};
+      }
+
       const byDate = new Map<string, HistoryRow[]>();
-      rows.forEach((row) => { if(row.category!==category)return; const value=byDate.get(row.date)??[]; value.push(row); byDate.set(row.date,value); });
-      const points = [...byDate.entries()].sort(([a],[b])=>a.localeCompare(b)).flatMap(([date, day]) => {
-        const own = day.find((row)=>row.brand==="victorinox");
-        const competitors = day.filter((row)=>row.brand!=="victorinox"&&n(row.median_price)>0);
+      rows.forEach((row)=>{if(row.category!==category)return;byDate.set(row.date,[...(byDate.get(row.date)??[]),row]);});
+      const points=[...byDate.entries()].sort(([a],[b])=>a.localeCompare(b)).flatMap(([date,day])=>{
+        const own=day.find(row=>row.brand==="victorinox"),competitors=day.filter(row=>row.brand!=="victorinox"&&n(row.median_price)>0);
         if(!own||!competitors.length)return [];
-        const ownMedian=n(own.median_price), benchmark=median(competitors.map((row)=>n(row.median_price)));
+        const ownMedian=n(own.median_price),benchmark=median(competitors.map(row=>n(row.median_price)));
         if(!ownMedian||!benchmark)return [];
         const index=ownMedian/benchmark*100;
         return [{date,ownMedian:Math.round(ownMedian),benchmarkMedian:Math.round(benchmark),priceIndex:round1(index),premiumPct:round1(index-100),ownProducts:n(own.products),competitorProducts:competitors.reduce((sum,row)=>sum+n(row.products),0),competitorBrands:competitors.length}];
       });
-      return { category, points };
+      return {category,points};
     });
 
-    return NextResponse.json({source:"clickhouse",brand:"Victorinox",days,categories,method:"daily_median_vs_median_of_competitor_brand_medians"},{headers:{"cache-control":"private, max-age=60, stale-while-revalidate=300"}});
+    console.info("brands-competition-history-ready",{source:requireVictorinoxScope?"supabase+clickhouse":"clickhouse",days,counts:categories.map(item=>({category:item.category,points:item.points.length}))});
+    return NextResponse.json({source:requireVictorinoxScope?"supabase+clickhouse":"clickhouse",brand:"Victorinox",days,categories,method:"official_daily_median_vs_competitor_brand_medians"},{headers:{"cache-control":"private, max-age=60, stale-while-revalidate=300"}});
   } catch (error) {
     console.error("brands competition history", error);
     return NextResponse.json({ error: "No fue posible consultar el histórico real." }, { status: 503 });
