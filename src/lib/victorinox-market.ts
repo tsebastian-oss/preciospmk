@@ -55,7 +55,7 @@ function categoryFor(brand: string, text: string) {
   const b = normalize(brand);
   const t = normalize(text);
 
-  const watchAccessory = /correa|pulsera|strap|bateria|battery|repuesto|protector|estuche para reloj|watch case/.test(t);
+  const watchAccessory = /^(correa|pulsera|strap|bateria|battery|repuesto|protector|estuche para reloj|watch case)\\b/.test(t);
   const watchSignal = /\breloj(?:es)?\b|\bwatch(?:es)?\b|chronograph|cronograf|quartz|cuarzo|automatico|automatic/.test(t);
 
   const pocketAccessory = /aceite.*multiherr|cadena.*navaj|cordon.*navaj|lanyard.*navaj|multiclip.*navaj|alfiler.*repuesto|repuesto.*navaj|afilador.*multiherr|funda.*navaj|estuche.*navaj|multiherramientas para navajas|navaja.*juguete/.test(t);
