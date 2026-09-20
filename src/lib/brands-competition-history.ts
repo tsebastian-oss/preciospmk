@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { brandScopeAllows, enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
 import { clickHouseConfigured, clickHouseQuery, type ClickHouseParams } from "@/lib/clickhouse";
+import { victorinoxMarketIntelligence } from "@/lib/victorinox-market";
 
 type Numeric = number | string;
 type HistoryRow = { category: string; brand: string; date: string; median_price: Numeric; products: Numeric };
@@ -76,6 +77,7 @@ async function handleCompetitionHistory(request: NextRequest, moduleName: "overv
       ORDER BY category,price_date,brand
     `, params, 9_000);
 
+    const marketSnapshot = requireVictorinoxScope && auth.access ? await victorinoxMarketIntelligence(auth.access).catch((error)=>{console.error("victorinox-history-snapshot",error);return null;}) : null;
     const categoryNames = ["Relojes", "Equipo de viaje", "Navajas y multiherramientas", "Cuchillos"];
     const categories = categoryNames.map((category) => {
       const competitorByDate = new Map<string, HistoryRow[]>();
@@ -94,11 +96,13 @@ async function handleCompetitionHistory(request: NextRequest, moduleName: "overv
             const gap=Math.abs(new Date(nearest+"T12:00:00Z").getTime()-target)/86400000;
             if(gap<=7)competitors=competitorByDate.get(nearest)??[];
           }
-          if(!competitors.length)return [];
-          const ownMedian=n(own.median_price),benchmark=median(competitors.map(row=>n(row.median_price)));
+          const snapshotPosition=(marketSnapshot as any)?.position?.find((item:any)=>item.category===category);
+          const snapshotBenchmark=n(snapshotPosition?.benchmarkMedian);
+          const benchmark=competitors.length?median(competitors.map(row=>n(row.median_price))):snapshotBenchmark;
           if(!benchmark)return [];
-          const index=ownMedian/benchmark*100;
-          return [{date:own.date,ownMedian:Math.round(ownMedian),benchmarkMedian:Math.round(benchmark),priceIndex:round1(index),premiumPct:round1(index-100),ownProducts:n(own.products),competitorProducts:competitors.reduce((sum,row)=>sum+n(row.products),0),competitorBrands:competitors.length}];
+          const ownMedian=n(own.median_price),index=ownMedian/benchmark*100;
+          const snapshotCompetitors:Array<any>=snapshotPosition?.competitors??[];
+          return [{date:own.date,ownMedian:Math.round(ownMedian),benchmarkMedian:Math.round(benchmark),priceIndex:round1(index),premiumPct:round1(index-100),ownProducts:n(own.products),competitorProducts:competitors.length?competitors.reduce((sum,row)=>sum+n(row.products),0):snapshotCompetitors.reduce((sum:number,row:any)=>sum+n(row.skuCount),0),competitorBrands:competitors.length||snapshotCompetitors.length,benchmarkMode:competitors.length?"daily":"latest_observed"}];
         });
         return {category,points};
       }
