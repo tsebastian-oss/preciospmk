@@ -61,7 +61,8 @@ export function mergeVictorinoxOfficialMarket(base:any,vertical:any){
   const summary=summarize(market);
   const position=CATEGORIES.map(category=>{
     const rows=summary.filter(x=>x.category===category),own=rows.find(x=>x.brand==="Victorinox")??null;
-    const eligibleCompetitors=rows.filter(x=>x.brand!=="Victorinox"&&x.medianPrice&&x.skuCount>=5);\n    const competitorMedians=eligibleCompetitors.map(x=>x.medianPrice as number);
+    const eligibleCompetitors=rows.filter(x=>x.brand!=="Victorinox"&&x.medianPrice&&x.skuCount>=5);
+    const competitorMedians=eligibleCompetitors.map(x=>x.medianPrice as number);
     const benchmark=median(competitorMedians),priceIndex=own?.medianPrice&&benchmark?round(own.medianPrice/benchmark*100,1):null;
     const categoryRows=market.filter(x=>x.category===category&&x.inStock!==false&&x.currentPrice>0);
     const ownPrices=categoryRows.filter(x=>x.brand==="Victorinox").map(x=>x.currentPrice);
