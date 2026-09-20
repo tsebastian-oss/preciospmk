@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { brandScopeAllows, enterpriseAccess } from "@/lib/enterprise-auth";
 import { clickHouseConfigured, clickHouseQuery, type ClickHouseParams } from "@/lib/clickhouse";
-import { victorinoxDemoHistory } from "@/lib/victorinox-demo-data";
 
 type Numeric = number | string;
 type HistoryRow = { category: string; brand: string; date: string; median_price: Numeric; products: Numeric };
@@ -14,13 +13,14 @@ const ALL = [...new Set([...WATCH, ...LUGGAGE, ...TOOLS, ...KNIVES])];
 const quoted = (values: string[]) => values.map((value) => `'${value.replaceAll("'", "''")}'`).join(",");
 
 const watchSignal = "(positionCaseInsensitiveUTF8(txt,'reloj')>0 OR positionCaseInsensitiveUTF8(txt,'watch')>0)";
+const watchAccessory = "(startsWith(lowerUTF8(trimBoth(txt)),'correa ') OR startsWith(lowerUTF8(trimBoth(txt)),'pulsera ') OR startsWith(lowerUTF8(trimBoth(txt)),'brazalete ') OR startsWith(lowerUTF8(trimBoth(txt)),'protector ') OR startsWith(lowerUTF8(trimBoth(txt)),'estuche '))";
 const luggageSignal = "(positionCaseInsensitiveUTF8(txt,'maleta')>0 OR positionCaseInsensitiveUTF8(txt,'equipaje')>0 OR positionCaseInsensitiveUTF8(txt,'luggage')>0 OR positionCaseInsensitiveUTF8(txt,'suitcase')>0 OR positionCaseInsensitiveUTF8(txt,'spinner')>0 OR positionCaseInsensitiveUTF8(txt,'trolley')>0 OR positionCaseInsensitiveUTF8(txt,'carry-on')>0 OR positionCaseInsensitiveUTF8(txt,'carry on')>0)";
 const pocketSignal = "(positionCaseInsensitiveUTF8(txt,'navaj')>0 OR positionCaseInsensitiveUTF8(txt,'cortapluma')>0 OR positionCaseInsensitiveUTF8(txt,'swisstool')>0 OR positionCaseInsensitiveUTF8(txt,'swiss champ')>0 OR positionCaseInsensitiveUTF8(txt,'spartan')>0 OR positionCaseInsensitiveUTF8(txt,'huntsman')>0 OR positionCaseInsensitiveUTF8(txt,'classic sd')>0 OR positionCaseInsensitiveUTF8(txt,'ranger grip')>0 OR positionCaseInsensitiveUTF8(txt,'cybertool')>0 OR positionCaseInsensitiveUTF8(txt,'work champ')>0 OR positionCaseInsensitiveUTF8(txt,'skeletool')>0 OR positionCaseInsensitiveUTF8(txt,'leatherman wave')>0 OR positionCaseInsensitiveUTF8(txt,'leatherman signal')>0 OR positionCaseInsensitiveUTF8(txt,'leatherman surge')>0 OR positionCaseInsensitiveUTF8(txt,'leatherman rebar')>0)";
 const pocketAccessory = "(positionCaseInsensitiveUTF8(txt,'aceite')>0 OR positionCaseInsensitiveUTF8(txt,'cadena para navaj')>0 OR positionCaseInsensitiveUTF8(txt,'cordón para navaj')>0 OR positionCaseInsensitiveUTF8(txt,'cordon para navaj')>0 OR positionCaseInsensitiveUTF8(txt,'lanyard')>0 OR positionCaseInsensitiveUTF8(txt,'multiclip')>0 OR positionCaseInsensitiveUTF8(txt,'alfiler repuesto')>0 OR positionCaseInsensitiveUTF8(txt,'multiherramientas para navajas')>0 OR positionCaseInsensitiveUTF8(txt,'juguete')>0)";
 const knifeSignal = "(positionCaseInsensitiveUTF8(txt,'cuchill')>0 OR positionCaseInsensitiveUTF8(txt,'cuchiller')>0 OR positionCaseInsensitiveUTF8(txt,'knife')>0 OR positionCaseInsensitiveUTF8(txt,'santoku')>0 OR positionCaseInsensitiveUTF8(txt,'mondador')>0 OR positionCaseInsensitiveUTF8(txt,'paring')>0 OR positionCaseInsensitiveUTF8(txt,'chef')>0 OR positionCaseInsensitiveUTF8(txt,'trinchar')>0 OR positionCaseInsensitiveUTF8(txt,'filetear')>0)";
 const knifeAccessory = "(positionCaseInsensitiveUTF8(txt,'pelador')>0 OR positionCaseInsensitiveUTF8(txt,'rallador')>0 OR positionCaseInsensitiveUTF8(txt,'tabla de corte')>0 OR positionCaseInsensitiveUTF8(txt,'tijera')>0 OR positionCaseInsensitiveUTF8(txt,'cuchara')>0 OR positionCaseInsensitiveUTF8(txt,'tenedor')>0 OR positionCaseInsensitiveUTF8(txt,'afilador')>0 OR positionCaseInsensitiveUTF8(txt,'soporte')>0 OR positionCaseInsensitiveUTF8(txt,'olla')>0 OR positionCaseInsensitiveUTF8(txt,'sarten')>0 OR positionCaseInsensitiveUTF8(txt,'sartén')>0)";
 const categoryExpr = `multiIf(
-  b IN (${quoted(WATCH)}) AND ${watchSignal},'Relojes',
+  b IN (${quoted(WATCH)}) AND ${watchSignal} AND NOT ${watchAccessory},'Relojes',
   b IN (${quoted(LUGGAGE)}) AND ${luggageSignal},'Equipo de viaje',
   b IN (${quoted(TOOLS)}) AND ${pocketSignal} AND NOT ${pocketAccessory},'Navajas y multiherramientas',
   b IN (${quoted(KNIVES)}) AND ${knifeSignal} AND NOT ${knifeAccessory},'Cuchillos',
@@ -38,13 +38,10 @@ async function handleCompetitionHistory(request: NextRequest, moduleName: "overv
   }
   const requested = Number(request.nextUrl.searchParams.get("days") || 90);
   const days = [30, 90, 180].includes(requested) ? requested : 90;
-  if (requireVictorinoxScope) {
-    return NextResponse.json({ ...victorinoxDemoHistory(days), presentationMode: true }, { headers: { "cache-control": "private, no-store, max-age=0", "x-demo-fallback": "victorinox-presentation" } });
-  }
   const params: ClickHouseParams = { days_back: { type: "UInt16", value: days - 1 } };
 
   if (!clickHouseConfigured()) {
-    return NextResponse.json(victorinoxDemoHistory(days), { headers: { "cache-control": "private, max-age=60, stale-while-revalidate=300", "x-demo-fallback": "victorinox" } });
+    return NextResponse.json({ error: "Histórico real no disponible: ClickHouse no está configurado." }, { status: 503 });
   }
 
   try {
@@ -89,7 +86,7 @@ async function handleCompetitionHistory(request: NextRequest, moduleName: "overv
     return NextResponse.json({source:"clickhouse",brand:"Victorinox",days,categories,method:"daily_median_vs_median_of_competitor_brand_medians"},{headers:{"cache-control":"private, max-age=60, stale-while-revalidate=300"}});
   } catch (error) {
     console.error("brands competition history", error);
-    return NextResponse.json(victorinoxDemoHistory(days), { headers: { "cache-control": "private, max-age=60, stale-while-revalidate=300", "x-demo-fallback": "victorinox" } });
+    return NextResponse.json({ error: "No fue posible consultar el histórico real." }, { status: 503 });
   }
 }
 
