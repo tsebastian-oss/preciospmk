@@ -9,11 +9,14 @@ import {
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+export const maxDuration = 60;
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? "";
 const OPENAI_MODEL = (process.env.PIWEN_OPENAI_MODEL ?? "gpt-5.6-sol").trim();
 const GLOBAL_OPENAI_MODEL = (process.env.OPENAI_MODEL ?? "").trim();
 const OPENAI_URL = "https://api.openai.com/v1/responses";
+const OPENAI_TIMEOUT_MS = 38_000;
+const OPENAI_MAX_OUTPUT_TOKENS = 4_800;
 
 const SUPABASE_URL = process.env.SUPABASE_URL
   ?? process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -173,7 +176,7 @@ function cleanMessages(value: unknown): ChatMessage[] {
     .filter((item: any) => item && (item.role === "user" || item.role === "assistant") && typeof item.content === "string")
     .map((item: any) => ({ role: item.role as ChatMessage["role"], content: item.content.trim().slice(0, 6_000) }))
     .filter(item => item.content.length > 0)
-    .slice(-18);
+    .slice(-12);
 }
 
 function outputText(response: any) {
@@ -185,6 +188,16 @@ function outputText(response: any) {
     .filter(Boolean)
     .join("\n\n")
     .trim();
+}
+
+function logCopilotIssue(stage: string, details: Record<string, unknown> = {}) {
+  const safeDetails = Object.fromEntries(
+    Object.entries(details).map(([key, value]) => [
+      key,
+      typeof value === "string" ? value.slice(0, 300) : value,
+    ]),
+  );
+  console.error("[piwen-pricing-chat]", JSON.stringify({ stage, ...safeDetails }));
 }
 
 function normalize(value: string) {
@@ -397,21 +410,44 @@ export async function POST(request: NextRequest) {
     const organizationId = authorization.access.organizationId;
     conversationId = typeof body?.conversationId === "string" ? body.conversationId.trim() : "";
 
-    if (conversationId && !await validConversation(token, organizationId, conversationId)) {
-      return NextResponse.json({ error: "La conversación no existe o no pertenece a tu usuario." }, { status: 404 });
+    if (conversationId) {
+      try {
+        if (!await validConversation(token, organizationId, conversationId)) {
+          return NextResponse.json({ error: "La conversación no existe o no pertenece a tu usuario." }, { status: 404 });
+        }
+      } catch (error) {
+        logCopilotIssue("conversation_validation", {
+          message: error instanceof Error ? error.message : "unknown",
+        });
+        conversationId = "";
+      }
     }
 
     if (!conversationId) {
-      const conversation = await createConversation(token, organizationId, lastUser.content);
-      conversationId = conversation.id;
-      conversationTitleValue = conversation.title;
+      try {
+        const conversation = await createConversation(token, organizationId, lastUser.content);
+        conversationId = conversation.id;
+        conversationTitleValue = conversation.title;
+      } catch (error) {
+        logCopilotIssue("conversation_create", {
+          message: error instanceof Error ? error.message : "unknown",
+        });
+      }
     }
 
-    await saveMessage(token, organizationId, conversationId, {
-      role: "user",
-      content: lastUser.content,
-      ai: false,
-    });
+    if (conversationId) {
+      try {
+        await saveMessage(token, organizationId, conversationId, {
+          role: "user",
+          content: lastUser.content,
+          ai: false,
+        });
+      } catch (error) {
+        logCopilotIssue("user_message_save", {
+          message: error instanceof Error ? error.message : "unknown",
+        });
+      }
+    }
 
     const [supermarketResult, officialResult, marketplaceResult] = await Promise.allSettled([
       enterpriseRpc<PiwenMarketSnapshot>(request, "brands_piwen_supermarket_snapshot", { p_slug: "piwen" }),
@@ -447,10 +483,10 @@ export async function POST(request: NextRequest) {
         kpis: market.kpis,
         piwenReferences: market.subject,
         piwenPosition: market.piwenPosition,
-        byBrand: market.byBrand.slice(0, 45),
+        byBrand: market.byBrand.slice(0, 30),
         byProduct: market.byProduct,
-        byFormat: market.byFormat.slice(0, 70),
-        relevantListings: relevantListings(marketRows, lastUser.content),
+        byFormat: market.byFormat.slice(0, 40),
+        relevantListings: relevantListings(marketRows, lastUser.content).slice(0, 60),
         currentInsights: market.insights,
         note: market.note,
       } : null,
@@ -461,9 +497,9 @@ export async function POST(request: NextRequest) {
         products: official.products,
         pricedProducts: official.pricedProducts,
         inStockProducts: official.inStockProducts,
-        relevantListings: officialCatalog,
+        relevantListings: officialCatalog.slice(0, 50),
       } : null,
-      exploratoryBrandFamilyBenchmarks: familyBrandBenchmarks(marketRows, officialCatalog),
+      exploratoryBrandFamilyBenchmarks: familyBrandBenchmarks(marketRows, officialCatalog).slice(0, 60),
       marketplace: marketplace ? {
         status: marketplace.status,
         source: marketplace.source,
@@ -471,7 +507,7 @@ export async function POST(request: NextRequest) {
         lastStatus: marketplace.lastStatus,
         products: marketplace.products,
         pricedProducts: marketplace.pricedProducts,
-        relevantListings: marketplaceRows,
+        relevantListings: marketplaceRows.slice(0, 30),
       } : null,
       dataPolicy: "Datos de supermercados, Piwén.cl y MercadoLibre persistidos en Supabase. Costos, ventas, elasticidades y márgenes no se asumen si no están cargados.",
     };
@@ -480,15 +516,16 @@ export async function POST(request: NextRequest) {
 
     for (const model of modelCandidates()) {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 70_000);
+      const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
+      const startedAt = Date.now();
       try {
         const modelBody: Record<string, unknown> = {
           model,
           instructions: instructions(context),
           input: messages,
           store: false,
-          max_output_tokens: 3_200,
-          reasoning: { effort: "high" },
+          max_output_tokens: OPENAI_MAX_OUTPUT_TOKENS,
+          reasoning: { effort: "low" },
         };
 
         const response = await fetch(OPENAI_URL, {
@@ -509,29 +546,54 @@ export async function POST(request: NextRequest) {
             code: String(data?.error?.code || data?.error?.type || ""),
             message: String(data?.error?.message || ""),
           };
+          logCopilotIssue("model_response", {
+            model,
+            status: response.status,
+            code: lastFailure.code,
+            message: lastFailure.message,
+            durationMs: Date.now() - startedAt,
+          });
           if (canFallbackModel(response.status, data)) continue;
           break;
         }
 
         const answer = outputText(data);
         if (!answer) {
-          lastFailure = { status: 503, code: "empty_response", message: "OpenAI returned no answer" };
-          continue;
+          lastFailure = {
+            status: 503,
+            code: String(data?.incomplete_details?.reason || "empty_response"),
+            message: "OpenAI returned no visible answer",
+          };
+          logCopilotIssue("empty_response", {
+            model,
+            status: data?.status,
+            code: lastFailure.code,
+            durationMs: Date.now() - startedAt,
+          });
+          break;
         }
 
-        await saveMessage(token, organizationId, conversationId, {
-          role: "assistant",
-          content: answer,
-          ai: true,
-          payload: {
-            model: data?.model || model,
-            requestedModel: OPENAI_MODEL,
-            modelFallback: model !== OPENAI_MODEL,
-            dataSource: "supabase",
-            dataObservedAt: market?.lastObservedAt ?? marketplace?.lastCrawledAt ?? official?.lastCrawledAt ?? null,
-          },
-        });
-        await touchConversation(token, organizationId, conversationId);
+        if (conversationId) {
+          try {
+            await saveMessage(token, organizationId, conversationId, {
+              role: "assistant",
+              content: answer,
+              ai: true,
+              payload: {
+                model: data?.model || model,
+                requestedModel: OPENAI_MODEL,
+                modelFallback: model !== OPENAI_MODEL,
+                dataSource: "supabase",
+                dataObservedAt: market?.lastObservedAt ?? marketplace?.lastCrawledAt ?? official?.lastCrawledAt ?? null,
+              },
+            });
+            await touchConversation(token, organizationId, conversationId);
+          } catch (error) {
+            logCopilotIssue("assistant_message_save", {
+              message: error instanceof Error ? error.message : "unknown",
+            });
+          }
+        }
 
         return NextResponse.json({
           answer,
@@ -547,19 +609,32 @@ export async function POST(request: NextRequest) {
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
           lastFailure = { status: 408, code: "timeout", message: "Model request timed out" };
-          continue;
+          logCopilotIssue("model_timeout", { model, durationMs: Date.now() - startedAt });
+          break;
         }
         lastFailure = { status: 503, code: "runtime_error", message: error instanceof Error ? error.message : "unknown" };
+        logCopilotIssue("model_runtime", {
+          model,
+          message: lastFailure.message,
+          durationMs: Date.now() - startedAt,
+        });
         break;
       } finally {
         clearTimeout(timeout);
       }
     }
 
-    return NextResponse.json({
-      error: "No fue posible consultar Pricing Copilot en este momento.",
+    logCopilotIssue("request_failed", {
+      status: lastFailure?.status ?? 503,
       code: lastFailure?.code || "model_unavailable",
-      conversationId,
+      message: lastFailure?.message || "",
+    });
+    return NextResponse.json({
+      error: lastFailure?.code === "timeout"
+        ? "El análisis tardó demasiado. Intenta nuevamente; el contexto ya fue optimizado para responder más rápido."
+        : "No fue posible consultar Pricing Copilot en este momento.",
+      code: lastFailure?.code || "model_unavailable",
+      conversationId: conversationId || undefined,
     }, { status: 503 });
   } catch (error) {
     return NextResponse.json({
