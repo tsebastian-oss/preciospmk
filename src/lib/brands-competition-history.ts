@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { brandScopeAllows, enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
+import { brandScopeAllows, enterpriseAccess, enterpriseReadRpc, enterpriseRpc } from "@/lib/enterprise-auth";
 import { clickHouseConfigured, clickHouseQuery, type ClickHouseParams } from "@/lib/clickhouse";
 import { victorinoxMarketFromRows, type RawRow } from "@/lib/victorinox-market";
 
@@ -43,14 +43,14 @@ async function handleCompetitionHistory(request: NextRequest, moduleName: "overv
   const params: ClickHouseParams = { days_back: { type: "UInt16", value: days - 1 } };
   let officialHistory: OfficialHistoryRow[] = [];
   if (requireVictorinoxScope) {
-    const official = await enterpriseRpc<OfficialHistoryRow[]>(request, "brands_vertical_official_history", { p_slug: "victorinox", p_days: days });
+    const official = await enterpriseReadRpc<OfficialHistoryRow[]>(request, "brands_vertical_official_history", { p_slug: "victorinox", p_days: days });
     if (official.response) return official.response;
     officialHistory = Array.isArray(official.data) ? official.data : [];
     console.info("victorinox-history-supabase", { days, points: officialHistory.length });
   }
 
   if (requireVictorinoxScope) {
-    const snapshot = await enterpriseRpc<RawRow[]>(request, "victorinox_competition_market_payload", { p_limit_per_brand: 250 });
+    const snapshot = await enterpriseReadRpc<RawRow[]>(request, "victorinox_competition_market_payload", { p_limit_per_brand: 250 });
     if (snapshot.response) return snapshot.response;
     const marketSnapshot = victorinoxMarketFromRows(Array.isArray(snapshot.data) ? snapshot.data : []);
     const categoryNames = ["Relojes", "Equipo de viaje", "Navajas y multiherramientas", "Cuchillos"];
@@ -126,7 +126,7 @@ async function handleCompetitionHistory(request: NextRequest, moduleName: "overv
 
     let marketSnapshot = null;
     if (requireVictorinoxScope) {
-      const snapshot = await enterpriseRpc<RawRow[]>(request, "victorinox_competition_market_payload", { p_limit_per_brand: 250 });
+      const snapshot = await enterpriseReadRpc<RawRow[]>(request, "victorinox_competition_market_payload", { p_limit_per_brand: 250 });
       if (snapshot.response) return snapshot.response;
       marketSnapshot = victorinoxMarketFromRows(Array.isArray(snapshot.data) ? snapshot.data : []);
       console.info("victorinox-history-snapshot", {
