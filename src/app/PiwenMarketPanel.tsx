@@ -5,7 +5,6 @@ import styles from "./PiwenMarketPanel.module.css";
 import { trackUsageEvent } from "@/lib/usage-client";
 import PiwenHistoryCharts from "./PiwenHistoryCharts";
 import PiwenDownloads from "./PiwenDownloads";
-import PiwenMarketCopilot from "./PiwenMarketCopilot";
 import PiwenPriceMatrix, { type MatrixListing } from "./PiwenPriceMatrix";
 
 type SummaryRow = {
@@ -109,7 +108,7 @@ type Payload = {
   error?: string;
 };
 
-type Tab = "overview" | "copilot" | "brands" | "products" | "formats" | "matrix" | "marketplace" | "downloads";
+type Tab = "overview" | "brands" | "products" | "formats" | "matrix" | "marketplace" | "downloads";
 
 const money = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
 const number = new Intl.NumberFormat("es-CL");
@@ -265,7 +264,6 @@ export default function PiwenMarketPanel() {
     <nav className={styles.tabs}>
       {([
         ["overview","Resumen"],
-        ["copilot","AI Copilot"],
         ["brands","Por marca"],
         ["products","Por producto"],
         ["formats","Por formato"],
@@ -308,13 +306,12 @@ export default function PiwenMarketPanel() {
       </section>
     </>}
 
-    {tab !== "overview" && tab !== "copilot" && tab !== "downloads" && tab !== "marketplace" && tab !== "matrix" && <section className={styles.filters}>
+    {tab !== "overview" && tab !== "downloads" && tab !== "marketplace" && tab !== "matrix" && <section className={styles.filters}>
       <label><span>Familia</span><select value={family} onChange={e=>setFamily(e.target.value)}><option value="">Todas</option>{payload.scope.families.map(x=><option key={x}>{x}</option>)}</select></label>
       {tab === "brands" && <label><span>Marca</span><select value={brand} onChange={e=>setBrand(e.target.value)}><option value="">Todas</option>{brandOptions.map(x=><option key={x}>{x}</option>)}</select></label>}
       <button onClick={()=>{setFamily("");setBrand("");setRetailer("");setQuery("")}}>Limpiar</button>
     </section>}
 
-    {tab === "copilot" && <PiwenMarketCopilot/>}
     {tab === "brands" && <section className={styles.panel}><div className={styles.panelTitle}><div><span>MARCA</span><h2>Competencia resumida por marca</h2><p>Surtido, cobertura, promoción y nivel de precio por kilo.</p></div></div><RowTable rows={visibleBrandRows} dimension="Marca"/></section>}
     {tab === "products" && <section className={styles.panel}><div className={styles.panelTitle}><div><span>PRODUCTO</span><h2>Mercado resumido por familia</h2><p>Almendras, castañas de cajú, pistachos, nueces, maní, mixes y categorías adyacentes.</p></div></div><RowTable rows={(payload.byProduct??[]).filter(x=>!family||x.key===family)} dimension="Producto"/></section>}
     {tab === "formats" && <section className={styles.panel}><div className={styles.panelTitle}><div><span>FORMATO</span><h2>Arquitectura de packs</h2><p>Permite comparar cómo cambia el $/kg entre gramajes y detectar escalones de precio incoherentes.</p></div></div><RowTable rows={(payload.byFormat??[]).filter(x=>!family||x.key.startsWith(family+" · "))} dimension="Formato"/></section>}
