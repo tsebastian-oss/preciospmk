@@ -49,6 +49,53 @@ async function handleCompetitionHistory(request: NextRequest, moduleName: "overv
     console.info("victorinox-history-supabase", { days, points: officialHistory.length });
   }
 
+  if (requireVictorinoxScope) {
+    const snapshot = await enterpriseRpc<RawRow[]>(request, "victorinox_competition_market_payload", { p_limit_per_brand: 250 });
+    if (snapshot.response) return snapshot.response;
+    const marketSnapshot = victorinoxMarketFromRows(Array.isArray(snapshot.data) ? snapshot.data : []);
+    const categoryNames = ["Relojes", "Equipo de viaje", "Navajas y multiherramientas", "Cuchillos"];
+    const categories = categoryNames.map((category) => {
+      const snapshotPosition = marketSnapshot.position.find((item) => item.category === category);
+      const benchmark = n(snapshotPosition?.benchmarkMedian);
+      const snapshotCompetitors = snapshotPosition?.competitors ?? [];
+      const points = officialHistory
+        .filter((row) => row.category === category && n(row.median_price) > 0 && benchmark > 0)
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .map((own) => {
+          const ownMedian = n(own.median_price);
+          const index = ownMedian / benchmark * 100;
+          return {
+            date: own.date,
+            ownMedian: Math.round(ownMedian),
+            benchmarkMedian: Math.round(benchmark),
+            priceIndex: round1(index),
+            premiumPct: round1(index - 100),
+            ownProducts: n(own.products),
+            competitorProducts: snapshotCompetitors.reduce((sum, row) => sum + n(row.skuCount), 0),
+            competitorBrands: snapshotCompetitors.length,
+            benchmarkMode: "latest_observed",
+          };
+        });
+      return { category, points };
+    });
+
+    console.info("victorinox-history-ready", {
+      source: "supabase",
+      days,
+      counts: categories.map((item) => ({ category: item.category, points: item.points.length })),
+    });
+    return NextResponse.json(
+      {
+        source: "supabase",
+        brand: "Victorinox",
+        days,
+        categories,
+        method: "official_daily_median_vs_latest_observed_competitor_benchmark",
+      },
+      { headers: { "cache-control": "private, max-age=60, stale-while-revalidate=300" } },
+    );
+  }
+
   if (!clickHouseConfigured()) {
     return NextResponse.json({ error: "Histórico real no disponible: ClickHouse no está configurado." }, { status: 503 });
   }
