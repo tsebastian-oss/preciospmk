@@ -116,6 +116,97 @@ export async function enterpriseRpc<T>(
   return { data: text ? JSON.parse(text) as T : undefined };
 }
 
+type ReadRpcOptions = {
+  attempts?: number;
+  timeoutMs?: number;
+};
+
+const READ_RPC_TRANSIENT_STATUS = new Set([408, 502, 503, 504, 520, 522, 524]);
+
+function readRpcDelay(attempt: number) {
+  return new Promise((resolve) => setTimeout(resolve, attempt === 0 ? 250 : 750));
+}
+
+export async function enterpriseReadRpc<T>(
+  request: NextRequest,
+  functionName: string,
+  body: Record<string, unknown> = {},
+  options: ReadRpcOptions = {},
+): Promise<RpcResult<T>> {
+  const token = accessToken(request);
+  if (!token) return { response: NextResponse.json({ error: "No autorizado" }, { status: 401 }) };
+
+  const attempts = Math.max(1, Math.min(options.attempts ?? 3, 3));
+  const timeoutMs = Math.max(2_000, Math.min(options.timeoutMs ?? 10_000, 20_000));
+  let lastStatus = 503;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${functionName}`, {
+        method: "POST",
+        headers: {
+          apikey: SUPABASE_KEY,
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      if (response.ok) {
+        return { data: text ? JSON.parse(text) as T : undefined };
+      }
+
+      const status = response.status === 400 && text.includes("42501") ? 403 : response.status;
+      lastStatus = status;
+      if (attempt + 1 < attempts && READ_RPC_TRANSIENT_STATUS.has(status)) {
+        await readRpcDelay(attempt);
+        continue;
+      }
+      return { response: enterpriseErrorResponse(status, text) };
+    } catch (error) {
+      const transient = error instanceof Error
+        && (error.name === "AbortError" || error.name === "TimeoutError" || error.name === "TypeError");
+      if (transient && attempt + 1 < attempts) {
+        await readRpcDelay(attempt);
+        continue;
+      }
+      console.error("enterprise-read-rpc", {
+        functionName,
+        attempt: attempt + 1,
+        error: error instanceof Error ? error.name : "unknown",
+      });
+      return {
+        response: NextResponse.json(
+          {
+            error: "El servicio de datos no respondió correctamente. Intenta nuevamente.",
+            code: "DATA_TRANSIENT",
+            transient: true,
+          },
+          { status: lastStatus },
+        ),
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  return {
+    response: NextResponse.json(
+      {
+        error: "El servicio de datos no respondió correctamente. Intenta nuevamente.",
+        code: "DATA_TRANSIENT",
+        transient: true,
+      },
+      { status: lastStatus },
+    ),
+  };
+}
+
 export async function enterpriseRest<T>(
   request: NextRequest,
   path: string,
