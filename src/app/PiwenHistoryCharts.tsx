@@ -13,7 +13,7 @@ type Point = {
   pricePerKg: number;
   skuCount: number;
   retailers: number;
-  source: "public_reference" | "market_census";
+  source: "official_d2c" | "market_census";
 };
 type Payload = {
   from: string | null;
