@@ -6,9 +6,10 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const maxDuration = 60;
 
-const FAMILIES = ["Almendras", "Castañas de cajú", "Pistachos"] as const;
+const FAMILIES = ["Almendras", "Castañas de cajú", "Pistachos", "Mixes", "Nueces", "Maní", "Avellanas", "Semillas", "Fruta deshidratada"] as const;
 const HISTORY_PAGE_SIZE = 5000;
 const MAX_HISTORY_PAGES = 100;
+const HISTORY_CONCURRENCY = 4;
 
 type GranularHistoryRow = {
   sourceKey?: string | null;
@@ -65,33 +66,50 @@ function slug(value: string) {
     .replace(/^-+|-+$/g, "");
 }
 
+async function historyPage(request: NextRequest, family: string | null, offset: number) {
+  return enterpriseRpc<{ rows?: GranularHistoryRow[]; totalRows?: number }>(
+    request,
+    "brands_piwen_granular_history_page",
+    {
+      p_slug: "piwen",
+      p_offset: offset,
+      p_limit: HISTORY_PAGE_SIZE,
+      p_family: family,
+    },
+  );
+}
+
 async function granularHistory(request: NextRequest, family: string | null) {
-  const rows: GranularHistoryRow[] = [];
+  const first = await historyPage(request, family, 0);
+  if (first.response) return { response: first.response };
 
-  for (let page = 0; page < MAX_HISTORY_PAGES; page += 1) {
-    const offset = page * HISTORY_PAGE_SIZE;
-    const result = await enterpriseRpc<{ rows?: GranularHistoryRow[] }>(
-      request,
-      "brands_piwen_granular_history_page",
-      {
-        p_slug: "piwen",
-        p_offset: offset,
-        p_limit: HISTORY_PAGE_SIZE,
-        p_family: family,
-      },
-    );
-    if (result.response) return { response: result.response };
+  const firstRows = first.data?.rows ?? [];
+  const totalRows = Number(first.data?.totalRows ?? firstRows.length);
+  const totalPages = Math.ceil(totalRows / HISTORY_PAGE_SIZE);
 
-    const batch = result.data?.rows ?? [];
-    rows.push(...batch);
-    if (batch.length < HISTORY_PAGE_SIZE) break;
+  if (totalPages > MAX_HISTORY_PAGES) {
+    throw new Error("piwen_history_export_limit");
+  }
 
-    if (page === MAX_HISTORY_PAGES - 1) {
-      throw new Error("piwen_history_export_limit");
+  if (totalPages <= 1) return { rows: firstRows, totalRows };
+
+  const pages: GranularHistoryRow[][] = [firstRows];
+  const offsets = Array.from(
+    { length: totalPages - 1 },
+    (_, index) => (index + 1) * HISTORY_PAGE_SIZE,
+  );
+
+  for (let index = 0; index < offsets.length; index += HISTORY_CONCURRENCY) {
+    const chunk = offsets.slice(index, index + HISTORY_CONCURRENCY);
+    const results = await Promise.all(chunk.map(offset => historyPage(request, family, offset)));
+
+    for (const result of results) {
+      if (result.response) return { response: result.response };
+      pages.push(result.data?.rows ?? []);
     }
   }
 
-  return { rows };
+  return { rows: pages.flat(), totalRows };
 }
 
 export async function GET(request: NextRequest) {
@@ -181,6 +199,7 @@ export async function GET(request: NextRequest) {
           "content-disposition": `attachment; filename="piwen-historico-granular${familySuffix}-${today}.csv"`,
           "cache-control": "private, no-store",
           "x-piwen-export-rows": String(rows.length),
+          "x-piwen-export-source": "supabase-cache",
           "vary": "accept-encoding",
         },
       });
