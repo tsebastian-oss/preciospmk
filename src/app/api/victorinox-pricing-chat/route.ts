@@ -19,7 +19,7 @@ export async function POST(request:NextRequest){
  const auth=await enterpriseAccess(request,"brand-panel"); if(auth.response)return auth.response;
  if(!auth.access||!brandScopeAllows(auth.access,"victorinox"))return NextResponse.json({error:"Victorinox no está habilitado."},{status:403});
  try{
-  const body=await request.json(),messages=clean(body?.messages),last=[...messages].reverse().find(x=>x.role==="user");
+  const body=await request.json(),messages=clean(body?.messages),last=[...messages].reverse().find(x=>x.role==="user"),localOnly=body?.localOnly===true;
   if(!last)return NextResponse.json({error:"Escribe una consulta."},{status:400});
   const light=await enterpriseRpc<Record<string,unknown>>(request,"brands_vertical_light_payload",{p_slug:"victorinox"});
   if(light.response||!light.data)return light.response??NextResponse.json({error:"Sin catálogo oficial disponible."},{status:503});
@@ -29,9 +29,9 @@ export async function POST(request:NextRequest){
   const terms=last.content.toLocaleLowerCase("es-CL").split(/\s+/).filter(x=>x.length>=4);
   const context={generatedAt:market.generatedAt,lastObservedAt:market.lastObservedAt,kpis:market.kpis,position:market.position,summary:market.summary,dataQuality:market.dataQuality,
    relevantListings:market.listings.filter((r:any)=>terms.some(t=>(r.name+" "+r.brand+" "+r.category+" "+r.retailer).toLocaleLowerCase("es-CL").includes(t))).slice(0,100),insights:market.insights};
-  if(KEY.length>=20)for(const model of [...new Set([MODEL,"gpt-4.1","gpt-4o"])]){
+  if(!localOnly&&KEY.length>=20)for(const model of [...new Set([MODEL,"gpt-4.1","gpt-4o"])]){
    try{const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),35000);const response=await fetch(URL,{method:"POST",headers:{authorization:`Bearer ${KEY}`,"content-type":"application/json"},body:JSON.stringify({model,instructions:instructions(context),input:messages,store:false,max_output_tokens:1800}),signal:controller.signal,cache:"no-store"});clearTimeout(timeout);const data=await response.json().catch(()=>({}));if(!response.ok)continue;const answer=output(data);if(answer)return NextResponse.json({answer,model:data?.model||model,dataObservedAt:market.lastObservedAt,presentationMode:false},{headers:{"cache-control":"private, no-store"}});}catch{}
   }
-  return NextResponse.json({answer:local(last.content,market),model:"MGP Real Data Analyst",dataObservedAt:market.lastObservedAt,presentationMode:false},{headers:{"cache-control":"private, no-store"}});
+  return NextResponse.json({answer:local(last.content,market),model:localOnly?"MGP Real Data Analyst · QA":"MGP Real Data Analyst",dataObservedAt:market.lastObservedAt,presentationMode:false},{headers:{"cache-control":"private, no-store"}});
  }catch(error){console.error("victorinox chat",error);return NextResponse.json({error:"No fue posible consultar los datos reales."},{status:503});}
 }
