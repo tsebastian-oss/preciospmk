@@ -5,7 +5,12 @@ export const revalidate = 0;
 export const maxDuration = 30;
 
 const GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/responses";
-const MODEL = "openai/gpt-5.4";
+const MODELS = [
+  "openai/gpt-5.6-luna",
+  "openai/gpt-5.4-mini",
+  "openai/gpt-5.4-nano",
+  "openai/gpt-5-nano",
+];
 
 function outputText(response: any) {
   return (response?.output ?? [])
@@ -32,52 +37,66 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 20_000);
-  const startedAt = Date.now();
+  const attempts: Array<Record<string, unknown>> = [];
 
-  try {
-    const response = await fetch(GATEWAY_URL, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        instructions: "Return exactly the word OK.",
-        input: [{ role: "user", content: "Health check" }],
-        store: false,
-        max_output_tokens: 64,
-        reasoning: { effort: "low" },
-      }),
-      cache: "no-store",
-      signal: controller.signal,
-    });
+  for (const model of MODELS) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+    const startedAt = Date.now();
 
-    const data = await response.json().catch(() => ({}));
-    const answer = outputText(data);
+    try {
+      const response = await fetch(GATEWAY_URL, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          instructions: "Return exactly the word OK.",
+          input: [{ role: "user", content: "Health check" }],
+          store: false,
+          max_output_tokens: 64,
+          reasoning: { effort: "low" },
+        }),
+        cache: "no-store",
+        signal: controller.signal,
+      });
 
-    return NextResponse.json({
-      ok: response.ok && answer === "OK",
-      status: response.status,
-      model: data?.model || MODEL,
-      answer: answer || null,
-      errorCode: data?.error?.code || data?.error?.type || null,
-      errorMessage: typeof data?.error?.message === "string" ? data.error.message.slice(0, 240) : null,
-      durationMs: Date.now() - startedAt,
-    }, {
-      status: response.ok && answer === "OK" ? 200 : 503,
-      headers: { "cache-control": "no-store" },
-    });
-  } catch (error) {
-    return NextResponse.json({
-      ok: false,
-      stage: "request",
-      error: error instanceof Error ? error.name : "unknown",
-      durationMs: Date.now() - startedAt,
-    }, { status: 503, headers: { "cache-control": "no-store" } });
-  } finally {
-    clearTimeout(timeout);
+      const data = await response.json().catch(() => ({}));
+      const answer = outputText(data);
+      attempts.push({
+        requestedModel: model,
+        status: response.status,
+        resolvedModel: data?.model || null,
+        answer: answer || null,
+        errorCode: data?.error?.code || data?.error?.type || null,
+        errorMessage: typeof data?.error?.message === "string" ? data.error.message.slice(0, 180) : null,
+        durationMs: Date.now() - startedAt,
+      });
+
+      if (response.ok && answer === "OK") {
+        return NextResponse.json({
+          ok: true,
+          selectedModel: model,
+          resolvedModel: data?.model || model,
+          attempts,
+        }, { headers: { "cache-control": "no-store" } });
+      }
+    } catch (error) {
+      attempts.push({
+        requestedModel: model,
+        status: 503,
+        error: error instanceof Error ? error.name : "unknown",
+        durationMs: Date.now() - startedAt,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
   }
-}
+
+  return NextResponse.json({
+    ok: false,
+    error: "no_usable_free_tier_model",
+    attempts,
+  }, { status: 503, headers: { "cache-control": "no-store" } });
