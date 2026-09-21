@@ -26,6 +26,7 @@ const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY
   ?? process.env.SUPABASE_PUBLISHABLE_KEY
   ?? "sb_publishable_4FrGlw8owGm5EtwMs9V5zQ_oBrH0c0-";
 const CONVERSATION_TYPE = "piwen-pricing";
+const PIWEN_AI_ENABLED = false;
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -385,6 +386,13 @@ ${JSON.stringify(context)}`;
 }
 
 export async function POST(request: NextRequest) {
+  if (!PIWEN_AI_ENABLED) {
+    return NextResponse.json(
+      { error: "El módulo de IA de Piwén está temporalmente deshabilitado." },
+      { status: 503, headers: { "cache-control": "no-store" } },
+    );
+  }
+
   const authorization = await enterpriseAccess(request, "brand-panel");
   if (authorization.response) return authorization.response;
   if (!authorization.access || !brandScopeAllows(authorization.access, "piwen")) {
