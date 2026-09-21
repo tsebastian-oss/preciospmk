@@ -304,8 +304,9 @@ export default function PiwenExecutiveIntelligence({
   const simulatedIndex = selected && simulatedKg && selected.marketMedianPerKg
     ? simulatedKg / selected.marketMedianPerKg * 100
     : null;
-  const parityPrice = selected && selected.priceIndex
-    ? roundPrice(selected.piwenPrice * 100 / selected.priceIndex)
+  const selectedIndex = selected?.priceIndex ?? null;
+  const parityPrice = selected && selectedIndex != null
+    ? roundPrice(selected.piwenPrice * 100 / selectedIndex)
     : null;
   const minPrice = selected ? roundPrice(selected.piwenPrice * 0.75) : 0;
   const maxPrice = selected ? roundPrice(selected.piwenPrice * 1.25) : 0;
@@ -436,8 +437,8 @@ export default function PiwenExecutiveIntelligence({
         <div className={styles.simulatorActions}>
           <button onClick={()=>setSimulatedPrice(selected.piwenPrice)}>Precio actual</button>
           {parityPrice && <button onClick={()=>setSimulatedPrice(parityPrice)}>Paridad 100 · {money.format(parityPrice)}</button>}
-          {selected.priceIndex && <button onClick={()=>setSimulatedPrice(roundPrice(selected.piwenPrice * 95 / selected.priceIndex))}>Índice 95</button>}
-          {selected.priceIndex && <button onClick={()=>setSimulatedPrice(roundPrice(selected.piwenPrice * 105 / selected.priceIndex))}>Índice 105</button>}
+          {selectedIndex != null && <button onClick={()=>setSimulatedPrice(roundPrice(selected.piwenPrice * 95 / selectedIndex))}>Índice 95</button>}
+          {selectedIndex != null && <button onClick={()=>setSimulatedPrice(roundPrice(selected.piwenPrice * 105 / selectedIndex))}>Índice 105</button>}
         </div>
         <div className={styles.simulatorReadout}>
           <strong>{simulatedPrice === selected.piwenPrice ? "Escenario actual" : simulatedPrice > selected.piwenPrice ? "Escenario de aumento" : "Escenario de reducción"}</strong>
