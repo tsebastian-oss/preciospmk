@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { brandScopeAllows, enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
-import { piwenMarketIntelligence } from "@/lib/piwen-market";
+import { piwenMarketIntelligence, type PiwenMarketSnapshot, type PiwenOfficialSnapshot } from "@/lib/piwen-market";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -151,18 +151,26 @@ export async function POST(request: NextRequest) {
     const lastUser = [...messages].reverse().find(item => item.role === "user");
     if (!lastUser) return NextResponse.json({ error: "Escribe una consulta de pricing." }, { status: 400 });
 
-    const [marketResult, marketplaceResult] = await Promise.allSettled([
-      piwenMarketIntelligence(authorization.access),
+    const [supermarketResult, officialResult, marketplaceResult] = await Promise.allSettled([
+      enterpriseRpc<PiwenMarketSnapshot>(request, "brands_piwen_supermarket_snapshot", { p_slug: "piwen" }),
+      enterpriseRpc<PiwenOfficialSnapshot>(request, "brands_piwen_official_snapshot", { p_slug: "piwen" }),
       enterpriseRpc<MarketplaceSnapshot>(request, "brands_piwen_marketplace_snapshot", { p_slug: "piwen" }),
     ]);
 
-    const market = marketResult.status === "fulfilled" ? marketResult.value : null;
+    const supermarket = supermarketResult.status === "fulfilled" && !supermarketResult.value.response
+      ? supermarketResult.value.data ?? null
+      : null;
+    const official = officialResult.status === "fulfilled" && !officialResult.value.response
+      ? officialResult.value.data ?? null
+      : null;
     const marketplace = marketplaceResult.status === "fulfilled" && !marketplaceResult.value.response
       ? marketplaceResult.value.data ?? null
       : null;
 
+    const market = supermarket || official ? piwenMarketIntelligence(supermarket, official) : null;
+
     if (!market && !marketplace) {
-      return NextResponse.json({ error: "No hay contexto de precios disponible en este momento." }, { status: 503 });
+      return NextResponse.json({ error: "No hay contexto de precios disponible en Supabase en este momento." }, { status: 503 });
     }
 
     const context = {
@@ -190,7 +198,7 @@ export async function POST(request: NextRequest) {
         pricedProducts: marketplace.pricedProducts,
         listings: (marketplace.listings ?? []).slice(0, 80),
       } : null,
-      dataPolicy: "Datos de supermercados desde ClickHouse + referencias Piwén + snapshot MercadoLibre persistido. No asumir costos o ventas no cargados.",
+      dataPolicy: "Datos de supermercados, Piwén.cl y MercadoLibre persistidos en Supabase. No asumir costos o ventas no cargados.",
     };
 
     let lastFailure: { status: number; code: string; message: string } | null = null;
@@ -242,7 +250,7 @@ export async function POST(request: NextRequest) {
           requestedModel: OPENAI_MODEL,
           modelFallback: model !== OPENAI_MODEL,
           assistant: "MGP Pricing Copilot",
-          dataSource: "clickhouse+mercadolibre",
+          dataSource: "supabase",
           dataObservedAt: market?.lastObservedAt ?? marketplace?.lastCrawledAt ?? null,
         }, { headers: { "cache-control": "private, no-store, max-age=0" } });
       } catch (error) {
