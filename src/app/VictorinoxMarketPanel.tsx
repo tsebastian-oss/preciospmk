@@ -53,7 +53,7 @@ type Position = {
 };
 
 type Payload = {
-  source: "clickhouse";
+  source: "victorinox-official+supabase-snapshot";
   generatedAt: string;
   lastObservedAt: string | null;
   categories: string[];
@@ -146,7 +146,7 @@ export default function VictorinoxMarketPanel(){
         <h1>Cómo está posicionada Victorinox en Chile</h1>
         <p>Una lectura ejecutiva de <strong>pricing, competencia, distribución, surtido y promociones</strong> en relojes, equipo de viaje, navajas/multiherramientas y cuchillos.</p>
       </div>
-      <div className={styles.liveBox}><span><i/> MARKET LIVE</span><strong>{payload.kpis.retailers} retailers · {payload.kpis.competitorBrands} marcas competidoras</strong><small>Última observación {date(payload.lastObservedAt)}</small></div>
+      <div className={styles.liveBox}><span><i/> DATOS ACTUALIZADOS</span><strong>{payload.kpis.retailers} retailers · {payload.kpis.competitorBrands} marcas competidoras</strong><small>Última observación {date(payload.lastObservedAt)}</small></div>
     </header>
 
     <div className={styles.kpis}>
@@ -165,8 +165,8 @@ export default function VictorinoxMarketPanel(){
 
     {tab==="overview"&&<>
       <section className={styles.executiveHeader}>
-        <div><span>EXECUTIVE OVERVIEW</span><h2>Posición de mercado por categoría</h2><p>Comparable Price Index usa competidores dentro del corredor central de precios Victorinox (P10–P90). El Market Index completo queda como referencia secundaria.</p></div>
-        <button onClick={()=>setTab("copilot")}>Preguntar al AI Analyst →</button>
+        <div><span>RESUMEN EJECUTIVO</span><h2>Posición de mercado por categoría</h2><p>Comparable Price Index usa competidores dentro del corredor central de precios Victorinox (P10–P90). El Market Index completo queda como referencia secundaria.</p></div>
+        <button onClick={()=>setTab("copilot")}>Preguntar al analista IA →</button>
       </section>
 
       <section className={styles.positionGrid}>
