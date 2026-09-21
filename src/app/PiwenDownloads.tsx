@@ -3,7 +3,7 @@
 import styles from "./PiwenDownloads.module.css";
 import { trackUsageEvent } from "@/lib/usage-client";
 
-const FAMILIES = ["Almendras", "Castañas de cajú", "Pistachos"] as const;
+const FAMILIES = ["Almendras", "Castañas de cajú", "Pistachos", "Mixes", "Nueces", "Maní", "Avellanas", "Semillas", "Fruta deshidratada"] as const;
 
 function href(mode: "current" | "history", family?: string) {
   const query = new URLSearchParams({ mode });
@@ -21,24 +21,24 @@ export default function PiwenDownloads() {
       <div>
         <span>DATA EXPORT</span>
         <h2>Descarga las bases de Piwén</h2>
-        <p>Base vigente competitiva e histórico granular de cada corrida, listos para Excel, análisis propios o presentaciones.</p>
+        <p>Descarga la base maestra con todas las observaciones históricas capturadas por corrida. La base vigente se mantiene separada como snapshot actual.</p>
       </div>
-      <a href={href("current")} onClick={()=>track("base-vigente-completa")}>Descargar base vigente ↓</a>
+      <a href={href("history")} onClick={()=>track("historico-granular-completo-hero")}>Descargar histórico completo ↓</a>
     </section>
 
     <section className={styles.grid}>
       <article>
-        <span>CSV · MERCADO ACTUAL</span>
-        <h3>Base competitiva vigente</h3>
-        <p>Marca, retailer, producto, familia, formato, gramos, precio, $/kg, promoción, stock, fecha y URL.</p>
-        <a href={href("current")} onClick={()=>track("base-vigente-completa")}>Descargar completa ↓</a>
+        <span>CSV · SNAPSHOT ACTUAL</span>
+        <h3>Base vigente</h3>
+        <p>Solo el estado vigente disponible: marca, retailer, producto, familia, formato, gramos, precio, $/kg, promoción, stock, fecha y URL. Esta base es deliberadamente más pequeña que el histórico.</p>
+        <a href={href("current")} onClick={()=>track("base-vigente-completa")}>Descargar snapshot vigente ↓</a>
       </article>
 
       <article>
-        <span>CSV · HISTÓRICO GRANULAR</span>
+        <span>CSV · BASE MAESTRA HISTÓRICA</span>
         <h3>Todas las corridas, fila por observación</h3>
-        <p>Descarga cada captura histórica con corrida, fecha/hora, fuente, canal, marca, retailer, SKU, precios, $/kg, promoción, stock y URL.</p>
-        <a href={href("history")} onClick={()=>track("historico-granular-completo")}>Descargar histórico granular ↓</a>
+        <p>Incluye cada captura disponible de supermercados, Piwén.cl y MercadoLibre: corrida, fecha/hora, fuente, canal, marca, retailer, SKU, precios, $/kg, promoción, stock y URL.</p>
+        <a href={href("history")} onClick={()=>track("historico-granular-completo")}>Descargar base maestra ↓</a>
       </article>
     </section>
 
@@ -60,7 +60,7 @@ export default function PiwenDownloads() {
     </section>
 
     <div className={styles.note}>
-      Las descargas respetan el acceso privado de la cuenta Piwén. El histórico granular conserva una fila por observación de cada corrida disponible: no reemplaza mediciones anteriores y separa Piwén.cl, supermercados y MercadoLibre. La columna “Comparable directo” permite reproducir el benchmark o construir análisis propios con el universo completo.
+      La base maestra histórica conserva una fila por observación de cada corrida disponible y no reemplaza mediciones anteriores. El snapshot vigente es más pequeño por diseño. El histórico separa Piwén.cl, supermercados y MercadoLibre, e incluye la columna “Comparable directo” para poder reproducir el benchmark o trabajar con el universo completo.
     </div>
   </div>;
 }
