@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { brandScopeAllows, enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
-import { victorinoxMarketIntelligence } from "@/lib/victorinox-market";
+import { victorinoxMarketFromRows, type RawRow } from "@/lib/victorinox-market";
 import { mergeVictorinoxOfficialMarket } from "@/lib/victorinox-real-market";
 
 export const dynamic="force-dynamic"; export const revalidate=0;
@@ -23,8 +23,9 @@ export async function POST(request:NextRequest){
   if(!last)return NextResponse.json({error:"Escribe una consulta."},{status:400});
   const light=await enterpriseRpc<Record<string,unknown>>(request,"brands_vertical_light_payload",{p_slug:"victorinox"});
   if(light.response||!light.data)return light.response??NextResponse.json({error:"Sin catálogo oficial disponible."},{status:503});
-  let base:any={listings:[]}; try{base=await victorinoxMarketIntelligence(auth.access);}catch(error){console.error("victorinox-chat-market",error);}
-  const market=mergeVictorinoxOfficialMarket(base,light.data);
+  const competition=await enterpriseRpc<RawRow[]>(request,"victorinox_competition_market_payload",{p_limit_per_brand:250});
+  if(competition.response||!Array.isArray(competition.data))return competition.response??NextResponse.json({error:"Sin competencia real disponible."},{status:503});
+  const market=mergeVictorinoxOfficialMarket(victorinoxMarketFromRows(competition.data),light.data);
   const terms=last.content.toLocaleLowerCase("es-CL").split(/\s+/).filter(x=>x.length>=4);
   const context={generatedAt:market.generatedAt,lastObservedAt:market.lastObservedAt,kpis:market.kpis,position:market.position,summary:market.summary,dataQuality:market.dataQuality,
    relevantListings:market.listings.filter((r:any)=>terms.some(t=>(r.name+" "+r.brand+" "+r.category+" "+r.retailer).toLocaleLowerCase("es-CL").includes(t))).slice(0,100),insights:market.insights};
