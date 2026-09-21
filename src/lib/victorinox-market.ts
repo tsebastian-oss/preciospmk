@@ -1,7 +1,7 @@
 import { clickHouseQuery } from "@/lib/clickhouse";
 import type { EnterpriseAccessContext } from "@/lib/enterprise-auth";
 
-type RawRow = {
+export type RawRow = {
   id: string;
   retailer: string;
   brand: string;
@@ -130,6 +130,10 @@ export async function victorinoxMarketIntelligence(_access: EnterpriseAccessCont
     LIMIT 8500
   `, {}, 9_000);
 
+  return victorinoxMarketFromRows(rows);
+}
+
+export function victorinoxMarketFromRows(rows: RawRow[]) {
   const seen = new Set<string>();
   const market: VictorinoxMarketRow[] = [];
 
@@ -227,7 +231,7 @@ export async function victorinoxMarketIntelligence(_access: EnterpriseAccessCont
   insights.push(`El universo competitivo visible reúne ${brands.length} marcas en ${retailers.length} retailers.`);
 
   return {
-    source: "clickhouse" as const,
+    source: "observed-market" as const,
     generatedAt: new Date().toISOString(),
     lastObservedAt,
     categories,
