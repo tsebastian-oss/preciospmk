@@ -276,10 +276,27 @@ function comparableSet(subject: PiwenMarketListing, market: PiwenMarketListing[]
     });
 }
 
+function isDirectCompetitor(brand: string) {
+  const n = normalized(brand);
+  return n.includes("alto la cruz") || n.includes("millantu");
+}
+
+function brandBalancedMedian(rows: PiwenMarketListing[]) {
+  const grouped = new Map<string, number[]>();
+  for (const row of rows) {
+    if (!row.pricePerKg) continue;
+    grouped.set(row.brand, [...(grouped.get(row.brand) ?? []), row.pricePerKg]);
+  }
+  const brandMedians = [...grouped.values()]
+    .map(values => median(values))
+    .filter((value): value is number => value != null && Number.isFinite(value));
+  return rounded(median(brandMedians));
+}
+
 function benchmarkQuality(rows: PiwenMarketListing[]): PiwenBenchmarkQuality {
   const brands = new Set(rows.map(row => row.brand)).size;
   if (rows.length >= 3 && brands >= 2) return "robust";
-  if (rows.length >= 2) return "limited";
+  if (rows.length >= 1) return "limited";
   return "insufficient";
 }
 
@@ -309,14 +326,14 @@ export function piwenMarketIntelligence(
     });
 
   const piwenPosition = subject.map(item => {
-    const comparables = comparableSet(item, market);
+    const allComparables = comparableSet(item, market);
+    const directComparables = allComparables.filter(row => isDirectCompetitor(row.brand));
+    const comparables = directComparables.length ? directComparables : allComparables;
+    const benchmarkUniverse = directComparables.length ? "direct_competitors" as const : "broader_market" as const;
     const quality = benchmarkQuality(comparables);
     const brands = [...new Set(comparables.map(row => row.brand))].sort((a, b) => a.localeCompare(b, "es"));
     const retailers = [...new Set(comparables.map(row => row.retailer))].sort((a, b) => a.localeCompare(b, "es"));
-    const comparablePrices = comparables
-      .map(row => row.pricePerKg)
-      .filter((value): value is number => value != null && Number.isFinite(value));
-    const comparableMedian = quality === "insufficient" ? null : rounded(median(comparablePrices));
+    const comparableMedian = quality === "insufficient" ? null : brandBalancedMedian(comparables);
 
     return {
       family: item.family,
@@ -330,17 +347,22 @@ export function piwenMarketIntelligence(
       marketBrands: brands.length,
       marketRetailers: retailers.length,
       marketBrandNames: brands,
+      benchmarkUniverse,
       benchmarkQuality: quality,
-      benchmarkLabel: quality === "robust"
-        ? "Mediana comparable de mercado"
-        : quality === "limited"
-          ? "Referencia comparable limitada"
-          : "Benchmark insuficiente",
-      benchmarkNote: quality === "robust"
-        ? "Productos de la misma familia, disponibles y con gramaje entre 50% y 150% del formato Piwén."
-        : quality === "limited"
-          ? "La referencia usa productos equivalentes por familia y gramaje, pero la muestra aún es pequeña."
-          : "No hay al menos 2 SKU comparables con gramaje razonablemente cercano; no se calcula índice.",
+      benchmarkLabel: quality === "insufficient"
+        ? "Benchmark insuficiente"
+        : benchmarkUniverse === "direct_competitors"
+          ? "Referencia de competidor directo"
+          : quality === "robust"
+            ? "Mediana comparable de mercado"
+            : "Referencia comparable limitada",
+      benchmarkNote: quality === "insufficient"
+        ? "No hay productos directos con gramaje razonablemente cercano; no se calcula índice."
+        : benchmarkUniverse === "direct_competitors"
+          ? `Prioriza Alto La Cruz / Millantú; ${comparables.length} SKU comparable(s), con gramaje entre 50% y 150% del formato Piwén.`
+          : quality === "robust"
+            ? "Mediana balanceada por marca de productos directos, disponibles y con gramaje entre 50% y 150% del formato Piwén."
+            : "Referencia de mercado depurada, pero con muestra pequeña.",
       comparables: comparables.slice(0, 20).map(row => ({
         brand: row.brand,
         retailer: row.retailer,
@@ -410,7 +432,7 @@ export function piwenMarketIntelligence(
     insights,
     note: degraded
       ? "Fuente Supabase. El panel conserva solo productos directos válidos; una fuente está temporalmente incompleta."
-      : "Fuente Supabase. El universo competitivo excluye falsos positivos y alimentos procesados. La posición Piwén usa solo comparables de la misma familia con gramaje entre 50% y 150% del formato Piwén; si la muestra es insuficiente, no calcula índice.",
+      : "Fuente Supabase. El universo competitivo excluye falsos positivos y alimentos procesados. La posición Piwén prioriza Alto La Cruz y Millantú cuando existen comparables del mismo producto/familia y gramaje; si usa mercado amplio, la mediana se balancea por marca para evitar sesgo por surtido.",
     degraded,
   };
 }
