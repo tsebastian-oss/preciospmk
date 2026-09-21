@@ -4,8 +4,8 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const maxDuration = 30;
 
-const OPENAI_URL = "https://api.openai.com/v1/responses";
-const MODEL = (process.env.PIWEN_OPENAI_MODEL ?? "gpt-5.6-sol").trim();
+const GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/responses";
+const MODEL = "openai/gpt-5.6-sol";
 
 function outputText(response: any) {
   return (response?.output ?? [])
@@ -19,19 +19,19 @@ function outputText(response: any) {
 }
 
 export async function GET() {
-  const apiKey = process.env.OPENAI_API_KEY ?? "";
-  if (!apiKey) {
-    return NextResponse.json({ ok: false, stage: "config", error: "missing_openai_key" }, { status: 503 });
+  const gatewayToken = process.env.AI_GATEWAY_API_KEY ?? process.env.VERCEL_OIDC_TOKEN ?? "";
+  if (!gatewayToken) {
+    return NextResponse.json({ ok: false, stage: "config", error: "missing_gateway_auth" }, { status: 503 });
   }
 
   const startedAt = Date.now();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 20_000);
   try {
-    const response = await fetch(OPENAI_URL, {
+    const response = await fetch(GATEWAY_URL, {
       method: "POST",
       headers: {
-        authorization: `Bearer ${apiKey}`,
+        authorization: `Bearer ${gatewayToken}`,
         "content-type": "application/json",
       },
       body: JSON.stringify({
@@ -47,7 +47,7 @@ export async function GET() {
     });
     const raw = await response.text();
     let data: any = {};
-    try { data = raw ? JSON.parse(raw) : {}; } catch {}
+    try { data = raw ? JSON.parse(raw) : { raw: raw.slice(0, 250) }; } catch { data = { raw: raw.slice(0, 250) }; }
     const answer = outputText(data);
     return NextResponse.json({
       ok: response.ok && answer === "OK",
@@ -58,6 +58,7 @@ export async function GET() {
       responseStatus: data?.status || null,
       incompleteReason: data?.incomplete_details?.reason || null,
       errorCode: data?.error?.code || data?.error?.type || null,
+      errorMessage: typeof data?.error?.message === "string" ? data.error.message.slice(0, 250) : null,
       durationMs: Date.now() - startedAt,
     }, { status: response.ok ? 200 : 503, headers: { "cache-control": "no-store" } });
   } catch (error) {
