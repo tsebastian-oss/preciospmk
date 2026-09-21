@@ -125,6 +125,26 @@ export async function GET(request: NextRequest) {
 
   try {
     if (mode === "history") {
+      if (!family) {
+        const linkResult = await enterpriseRpc<{
+          ok?: boolean;
+          url?: string;
+          rows?: number;
+          bytes?: number;
+          generatedAt?: string;
+        }>(
+          request,
+          "brands_piwen_export_download_link",
+          { p_slug: "piwen" },
+        );
+        if (linkResult.response) return linkResult.response;
+        const signedUrl = typeof linkResult.data?.url === "string" ? linkResult.data.url : "";
+        if (!signedUrl) {
+          return NextResponse.json({ error: "La base histórica todavía se está preparando. Intenta nuevamente en unos segundos." }, { status: 503 });
+        }
+        return NextResponse.redirect(signedUrl, 307);
+      }
+
       const historyResult = await granularHistory(request, family);
       if (historyResult.response) return historyResult.response;
 
