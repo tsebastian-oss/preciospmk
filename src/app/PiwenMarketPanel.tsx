@@ -7,6 +7,7 @@ import PiwenHistoryCharts from "./PiwenHistoryCharts";
 import PiwenDownloads from "./PiwenDownloads";
 import PiwenPriceMatrix, { type MatrixListing } from "./PiwenPriceMatrix";
 import PiwenExecutiveIntelligence from "./PiwenExecutiveIntelligence";
+import PiwenMarketCopilot from "./PiwenMarketCopilot";
 
 type SummaryRow = {
   key: string;
@@ -109,7 +110,7 @@ type Payload = {
   error?: string;
 };
 
-type Tab = "overview" | "opportunities" | "matrix" | "downloads";
+type Tab = "overview" | "opportunities" | "matrix" | "ai" | "downloads";
 
 const money = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
 const number = new Intl.NumberFormat("es-CL");
@@ -217,6 +218,7 @@ export default function PiwenMarketPanel() {
         ["overview","Resumen"],
         ["opportunities","Oportunidades"],
         ["matrix","Matriz competitiva"],
+        ["ai","Copiloto IA"],
         ["downloads","Descargas"],
       ] as [Tab,string][]).map(([key,label]) => <button key={key} className={tab===key?styles.active:""} onClick={()=>{setTab(key);trackUsageEvent("tab_view",{module:"piwen-market",metadata:{tab:key}})}}>{label}</button>)}
     </nav>
@@ -253,6 +255,7 @@ export default function PiwenMarketPanel() {
 
     {tab === "matrix" && <PiwenPriceMatrix rows={matrixRows}/>} 
 
+    {tab === "ai" && <PiwenMarketCopilot/>}
 
     {tab === "downloads" && <PiwenDownloads/>}
 

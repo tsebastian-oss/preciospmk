@@ -12,10 +12,11 @@ export const revalidate = 0;
 export const maxDuration = 60;
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? "";
-const OPENAI_MODEL = (process.env.PIWEN_OPENAI_MODEL ?? "gpt-5.6-sol").trim();
-const GLOBAL_OPENAI_MODEL = (process.env.OPENAI_MODEL ?? "").trim();
+const OPENAI_MODEL = (process.env.PIWEN_OPENAI_MODEL ?? process.env.OPENAI_MODEL ?? "gpt-5.4").trim();
 const OPENAI_URL = "https://api.openai.com/v1/responses";
-const OPENAI_TIMEOUT_MS = 38_000;
+const AI_GATEWAY_URL = "https://ai-gateway.vercel.sh/v1/responses";
+const AI_GATEWAY_MODEL = (process.env.PIWEN_GATEWAY_MODEL ?? "openai/gpt-5.4-nano").trim();
+const AI_PROVIDER_TIMEOUT_MS = 20_000;
 const OPENAI_MAX_OUTPUT_TOKENS = 4_800;
 
 const SUPABASE_URL = process.env.SUPABASE_URL
@@ -26,7 +27,7 @@ const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY
   ?? process.env.SUPABASE_PUBLISHABLE_KEY
   ?? "sb_publishable_4FrGlw8owGm5EtwMs9V5zQ_oBrH0c0-";
 const CONVERSATION_TYPE = "piwen-pricing";
-const PIWEN_AI_ENABLED = false;
+const PIWEN_AI_ENABLED = process.env.PIWEN_AI_ENABLED !== "false";
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -153,22 +154,43 @@ async function touchConversation(token: string, organizationId: string, conversa
   );
 }
 
-function modelCandidates() {
-  return [...new Set([
-    OPENAI_MODEL,
-    "gpt-5.6-sol",
-    "gpt-5.6",
-    "gpt-5.6-terra",
-    GLOBAL_OPENAI_MODEL,
-  ].map(item => item.trim()).filter(Boolean))];
-}
+type ModelAttempt = {
+  provider: "vercel-ai-gateway" | "openai";
+  model: string;
+  url: string;
+  token: string;
+};
 
-function canFallbackModel(status: number, data: any) {
-  const code = String(data?.error?.code || data?.error?.type || "").toLowerCase();
-  return [400, 403, 404].includes(status)
-    || code.includes("model_not_found")
-    || code.includes("model")
-    || code.includes("permission");
+function modelAttempts(request: NextRequest): ModelAttempt[] {
+  const gatewayToken = (
+    process.env.AI_GATEWAY_API_KEY
+    ?? request.headers.get("x-vercel-oidc-token")
+    ?? ""
+  ).trim();
+
+  const attempts: ModelAttempt[] = [];
+
+  if (gatewayToken) {
+    for (const model of [...new Set([AI_GATEWAY_MODEL, "openai/gpt-5.4-nano"])]) {
+      attempts.push({
+        provider: "vercel-ai-gateway",
+        model,
+        url: AI_GATEWAY_URL,
+        token: gatewayToken,
+      });
+    }
+  }
+
+  if (OPENAI_API_KEY.trim().length >= 20) {
+    attempts.push({
+      provider: "openai",
+      model: OPENAI_MODEL,
+      url: OPENAI_URL,
+      token: OPENAI_API_KEY.trim(),
+    });
+  }
+
+  return attempts;
 }
 
 function cleanMessages(value: unknown): ChatMessage[] {
@@ -349,6 +371,8 @@ MÉTODO OBLIGATORIO
 1. Identifica primero el canal: Piwén.cl, supermercados o MercadoLibre.
 2. Para comparar gramajes distintos, usa precio por kilo. Solo compares precio absoluto cuando el formato sea equivalente o lo aclares.
 3. Para la posición Piwén vs mercado usa SIEMPRE supermarketMarket.piwenPosition como fuente canónica. Ese bloque ya filtra productos directos, exige gramaje entre 50% y 150% del formato Piwén y clasifica la calidad del benchmark.
+3A. Nunca concluyas que "Piwén es barato" o "Piwén es caro" de forma global. Toda conclusión de posicionamiento debe nombrar producto/familia, formato o gramaje, precio Piwén, mediana comparable y calidad de benchmark.
+3B. Si el usuario pregunta por "precio de mercado", usa marketMedianPerKg de piwenPosition para el producto comparable; no uses un promedio global de marca ni exploratoryBrandFamilyBenchmarks para sustituirlo.
 4. Si piwenPosition.benchmarkQuality = "insufficient", no calcules ni infieras un índice. Debes decir "benchmark insuficiente".
 5. Si piwenPosition.benchmarkQuality = "limited", puedes reportar el índice como referencia limitada, nunca como "mercado completo".
 6. Si calculas un índice de precio: índice = precio Piwén / mediana comparable × 100. Explica brevemente qué significa y reporta SKU/marcas de la muestra.
@@ -402,8 +426,12 @@ export async function POST(request: NextRequest) {
   const token = request.cookies.get("mgp_access_token")?.value;
   if (!token) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
 
-  if (OPENAI_API_KEY.length < 20) {
-    return NextResponse.json({ error: "Pricing Copilot no está configurado: falta OPENAI_API_KEY." }, { status: 503 });
+  const attempts = modelAttempts(request);
+  if (!attempts.length) {
+    return NextResponse.json(
+      { error: "Pricing Copilot no tiene un proveedor de IA disponible en este despliegue." },
+      { status: 503, headers: { "cache-control": "no-store" } },
+    );
   }
 
   let conversationId = "";
@@ -522,10 +550,12 @@ export async function POST(request: NextRequest) {
 
     let lastFailure: { status: number; code: string; message: string } | null = null;
 
-    for (const model of modelCandidates()) {
+    for (const attempt of attempts) {
+      const model = attempt.model;
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), OPENAI_TIMEOUT_MS);
+      const timeout = setTimeout(() => controller.abort(), AI_PROVIDER_TIMEOUT_MS);
       const startedAt = Date.now();
+
       try {
         const modelBody: Record<string, unknown> = {
           model,
@@ -536,10 +566,10 @@ export async function POST(request: NextRequest) {
           reasoning: { effort: "low" },
         };
 
-        const response = await fetch(OPENAI_URL, {
+        const response = await fetch(attempt.url, {
           method: "POST",
           headers: {
-            authorization: `Bearer ${OPENAI_API_KEY}`,
+            authorization: `Bearer ${attempt.token}`,
             "content-type": "application/json",
           },
           body: JSON.stringify(modelBody),
@@ -555,14 +585,14 @@ export async function POST(request: NextRequest) {
             message: String(data?.error?.message || ""),
           };
           logCopilotIssue("model_response", {
+            provider: attempt.provider,
             model,
             status: response.status,
             code: lastFailure.code,
             message: lastFailure.message,
             durationMs: Date.now() - startedAt,
           });
-          if (canFallbackModel(response.status, data)) continue;
-          break;
+          continue;
         }
 
         const answer = outputText(data);
@@ -570,16 +600,20 @@ export async function POST(request: NextRequest) {
           lastFailure = {
             status: 503,
             code: String(data?.incomplete_details?.reason || "empty_response"),
-            message: "OpenAI returned no visible answer",
+            message: "AI provider returned no visible answer",
           };
           logCopilotIssue("empty_response", {
+            provider: attempt.provider,
             model,
             status: data?.status,
             code: lastFailure.code,
             durationMs: Date.now() - startedAt,
           });
-          break;
+          continue;
         }
+
+        const resolvedModel = String(data?.model || model);
+        const observedAtValue = market?.lastObservedAt ?? marketplace?.lastCrawledAt ?? official?.lastCrawledAt ?? null;
 
         if (conversationId) {
           try {
@@ -588,11 +622,12 @@ export async function POST(request: NextRequest) {
               content: answer,
               ai: true,
               payload: {
-                model: data?.model || model,
-                requestedModel: OPENAI_MODEL,
-                modelFallback: model !== OPENAI_MODEL,
+                provider: attempt.provider,
+                model: resolvedModel,
+                requestedModel: AI_GATEWAY_MODEL,
+                modelFallback: attempt.provider !== "vercel-ai-gateway" || model !== AI_GATEWAY_MODEL,
                 dataSource: "supabase",
-                dataObservedAt: market?.lastObservedAt ?? marketplace?.lastCrawledAt ?? official?.lastCrawledAt ?? null,
+                dataObservedAt: observedAtValue,
               },
             });
             await touchConversation(token, organizationId, conversationId);
@@ -605,28 +640,38 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json({
           answer,
-          model: data?.model || model,
-          requestedModel: OPENAI_MODEL,
-          modelFallback: model !== OPENAI_MODEL,
+          model: resolvedModel,
+          provider: attempt.provider,
+          requestedModel: AI_GATEWAY_MODEL,
+          modelFallback: attempt.provider !== "vercel-ai-gateway" || model !== AI_GATEWAY_MODEL,
           assistant: "MGP Pricing Copilot",
           dataSource: "supabase",
-          dataObservedAt: market?.lastObservedAt ?? marketplace?.lastCrawledAt ?? official?.lastCrawledAt ?? null,
+          dataObservedAt: observedAtValue,
           conversationId,
           conversationTitle: conversationTitleValue,
         }, { headers: { "cache-control": "private, no-store, max-age=0" } });
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
-          lastFailure = { status: 408, code: "timeout", message: "Model request timed out" };
-          logCopilotIssue("model_timeout", { model, durationMs: Date.now() - startedAt });
-          break;
+          lastFailure = { status: 408, code: "timeout", message: "AI provider request timed out" };
+          logCopilotIssue("model_timeout", {
+            provider: attempt.provider,
+            model,
+            durationMs: Date.now() - startedAt,
+          });
+          continue;
         }
-        lastFailure = { status: 503, code: "runtime_error", message: error instanceof Error ? error.message : "unknown" };
+
+        lastFailure = {
+          status: 503,
+          code: "runtime_error",
+          message: error instanceof Error ? error.message : "unknown",
+        };
         logCopilotIssue("model_runtime", {
+          provider: attempt.provider,
           model,
           message: lastFailure.message,
           durationMs: Date.now() - startedAt,
         });
-        break;
       } finally {
         clearTimeout(timeout);
       }
