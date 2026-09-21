@@ -48,6 +48,11 @@ type Position = {
   priceIndex: number | null;
   marketSkuCount: number;
   marketBrands: number;
+  marketRetailers: number;
+  marketBrandNames: string[];
+  benchmarkQuality: "robust" | "limited" | "insufficient";
+  benchmarkLabel: string;
+  benchmarkNote: string;
 };
 
 type MarketplaceListing = {
@@ -239,7 +244,7 @@ export default function PiwenMarketPanel() {
       <div>
         <span className={styles.eyebrow}>PIWÉN · MARKET PRICING INTELLIGENCE</span>
         <h1>Mercado competitivo de frutos secos</h1>
-        <p>Lectura de mercado normalizada por <strong>marca, producto y formato</strong>, usando precio por kilo para comparar packs distintos.</p>
+        <p>Lectura de mercado depurada por <strong>producto comparable y formato</strong>, usando precio por kilo y control de gramaje para evitar comparaciones engañosas.</p>
       </div>
       <div className={styles.liveBox}>
         <span><i/> PIWÉN + MERCADO</span>
@@ -250,7 +255,7 @@ export default function PiwenMarketPanel() {
 
     <div className={styles.kpis}>
       <article><span>Marcas competidoras</span><strong>{number.format(payload.kpis.competitorBrands)}</strong><small>universo observable</small></article>
-      <article><span>SKU comparables</span><strong>{compact.format(payload.kpis.marketSkus)}</strong><small>con formato normalizado</small></article>
+      <article><span>SKU comparables</span><strong>{compact.format(payload.kpis.marketSkus)}</strong><small>productos directos depurados</small></article>
       <article><span>Familias</span><strong>{payload.kpis.families}</strong><small>frutos secos y adyacencias</small></article>
       <article><span>Formatos</span><strong>{payload.kpis.formats}</strong><small>gramajes distintos</small></article>
       <article><span>Retailers</span><strong>{payload.kpis.retailers}</strong><small>mercado monitoreado</small></article>
@@ -273,13 +278,17 @@ export default function PiwenMarketPanel() {
     {tab === "overview" && <>
       <section className={styles.grid2}>
         <article className={styles.panel}>
-          <div className={styles.panelTitle}><div><span>PIWÉN VS MERCADO</span><h2>Posición de precio por kilo</h2><p>Índice 100 = mediana vigente de mercado.</p></div></div>
+          <div className={styles.panelTitle}><div><span>PIWÉN VS MERCADO</span><h2>Posición de precio por kilo</h2><p>Índice 100 = mediana de productos realmente comparables por familia y gramaje. Si no hay muestra suficiente, no se calcula índice.</p></div></div>
           <div className={styles.positionList}>
             {payload.piwenPosition.map(row => <div key={row.product} className={styles.positionRow}>
-              <div><strong>{row.product}</strong><small>{row.format} · {row.marketBrands} marcas · {row.marketSkuCount} SKU mercado</small></div>
+              <div>
+                <strong>{row.product}</strong>
+                <small>{row.format} · {row.marketBrands} marcas · {row.marketSkuCount} SKU comparables{row.marketBrandNames?.length ? ` · ${row.marketBrandNames.slice(0,3).join(", ")}` : ""}</small>
+                <small>{row.benchmarkQuality === "robust" ? "Benchmark robusto" : row.benchmarkQuality === "limited" ? "Muestra limitada" : "Benchmark insuficiente"} · {row.benchmarkNote}</small>
+              </div>
               <div><span>Piwén</span><b>{clp(row.piwenPricePerKg)}/kg</b></div>
-              <div><span>Mercado</span><b>{clp(row.marketMedianPerKg)}/kg</b></div>
-              <em className={indexTone(row.priceIndex)}>{row.priceIndex == null ? "—" : `${row.priceIndex.toFixed(1)}`}</em>
+              <div><span>{row.benchmarkQuality === "insufficient" ? "Referencia" : "Comparable"}</span><b>{row.marketMedianPerKg == null ? "Sin muestra" : `${clp(row.marketMedianPerKg)}/kg`}</b></div>
+              <em className={indexTone(row.priceIndex)}>{row.priceIndex == null ? "N/D" : `${row.priceIndex.toFixed(1)}`}</em>
             </div>)}
           </div>
         </article>
