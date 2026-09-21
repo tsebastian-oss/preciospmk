@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { brandScopeAllows, enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
 import { clickHouseConfigured, clickHouseQuery, type ClickHouseParams } from "@/lib/clickhouse";
-import { victorinoxMarketIntelligence } from "@/lib/victorinox-market";
+import { victorinoxMarketFromRows, type RawRow } from "@/lib/victorinox-market";
 
 type Numeric = number | string;
 type HistoryRow = { category: string; brand: string; date: string; median_price: Numeric; products: Numeric };
@@ -77,7 +77,17 @@ async function handleCompetitionHistory(request: NextRequest, moduleName: "overv
       ORDER BY category,price_date,brand
     `, params, 9_000);
 
-    const marketSnapshot = requireVictorinoxScope && auth.access ? await victorinoxMarketIntelligence(auth.access).catch((error)=>{console.error("victorinox-history-snapshot",error);return null;}) : null;
+    let marketSnapshot = null;
+    if (requireVictorinoxScope) {
+      const snapshot = await enterpriseRpc<RawRow[]>(request, "victorinox_competition_market_payload", { p_limit_per_brand: 250 });
+      if (snapshot.response) return snapshot.response;
+      marketSnapshot = victorinoxMarketFromRows(Array.isArray(snapshot.data) ? snapshot.data : []);
+      console.info("victorinox-history-snapshot", {
+        listings: marketSnapshot.listings.length,
+        competitorBrands: marketSnapshot.kpis.competitorBrands,
+        retailers: marketSnapshot.kpis.retailers,
+      });
+    }
     const categoryNames = ["Relojes", "Equipo de viaje", "Navajas y multiherramientas", "Cuchillos"];
     const categories = categoryNames.map((category) => {
       const competitorByDate = new Map<string, HistoryRow[]>();
