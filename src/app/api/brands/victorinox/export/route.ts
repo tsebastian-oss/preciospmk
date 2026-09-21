@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { brandScopeAllows, enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
+import { brandScopeAllows, enterpriseAccess, enterpriseReadRpc } from "@/lib/enterprise-auth";
 import { victorinoxMarketFromRows, type RawRow } from "@/lib/victorinox-market";
 import { mergeVictorinoxOfficialMarket } from "@/lib/victorinox-real-market";
 
@@ -47,8 +47,8 @@ export async function GET(request: NextRequest) {
   try {
     if (mode === "history") {
       const [official, competition] = await Promise.all([
-        enterpriseRpc<OfficialHistoryRow[]>(request, "brands_vertical_official_history", { p_slug: "victorinox", p_days: 180 }),
-        enterpriseRpc<RawRow[]>(request, "victorinox_competition_market_payload", { p_limit_per_brand: 250 }),
+        enterpriseReadRpc<OfficialHistoryRow[]>(request, "brands_vertical_official_history", { p_slug: "victorinox", p_days: 180 }),
+        enterpriseReadRpc<RawRow[]>(request, "victorinox_competition_market_payload", { p_limit_per_brand: 250 }),
       ]);
       if (official.response) return official.response;
       if (competition.response) return competition.response;
@@ -88,8 +88,8 @@ export async function GET(request: NextRequest) {
     }
 
     const [light, competition] = await Promise.all([
-      enterpriseRpc<Record<string, unknown>>(request, "brands_vertical_light_payload", { p_slug: "victorinox" }),
-      enterpriseRpc<RawRow[]>(request, "victorinox_competition_market_payload", { p_limit_per_brand: 250 }),
+      enterpriseReadRpc<Record<string, unknown>>(request, "brands_vertical_light_payload", { p_slug: "victorinox" }),
+      enterpriseReadRpc<RawRow[]>(request, "victorinox_competition_market_payload", { p_limit_per_brand: 250 }),
     ]);
     if (light.response || !light.data) {
       return light.response ?? NextResponse.json({ error: "No fue posible cargar el catálogo oficial." }, { status: 503 });

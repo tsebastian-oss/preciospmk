@@ -57,6 +57,8 @@ export function mergeVictorinoxOfficialMarket(base:any,vertical:any){
   }
   const official=[...latest.values()];
   const competition:Array<VictorinoxMarketRow>=(Array.isArray(base?.listings)?base.listings:[]).filter((x:any)=>x.brand!=="Victorinox");
+  const officialObservedAt=official.map(x=>x.observedAt).filter((x):x is string=>Boolean(x)).sort().at(-1)??null;
+  const competitionObservedAt=competition.map(x=>x.observedAt).filter((x):x is string=>Boolean(x)).sort().at(-1)??null;
   const market=[...official,...competition];
   const summary=summarize(market);
   const position=CATEGORIES.map(category=>{
@@ -90,6 +92,6 @@ export function mergeVictorinoxOfficialMarket(base:any,vertical:any){
   return {source:"victorinox-official+supabase-snapshot",generatedAt:new Date().toISOString(),lastObservedAt:observed,categories:CATEGORIES,retailers,brands,
     kpis:{marketSkus:market.length,ownSkus:official.length,competitorBrands:new Set(competition.map(x=>x.brand)).size,retailers:retailers.length,promotedOwnSkus:promoted.length},
     position,summary,listings:market,insights,presentationMode:false,
-    dataQuality:{officialSource:"victorinoxstore.cl",officialProducts:official.length,watchProducts:watch?.skuCount??0,watchCurrentMedian:watch?.medianPrice??null,watchListMedian,competitionSource:"Supabase competition snapshot",syntheticData:false,
+    dataQuality:{officialSource:"victorinoxstore.cl",officialProducts:official.length,officialObservedAt,competitionObservedAt,watchProducts:watch?.skuCount??0,watchCurrentMedian:watch?.medianPrice??null,watchListMedian,competitionSource:"Supabase competition snapshot",syntheticData:false,
       minimumSample:5,categoryCoverage:CATEGORIES.map(category=>{const own=summary.find(x=>x.category===category&&x.brand==="Victorinox");return {category,products:own?.skuCount??0,reliable:(own?.skuCount??0)>=5};})}};
 }
