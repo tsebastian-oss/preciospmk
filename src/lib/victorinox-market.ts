@@ -1,6 +1,3 @@
-import { clickHouseQuery } from "@/lib/clickhouse";
-import type { EnterpriseAccessContext } from "@/lib/enterprise-auth";
-
 export type RawRow = {
   id: string;
   retailer: string;
@@ -45,7 +42,6 @@ const WATCH = new Set(["victorinox","tissot","seiko","citizen"]);
 const TRAVEL = new Set(["victorinox","samsonite","american tourister","saxoline"]);
 const TOOLS = new Set(["victorinox","leatherman"]);
 const KNIVES = new Set(["victorinox","arcos","global","zwilling","tramontina","wusthof","wüsthof"]);
-const ALL = [...new Set([...WATCH,...TRAVEL,...TOOLS,...KNIVES])];
 
 function normalize(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("es-CL").replace(/\s+/g," ").trim();
@@ -105,32 +101,6 @@ function round(value: number | null, digits = 0) {
   if (value == null || !Number.isFinite(value)) return null;
   const factor = 10 ** digits;
   return Math.round(value * factor) / factor;
-}
-
-export async function victorinoxMarketIntelligence(_access: EnterpriseAccessContext) {
-  const quoted = ALL.map(item => `'${item.replaceAll("'","''")}'`).join(",");
-  const rows = await clickHouseQuery<RawRow>(`
-    SELECT
-      toString(p.id) AS id,
-      p.supermarket AS retailer,
-      ifNull(p.brand,'') AS brand,
-      p.name AS name,
-      ifNull(p.category,'') AS category,
-      ifNull(p.smart_category,'') AS smart_category,
-      toFloat64(ifNull(s.regular_price,0)) AS regular_price,
-      toFloat64(ifNull(s.offer_price,0)) AS offer_price,
-      s.in_stock AS in_stock,
-      toString(s.observed_at) AS observed_at,
-      p.url AS url
-    FROM products p
-    INNER JOIN product_latest_price_state s ON s.product_id=p.id
-    WHERE lowerUTF8(ifNull(p.brand,'')) IN (${quoted})
-      AND s.observed_at >= now() - INTERVAL 90 DAY
-      AND if(toFloat64(ifNull(s.offer_price,0))>0,toFloat64(s.offer_price),toFloat64(ifNull(s.regular_price,0)))>0
-    LIMIT 8500
-  `, {}, 9_000);
-
-  return victorinoxMarketFromRows(rows);
 }
 
 export function victorinoxMarketFromRows(rows: RawRow[]) {
