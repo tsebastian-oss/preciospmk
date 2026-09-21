@@ -69,6 +69,8 @@ export type PiwenSummaryRow = {
   promoPct: number;
 };
 
+export type PiwenBenchmarkQuality = "robust" | "limited" | "insufficient";
+
 const SUBJECT_FAMILY_ORDER = ["Almendras", "Castañas de cajú", "Pistachos", "Mixes"] as const;
 
 function numeric(value: Numeric | undefined) {
@@ -95,7 +97,7 @@ function normalized(value: string) {
 
 function familyFor(name: string) {
   const n = normalized(name);
-  if (/castan(?:a|as).*caju|caju|cashew/.test(n)) return "Castañas de cajú";
+  if (/castan(?:a|as).*\bcaju\b|\bcaju\b|\bcashew\b/.test(n)) return "Castañas de cajú";
   if (/pistach/.test(n)) return "Pistachos";
   if (/almendr/.test(n)) return "Almendras";
   if (/avellan/.test(n)) return "Avellanas";
@@ -107,10 +109,38 @@ function familyFor(name: string) {
   return null;
 }
 
+function containsProcessedFoodNoise(n: string) {
+  return /(harina|gallet|turron|hummus|bruschetta|aceitun|energyball|sorrentin|pizzeta|pizza|salsa|curry|chocolate|choco\b|barrita|barra\b|pan\b|muffin|donut|tarta|torta|cereal|granola|proteina|yogur|helado|leche|bebida|mantequilla|pasta|crema|shampoo|acondicionador|mascarilla|aceite de)/.test(n);
+}
+
 function isDirectComparable(name: string, family: string) {
   const n = normalized(name);
-  if (/(mantequilla|pasta|crema|leche|bebida|yogur|helado|chocolate|galleta|barrita|barra |pan |muffin|donut|tarta|torta|cereal|granola|proteina|shampoo|acondicionador|mascarilla|aceite de)/.test(n)) return false;
-  if (family === "Mixes" && /(cajun|cajuna)/.test(n) && !/frutos secos/.test(n)) return false;
+  if (containsProcessedFoodNoise(n)) return false;
+
+  if (family === "Almendras") {
+    return /\balmendra(?:s)?\b/.test(n);
+  }
+
+  if (family === "Castañas de cajú") {
+    if (/\bcajun\b/.test(n)) return false;
+    return /castan(?:a|as).*\bcaju\b|\bcaju\b|\bcashew\b/.test(n);
+  }
+
+  if (family === "Pistachos") {
+    return /\bpistacho(?:s)?\b|\bpistachio(?:s)?\b/.test(n);
+  }
+
+  if (family === "Mixes") {
+    if (!/\bmix\b/.test(n)) return false;
+    return /(frutos secos|frutas secas|nueces|almendr|mani|pistach|castan(?:a|as).*\bcaju\b|semilla|cranber|pasa|mix\s+\d+\s+frutas)/.test(n);
+  }
+
+  if (family === "Nueces") return /\bnuez\b|\bnueces\b/.test(n);
+  if (family === "Avellanas") return /\bavellana(?:s)?\b/.test(n);
+  if (family === "Maní") return /\bmani\b/.test(n);
+  if (family === "Semillas") return /\bsemilla(?:s)?\b|\bpepita(?:s)?\b/.test(n);
+  if (family === "Fruta deshidratada") return /(pasa|cranber|arandano|ciruela|damasco|fruta deshidrat)/.test(n);
+
   return true;
 }
 
@@ -225,6 +255,34 @@ function subjectFromOfficial(snapshot: PiwenOfficialSnapshot | null | undefined)
   return subject;
 }
 
+function comparableSet(subject: PiwenMarketListing, market: PiwenMarketListing[]) {
+  if (!subject.grams || !subject.pricePerKg) return [];
+  const minGrams = subject.grams * 0.5;
+  const maxGrams = subject.grams * 1.5;
+
+  return market
+    .filter(row =>
+      row.family === subject.family
+      && row.inStock
+      && row.pricePerKg != null
+      && row.grams != null
+      && row.grams >= minGrams
+      && row.grams <= maxGrams
+    )
+    .sort((a, b) => {
+      const aDistance = Math.abs((a.grams ?? subject.grams!) / subject.grams! - 1);
+      const bDistance = Math.abs((b.grams ?? subject.grams!) / subject.grams! - 1);
+      return aDistance - bDistance || (b.observedAt ?? "").localeCompare(a.observedAt ?? "");
+    });
+}
+
+function benchmarkQuality(rows: PiwenMarketListing[]): PiwenBenchmarkQuality {
+  const brands = new Set(rows.map(row => row.brand)).size;
+  if (rows.length >= 3 && brands >= 2) return "robust";
+  if (rows.length >= 2) return "limited";
+  return "insufficient";
+}
+
 export function piwenMarketFallback(officialSnapshot?: PiwenOfficialSnapshot | null) {
   return piwenMarketIntelligence(null, officialSnapshot ?? null);
 }
@@ -250,19 +308,49 @@ export function piwenMarketIntelligence(
       return familyCompare || b.skuCount - a.skuCount;
     });
 
-  const marketByFamily = new Map(byProduct.map(row => [row.key, row]));
   const piwenPosition = subject.map(item => {
-    const family = marketByFamily.get(item.family);
+    const comparables = comparableSet(item, market);
+    const quality = benchmarkQuality(comparables);
+    const brands = [...new Set(comparables.map(row => row.brand))].sort((a, b) => a.localeCompare(b, "es"));
+    const retailers = [...new Set(comparables.map(row => row.retailer))].sort((a, b) => a.localeCompare(b, "es"));
+    const comparablePrices = comparables
+      .map(row => row.pricePerKg)
+      .filter((value): value is number => value != null && Number.isFinite(value));
+    const comparableMedian = quality === "insufficient" ? null : rounded(median(comparablePrices));
+
     return {
       family: item.family,
       product: item.name,
       format: item.format,
       piwenPrice: item.currentPrice,
       piwenPricePerKg: item.pricePerKg,
-      marketMedianPerKg: family?.medianPricePerKg ?? null,
-      priceIndex: percentileIndex(item.pricePerKg, family?.medianPricePerKg ?? null),
-      marketSkuCount: family?.skuCount ?? 0,
-      marketBrands: family?.brands ?? 0,
+      marketMedianPerKg: comparableMedian,
+      priceIndex: quality === "insufficient" ? null : percentileIndex(item.pricePerKg, comparableMedian),
+      marketSkuCount: comparables.length,
+      marketBrands: brands.length,
+      marketRetailers: retailers.length,
+      marketBrandNames: brands,
+      benchmarkQuality: quality,
+      benchmarkLabel: quality === "robust"
+        ? "Mediana comparable de mercado"
+        : quality === "limited"
+          ? "Referencia comparable limitada"
+          : "Benchmark insuficiente",
+      benchmarkNote: quality === "robust"
+        ? "Productos de la misma familia, disponibles y con gramaje entre 50% y 150% del formato Piwén."
+        : quality === "limited"
+          ? "La referencia usa productos equivalentes por familia y gramaje, pero la muestra aún es pequeña."
+          : "No hay al menos 2 SKU comparables con gramaje razonablemente cercano; no se calcula índice.",
+      comparables: comparables.slice(0, 20).map(row => ({
+        brand: row.brand,
+        retailer: row.retailer,
+        name: row.name,
+        grams: row.grams,
+        pricePerKg: row.pricePerKg,
+        currentPrice: row.currentPrice,
+        observedAt: row.observedAt,
+        url: row.url,
+      })),
     };
   });
 
@@ -276,13 +364,20 @@ export function piwenMarketIntelligence(
     .sort((a, b) => (a.medianPricePerKg ?? Infinity) - (b.medianPricePerKg ?? Infinity))[0] ?? null;
 
   const insights: string[] = [];
-  if (topAssortment) insights.push(`${topAssortment.key} lidera el surtido competitivo observado con ${topAssortment.skuCount} SKU en ${topAssortment.retailers} retailer(s).`);
-  const premium = piwenPosition.filter(row => (row.priceIndex ?? 0) > 105).sort((a, b) => (b.priceIndex ?? 0) - (a.priceIndex ?? 0))[0];
-  if (premium) insights.push(`La mayor señal de premium de Piwén aparece en ${premium.family}: índice ${premium.priceIndex} vs mediana de mercado = 100.`);
-  const value = piwenPosition.filter(row => (row.priceIndex ?? Infinity) < 95).sort((a, b) => (a.priceIndex ?? Infinity) - (b.priceIndex ?? Infinity))[0];
-  if (value) insights.push(`Piwén aparece más competitivo en ${value.family}: índice ${value.priceIndex} vs mediana de mercado = 100.`);
-  if (cheapestFamily) insights.push(`${cheapestFamily.key} presenta la menor mediana de precio por kilo dentro del universo comparable: $${new Intl.NumberFormat("es-CL").format(cheapestFamily.medianPricePerKg ?? 0)}/kg.`);
-  if (!market.length) insights.push("No hay observaciones competitivas de supermercado disponibles en Supabase para el filtro vigente.");
+  if (topAssortment) insights.push(`${topAssortment.key} lidera el surtido competitivo depurado con ${topAssortment.skuCount} SKU en ${topAssortment.retailers} retailer(s).`);
+
+  const robustPositions = piwenPosition.filter(row => row.benchmarkQuality === "robust");
+  const premium = robustPositions.filter(row => (row.priceIndex ?? 0) > 105).sort((a, b) => (b.priceIndex ?? 0) - (a.priceIndex ?? 0))[0];
+  if (premium) insights.push(`La mayor señal robusta de premium de Piwén aparece en ${premium.family}: índice ${premium.priceIndex} vs mediana comparable = 100.`);
+  const value = robustPositions.filter(row => (row.priceIndex ?? Infinity) < 95).sort((a, b) => (a.priceIndex ?? Infinity) - (b.priceIndex ?? Infinity))[0];
+  if (value) insights.push(`Piwén aparece más competitivo con muestra robusta en ${value.family}: índice ${value.priceIndex} vs mediana comparable = 100.`);
+
+  const limitedCount = piwenPosition.filter(row => row.benchmarkQuality === "limited").length;
+  const insufficientCount = piwenPosition.filter(row => row.benchmarkQuality === "insufficient").length;
+  if (limitedCount) insights.push(`${limitedCount} categoría(s) tienen referencia comparable limitada; el índice debe leerse como señal, no como mercado completo.`);
+  if (insufficientCount) insights.push(`${insufficientCount} categoría(s) no tienen muestra comparable suficiente y por eso no muestran índice de precio.`);
+  if (cheapestFamily) insights.push(`${cheapestFamily.key} presenta la menor mediana de precio por kilo dentro del universo de productos directos depurado: $${new Intl.NumberFormat("es-CL").format(cheapestFamily.medianPricePerKg ?? 0)}/kg.`);
+  if (!market.length) insights.push("No hay observaciones competitivas válidas de supermercado disponibles en Supabase para el filtro vigente.");
   if (!subject.length) insights.push("No hay un snapshot oficial de Piwén.cl disponible para construir la posición propia.");
 
   const degraded = !market.length || !subject.length;
@@ -314,8 +409,8 @@ export function piwenMarketIntelligence(
       .slice(0, 600),
     insights,
     note: degraded
-      ? "Fuente Supabase. El panel conserva la información disponible sin inventar referencias antiguas; una fuente está temporalmente incompleta."
-      : "Fuente Supabase. Mercado competitivo desde el último estado de supermercados monitoreados y Piwén desde el snapshot oficial de Piwén.cl. MercadoLibre se mantiene como canal separado.",
+      ? "Fuente Supabase. El panel conserva solo productos directos válidos; una fuente está temporalmente incompleta."
+      : "Fuente Supabase. El universo competitivo excluye falsos positivos y alimentos procesados. La posición Piwén usa solo comparables de la misma familia con gramaje entre 50% y 150% del formato Piwén; si la muestra es insuficiente, no calcula índice.",
     degraded,
   };
 }
