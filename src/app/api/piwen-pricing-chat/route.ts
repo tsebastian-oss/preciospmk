@@ -334,13 +334,15 @@ Responder preguntas sobre precios, posicionamiento competitivo, retailers, promo
 MÉTODO OBLIGATORIO
 1. Identifica primero el canal: Piwén.cl, supermercados o MercadoLibre.
 2. Para comparar gramajes distintos, usa precio por kilo. Solo compares precio absoluto cuando el formato sea equivalente o lo aclares.
-3. Cuando compares Piwén contra otra marca, usa el benchmark por familia y reporta el tamaño de muestra cuando esté disponible.
-4. Si calculas un índice de precio: índice = precio Piwén / benchmark comparable × 100. Explica brevemente qué significa.
-5. Distingue mediana, promedio, mínimo y máximo. No los trates como equivalentes.
-6. Para recomendaciones de precio sin costos reales, entrega un rango competitivo basado en evidencia de mercado y aclara que no valida margen.
-7. Prioriza Alto La Cruz y Millantú cuando el usuario pregunte por competidores directos, sin excluir otras marcas relevantes.
-8. Considera la fecha de observación. Si una fuente es más antigua, dilo.
-9. Si la pregunta no puede responderse con los datos disponibles, explica exactamente qué dato falta y entrega el análisis parcial que sí sea posible.
+3. Para la posición Piwén vs mercado usa SIEMPRE supermarketMarket.piwenPosition como fuente canónica. Ese bloque ya filtra productos directos, exige gramaje entre 50% y 150% del formato Piwén y clasifica la calidad del benchmark.
+4. Si piwenPosition.benchmarkQuality = "insufficient", no calcules ni infieras un índice. Debes decir "benchmark insuficiente".
+5. Si piwenPosition.benchmarkQuality = "limited", puedes reportar el índice como referencia limitada, nunca como "mercado completo".
+6. Si calculas un índice de precio: índice = precio Piwén / mediana comparable × 100. Explica brevemente qué significa y reporta SKU/marcas de la muestra.
+7. Distingue mediana, promedio, mínimo y máximo. No los trates como equivalentes.
+8. Para recomendaciones de precio sin costos reales, entrega un rango competitivo basado en evidencia de mercado y aclara que no valida margen.
+9. Prioriza Alto La Cruz y Millantú cuando el usuario pregunte por competidores directos, sin excluir otras marcas relevantes.
+10. Considera la fecha de observación. Si una fuente es más antigua, dilo.
+11. Si la pregunta no puede responderse con los datos disponibles, explica exactamente qué dato falta y entrega el análisis parcial que sí sea posible.
 
 REGLAS DE DATOS
 - No inventes precios, costos, márgenes, elasticidades, volumen, stock ni ventas.
@@ -348,7 +350,10 @@ REGLAS DE DATOS
 - No mezcles supermercados, Piwén.cl y MercadoLibre sin identificar el canal.
 - No uses publicaciones de MercadoLibre sin precio vigente o fuera de stock como referencia de precio actual.
 - Para Piwén.cl, usa el bloque officialPiwenCatalog; no asumas que piwenReferences representa todo el catálogo.
-- Para comparaciones de marca/familia, familyBrandBenchmarks es la referencia agregada preferida.
+- Para Piwén vs mercado, supermarketMarket.piwenPosition tiene prioridad sobre cualquier agregado de familia.
+- exploratoryBrandFamilyBenchmarks sirve solo para explorar marcas dentro de una familia; NO debe usarse para recalcular el índice Piwén porque mezcla gramajes.
+- No compares harina, galletas, turrones, hummus, salsas, pizzas, chocolates u otros alimentos procesados como si fueran frutos secos directos.
+- "Cajun" no significa castaña de cajú.
 - Si hay discrepancia entre un resumen y una evidencia granular más reciente, prioriza la evidencia más reciente y señala la diferencia.
 
 FORMATO
@@ -458,7 +463,7 @@ export async function POST(request: NextRequest) {
         inStockProducts: official.inStockProducts,
         relevantListings: officialCatalog,
       } : null,
-      familyBrandBenchmarks: familyBrandBenchmarks(marketRows, officialCatalog),
+      exploratoryBrandFamilyBenchmarks: familyBrandBenchmarks(marketRows, officialCatalog),
       marketplace: marketplace ? {
         status: marketplace.status,
         source: marketplace.source,
