@@ -93,10 +93,15 @@ function Markdown({ content }: { content: string }) {
 }
 
 function modelLabel(value: string) {
-  return value
+  const gateway = /^openai\/(.+)$/i.test(value);
+  const clean = value.replace(/^openai\//i, "");
+  const label = clean
+    .replace(/^gpt-5\.4-nano$/i, "GPT-5.4 Nano")
+    .replace(/^gpt-5\.4$/i, "GPT-5.4")
     .replace(/^gpt-5\.6-sol$/i, "GPT-5.6 Sol")
     .replace(/^gpt-5\.6$/i, "GPT-5.6")
     .replace(/^gpt-/i, "GPT-");
+  return gateway ? `${label} · AI Gateway` : label;
 }
 
 type Conversation = {
@@ -118,7 +123,7 @@ export default function PiwenMarketCopilot() {
   const [messages, setMessages] = useState<ChatMessage[]>([{ role: "assistant", content: starter }]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [model, setModel] = useState("GPT-5.6 Sol");
+  const [model, setModel] = useState("GPT-5.4 Nano · AI Gateway");
   const [observedAt, setObservedAt] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -159,7 +164,7 @@ export default function PiwenMarketCopilot() {
     setMessages([{ role: "assistant", content: starter }]);
     setInput("");
     setObservedAt(null);
-    setModel("GPT-5.6 Sol");
+    setModel("GPT-5.4 Nano · AI Gateway");
   }
 
   async function openConversation(conversation: Conversation) {
