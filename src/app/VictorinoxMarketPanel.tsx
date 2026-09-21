@@ -64,6 +64,7 @@ type Payload = {
   summary: SummaryRow[];
   listings: Listing[];
   insights: string[];
+  dataQuality?: { officialObservedAt?: string|null; competitionObservedAt?: string|null };
   vertical?: any;
   error?: string;
 };
@@ -146,7 +147,7 @@ export default function VictorinoxMarketPanel(){
         <h1>Cómo está posicionada Victorinox en Chile</h1>
         <p>Una lectura ejecutiva de <strong>pricing, competencia, distribución, surtido y promociones</strong> en relojes, equipo de viaje, navajas/multiherramientas y cuchillos.</p>
       </div>
-      <div className={styles.liveBox}><span><i/> DATOS ACTUALIZADOS</span><strong>{payload.kpis.retailers} retailers · {payload.kpis.competitorBrands} marcas competidoras</strong><small>Última observación {date(payload.lastObservedAt)}</small></div>
+      <div className={styles.liveBox}><span><i/> CAPTURA VERIFICADA</span><strong>{payload.kpis.retailers} retailers · {payload.kpis.competitorBrands} marcas competidoras</strong><small>Victorinox {date(payload.dataQuality?.officialObservedAt??payload.lastObservedAt)} · Competencia {date(payload.dataQuality?.competitionObservedAt)}</small></div>
     </header>
 
     <div className={styles.kpis}>
