@@ -87,9 +87,9 @@ export function mergeVictorinoxOfficialMarket(base:any,vertical:any){
     `${promoted.length} SKU Victorinox tienen descuento vigente en la captura oficial.`,
     `La comparación reúne ${Math.max(0,brands.length-1)} marcas competidoras en ${Math.max(0,retailers.length-1)} canales de mercado.`
   ].filter(Boolean);
-  return {source:"victorinox-official+clickhouse",generatedAt:new Date().toISOString(),lastObservedAt:observed,categories:CATEGORIES,retailers,brands,
+  return {source:"victorinox-official+supabase-snapshot",generatedAt:new Date().toISOString(),lastObservedAt:observed,categories:CATEGORIES,retailers,brands,
     kpis:{marketSkus:market.length,ownSkus:official.length,competitorBrands:new Set(competition.map(x=>x.brand)).size,retailers:retailers.length,promotedOwnSkus:promoted.length},
     position,summary,listings:market,insights,presentationMode:false,
-    dataQuality:{officialSource:"victorinoxstore.cl",officialProducts:official.length,watchProducts:watch?.skuCount??0,watchCurrentMedian:watch?.medianPrice??null,watchListMedian,competitionSource:"ClickHouse",syntheticData:false,
+    dataQuality:{officialSource:"victorinoxstore.cl",officialProducts:official.length,watchProducts:watch?.skuCount??0,watchCurrentMedian:watch?.medianPrice??null,watchListMedian,competitionSource:"Supabase competition snapshot",syntheticData:false,
       minimumSample:5,categoryCoverage:CATEGORIES.map(category=>{const own=summary.find(x=>x.category===category&&x.brand==="Victorinox");return {category,products:own?.skuCount??0,reliable:(own?.skuCount??0)>=5};})}};
 }
