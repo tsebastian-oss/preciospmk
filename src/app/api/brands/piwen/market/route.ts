@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { brandScopeAllows, enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
-import { clickHouseConfigured } from "@/lib/clickhouse";
-import { piwenMarketFallback, piwenMarketIntelligence } from "@/lib/piwen-market";
+import {
+  piwenMarketIntelligence,
+  type PiwenMarketSnapshot,
+  type PiwenOfficialSnapshot,
+} from "@/lib/piwen-market";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-function within<T>(promise: Promise<T>, timeoutMs: number) {
-  return Promise.race<T>([
-    promise,
-    new Promise<T>((_, reject) => setTimeout(() => reject(new Error("piwen_market_timeout")), timeoutMs)),
-  ]);
-}
+type MarketplaceSnapshot = Record<string, unknown>;
 
 export async function GET(request: NextRequest) {
   const authorization = await enterpriseAccess(request, "brand-panel");
@@ -20,20 +18,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Piwén no está habilitado para esta cuenta." }, { status: 403 });
   }
 
-  const marketPromise = clickHouseConfigured()
-    ? within(piwenMarketIntelligence(authorization.access), 6_500)
-    : Promise.reject(new Error("clickhouse_not_configured"));
-
-  const [marketResult, marketplaceResult, officialResult] = await Promise.allSettled([
-    marketPromise,
-    enterpriseRpc<Record<string, unknown>>(request, "brands_piwen_marketplace_snapshot", { p_slug: "piwen" }),
-    enterpriseRpc<Record<string, unknown>>(request, "brands_piwen_official_snapshot", { p_slug: "piwen" }),
+  const [supermarketResult, marketplaceResult, officialResult] = await Promise.allSettled([
+    enterpriseRpc<PiwenMarketSnapshot>(request, "brands_piwen_supermarket_snapshot", { p_slug: "piwen" }),
+    enterpriseRpc<MarketplaceSnapshot>(request, "brands_piwen_marketplace_snapshot", { p_slug: "piwen" }),
+    enterpriseRpc<PiwenOfficialSnapshot>(request, "brands_piwen_official_snapshot", { p_slug: "piwen" }),
   ]);
 
-  const payload = marketResult.status === "fulfilled" ? marketResult.value : piwenMarketFallback();
-  if (marketResult.status === "rejected") {
-    console.warn("piwen-market-continuity", marketResult.reason);
-  }
+  const supermarket = supermarketResult.status === "fulfilled" && !supermarketResult.value.response
+    ? supermarketResult.value.data ?? null
+    : null;
 
   const marketplace = marketplaceResult.status === "fulfilled" && !marketplaceResult.value.response
     ? marketplaceResult.value.data ?? null
@@ -43,10 +36,16 @@ export async function GET(request: NextRequest) {
     ? officialResult.value.data ?? null
     : null;
 
+  if (supermarketResult.status === "rejected") console.warn("piwen-supermarket-supabase", supermarketResult.reason);
+  if (marketplaceResult.status === "rejected") console.warn("piwen-marketplace-supabase", marketplaceResult.reason);
+  if (officialResult.status === "rejected") console.warn("piwen-official-supabase", officialResult.reason);
+
+  const payload = piwenMarketIntelligence(supermarket, official);
+
   return NextResponse.json({ ...payload, marketplace, official }, {
     headers: {
       "cache-control": "private, max-age=120, stale-while-revalidate=300",
-      "x-piwen-data-mode": marketResult.status === "fulfilled" ? "live" : "continuity",
+      "x-piwen-data-mode": supermarket ? "supabase-live" : official ? "official-only" : "empty",
     },
   });
 }

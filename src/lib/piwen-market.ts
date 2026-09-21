@@ -1,16 +1,42 @@
-import { clickHouseQuery } from "@/lib/clickhouse";
-import type { EnterpriseAccessContext } from "@/lib/enterprise-auth";
+export type Numeric = number | string | null;
 
-type RawRow = {
-  id: string;
-  retailer: string;
-  brand: string | null;
-  name: string;
-  regular_price: number | string | null;
-  offer_price: number | string | null;
-  in_stock: boolean;
-  observed_at: string | null;
-  url: string;
+export type PiwenSnapshotListing = {
+  id?: string;
+  retailer?: string;
+  brand?: string;
+  name?: string;
+  family?: string;
+  grams?: Numeric;
+  format?: string;
+  currentPrice?: Numeric;
+  regularPrice?: Numeric;
+  pricePerKg?: Numeric;
+  promotionPct?: Numeric;
+  inStock?: boolean | null;
+  observedAt?: string | null;
+  url?: string;
+};
+
+export type PiwenMarketSnapshot = {
+  status?: string;
+  source?: string;
+  observedAt?: string | null;
+  products?: number;
+  brands?: number;
+  retailers?: number;
+  listings?: PiwenSnapshotListing[];
+};
+
+export type PiwenOfficialSnapshot = {
+  status?: string;
+  source?: string;
+  domain?: string;
+  lastCrawledAt?: string | null;
+  observedAt?: string | null;
+  products?: number;
+  pricedProducts?: number;
+  inStockProducts?: number;
+  listings?: PiwenSnapshotListing[];
 };
 
 export type PiwenMarketListing = {
@@ -43,13 +69,17 @@ export type PiwenSummaryRow = {
   promoPct: number;
 };
 
-const SUBJECT = [
-  { id: "piwen-almendra-250", retailer: "Piwén.cl", brand: "Piwén", name: "Almendra natural 250 g", family: "Almendras", grams: 250, currentPrice: 5450, regularPrice: null, observedAt: "2026-08-28T14:30:00.000Z", url: "https://www.piwen.cl/" },
-  { id: "piwen-caju-80", retailer: "Piwén.cl", brand: "Piwén", name: "Castañas de cajú sin sal 80 g", family: "Castañas de cajú", grams: 80, currentPrice: 2150, regularPrice: null, observedAt: "2026-08-28T14:30:00.000Z", url: "https://www.piwen.cl/" },
-  { id: "piwen-caju-1k", retailer: "Piwén.cl", brand: "Piwén", name: "Castañas de cajú sin sal 1 kg", family: "Castañas de cajú", grams: 1000, currentPrice: 23800, regularPrice: null, observedAt: "2026-08-28T14:30:00.000Z", url: "https://www.piwen.cl/" },
-  { id: "piwen-pistacho-80", retailer: "Piwén.cl", brand: "Piwén", name: "Pistacho sin sal 80 g", family: "Pistachos", grams: 80, currentPrice: 3150, regularPrice: null, observedAt: "2026-08-28T14:30:00.000Z", url: "https://www.piwen.cl/" },
-  { id: "piwen-mix-1k", retailer: "Piwén.cl", brand: "Piwén", name: "Mix Aconcagua 1 kg", family: "Mixes", grams: 1000, currentPrice: 11800, regularPrice: null, observedAt: "2026-08-28T14:30:00.000Z", url: "https://www.piwen.cl/" },
-] as const;
+const SUBJECT_FAMILY_ORDER = ["Almendras", "Castañas de cajú", "Pistachos", "Mixes"] as const;
+
+function numeric(value: Numeric | undefined) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function nullableNumeric(value: Numeric | undefined) {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
 
 function cleanBrand(value: string | null | undefined) {
   const brand = (value ?? "").replace(/\s+/g, " ").trim();
@@ -99,12 +129,6 @@ function gramsFor(name: string) {
   return null;
 }
 
-function currentPrice(row: RawRow) {
-  const offer = Number(row.offer_price ?? 0);
-  const regular = Number(row.regular_price ?? 0);
-  return offer > 0 ? offer : regular > 0 ? regular : 0;
-}
-
 function median(values: number[]) {
   if (!values.length) return null;
   const ordered = [...values].sort((a, b) => a - b);
@@ -150,128 +174,77 @@ function percentileIndex(subject: number | null, market: number | null) {
   return rounded(subject / market * 100, 1);
 }
 
-export function piwenMarketFallback() {
-  const subject: PiwenMarketListing[] = SUBJECT.map(row => ({
-    ...row,
-    format: row.grams >= 1000 && row.grams % 1000 === 0 ? `${row.grams / 1000} kg` : `${row.grams} g`,
-    regularPrice: row.regularPrice,
-    pricePerKg: rounded(row.currentPrice * 1000 / row.grams),
-    promotionPct: null,
-    inStock: true,
-  }));
+function normalizeListing(row: PiwenSnapshotListing, defaults?: { retailer?: string; brand?: string }) {
+  const name = String(row.name ?? "").trim();
+  if (!name) return null;
+  const family = String(row.family ?? "").trim() || familyFor(name);
+  if (!family || !isDirectComparable(name, family)) return null;
+  const grams = nullableNumeric(row.grams) ?? gramsFor(name);
+  const currentPrice = numeric(row.currentPrice);
+  if (currentPrice <= 0) return null;
+  const regularPrice = nullableNumeric(row.regularPrice);
+  const pricePerKg = nullableNumeric(row.pricePerKg) ?? (grams ? rounded(currentPrice * 1000 / grams) : null);
+  const promotionPct = nullableNumeric(row.promotionPct)
+    ?? (regularPrice && regularPrice > currentPrice ? rounded((regularPrice - currentPrice) / regularPrice * 100, 1) : null);
 
   return {
-    source: "clickhouse" as const,
-    generatedAt: new Date().toISOString(),
-    lastObservedAt: subject.map(row => row.observedAt).filter((value): value is string => Boolean(value)).sort().at(-1) ?? null,
-    scope: {
-      market: "Chile",
-      retailers: ["Piwén.cl"],
-      families: [...new Set(subject.map(row => row.family))].sort(),
-    },
-    kpis: {
-      competitorBrands: 0,
-      marketSkus: 0,
-      retailers: 1,
-      families: new Set(subject.map(row => row.family)).size,
-      formats: new Set(subject.map(row => row.format)).size,
-      promotedSkus: 0,
-    },
-    subject,
-    piwenPosition: subject.map(item => ({
-      family: item.family,
-      product: item.name,
-      format: item.format,
-      piwenPrice: item.currentPrice,
-      piwenPricePerKg: item.pricePerKg,
-      marketMedianPerKg: null,
-      priceIndex: null,
-      marketSkuCount: 0,
-      marketBrands: 0,
-    })),
-    byBrand: [] as PiwenSummaryRow[],
-    byProduct: [] as PiwenSummaryRow[],
-    byFormat: [] as PiwenSummaryRow[],
-    listings: [] as PiwenMarketListing[],
-    insights: [
-      "La conexión al histórico competitivo está tardando más de lo normal. Se muestran temporalmente las referencias propias de Piwén mientras el mercado se actualiza.",
-    ],
-    note: "Modo de continuidad: el panel permanece disponible aunque ClickHouse esté lento. Reintenta en unos segundos para completar el mercado competitivo.",
-    degraded: true,
-  };
+    id: String(row.id ?? `${defaults?.retailer ?? "source"}:${name}`),
+    retailer: String(row.retailer ?? defaults?.retailer ?? "Sin retailer"),
+    brand: cleanBrand(row.brand ?? defaults?.brand),
+    name,
+    family,
+    grams,
+    format: String(row.format ?? (grams ? (grams >= 1000 && grams % 1000 === 0 ? `${grams / 1000} kg` : `${grams} g`) : "Sin formato")),
+    currentPrice,
+    regularPrice,
+    pricePerKg,
+    promotionPct,
+    inStock: row.inStock !== false,
+    observedAt: row.observedAt ?? null,
+    url: String(row.url ?? ""),
+  } satisfies PiwenMarketListing;
 }
 
-export async function piwenMarketIntelligence(_access: EnterpriseAccessContext) {
-  const rows = await clickHouseQuery<RawRow>(`
-    SELECT
-      toString(p.id) AS id,
-      p.supermarket AS retailer,
-      p.brand AS brand,
-      p.name AS name,
-      toFloat64(ifNull(s.regular_price, 0)) AS regular_price,
-      toFloat64(ifNull(s.offer_price, 0)) AS offer_price,
-      s.in_stock AS in_stock,
-      toString(s.observed_at) AS observed_at,
-      p.url AS url
-    FROM products AS p
-    INNER JOIN product_latest_price_state AS s ON s.product_id = p.id
-    WHERE p.retailer_type = 'supermarket'
-      AND s.observed_at >= now() - INTERVAL 60 DAY
-      AND multiSearchAnyCaseInsensitiveUTF8(
-        p.name,
-        ['almendr','pistach','cajú','caju','cashew','nuez','maní','mani','avellana','frutos secos','semilla','cranber','pasa','ciruela deshidrat','damasco deshidrat']
-      ) > 0
-      AND if(toFloat64(ifNull(s.offer_price, 0)) > 0, toFloat64(s.offer_price), toFloat64(ifNull(s.regular_price, 0))) > 0
-    LIMIT 2200
-  `, {}, 8_000);
+function subjectFromOfficial(snapshot: PiwenOfficialSnapshot | null | undefined) {
+  const candidates = (snapshot?.listings ?? [])
+    .map(row => normalizeListing(row, { retailer: "Piwén.cl", brand: "Piwén" }))
+    .filter((row): row is PiwenMarketListing => Boolean(row))
+    .filter(row => row.grams != null && row.grams >= 20 && row.grams <= 5000);
 
-  const market: PiwenMarketListing[] = [];
-  const seen = new Set<string>();
-
-  for (const row of rows) {
-    if (seen.has(row.id)) continue;
-    seen.add(row.id);
-    const family = familyFor(row.name);
-    if (!family || !isDirectComparable(row.name, family)) continue;
-    const grams = gramsFor(row.name);
-    const price = currentPrice(row);
-    if (price <= 0) continue;
-    const regularPrice = Number(row.regular_price ?? 0) > 0 ? Number(row.regular_price) : null;
-    const promotionPct = regularPrice && regularPrice > price ? rounded((regularPrice - price) / regularPrice * 100, 1) : null;
-    market.push({
-      id: row.id,
-      retailer: row.retailer,
-      brand: cleanBrand(row.brand),
-      name: row.name,
-      family,
-      grams,
-      format: grams ? (grams >= 1000 && grams % 1000 === 0 ? `${grams / 1000} kg` : `${grams} g`) : "Sin formato",
-      currentPrice: price,
-      regularPrice,
-      pricePerKg: grams ? rounded(price * 1000 / grams) : null,
-      promotionPct,
-      inStock: Boolean(row.in_stock),
-      observedAt: row.observed_at,
-      url: row.url,
-    });
+  const subject: PiwenMarketListing[] = [];
+  for (const family of SUBJECT_FAMILY_ORDER) {
+    const items = candidates
+      .filter(row => row.family === family)
+      .sort((a, b) =>
+        Number(b.inStock) - Number(a.inStock)
+        || (b.grams ?? 0) - (a.grams ?? 0)
+        || (b.observedAt ?? "").localeCompare(a.observedAt ?? "")
+      );
+    if (items[0]) subject.push(items[0]);
   }
+  return subject;
+}
 
-  const comparable = market.filter(row => row.grams && row.pricePerKg && row.grams >= 20 && row.grams <= 5000);
+export function piwenMarketFallback(officialSnapshot?: PiwenOfficialSnapshot | null) {
+  return piwenMarketIntelligence(null, officialSnapshot ?? null);
+}
 
-  const subject: PiwenMarketListing[] = SUBJECT.map(row => ({
-    ...row,
-    format: row.grams >= 1000 && row.grams % 1000 === 0 ? `${row.grams / 1000} kg` : `${row.grams} g`,
-    regularPrice: row.regularPrice,
-    pricePerKg: rounded(row.currentPrice * 1000 / row.grams),
-    promotionPct: null,
-    inStock: true,
-  }));
+export function piwenMarketIntelligence(
+  marketSnapshot?: PiwenMarketSnapshot | null,
+  officialSnapshot?: PiwenOfficialSnapshot | null,
+) {
+  const market = (marketSnapshot?.listings ?? [])
+    .map(row => normalizeListing(row))
+    .filter((row): row is PiwenMarketListing => Boolean(row))
+    .filter(row => row.grams != null && row.grams >= 20 && row.grams <= 5000 && row.pricePerKg != null);
 
-  const byBrand = summarize(comparable, row => row.brand)
+  const subject = subjectFromOfficial(officialSnapshot);
+
+  const byBrand = summarize(market, row => row.brand)
     .sort((a, b) => b.skuCount - a.skuCount || (a.medianPricePerKg ?? Infinity) - (b.medianPricePerKg ?? Infinity));
-  const byProduct = summarize(comparable, row => row.family)
+  const byProduct = summarize(market, row => row.family)
     .sort((a, b) => b.skuCount - a.skuCount);
-  const byFormat = summarize(comparable, row => `${row.family} · ${row.format}`)
+  const byFormat = summarize(market, row => `${row.family} · ${row.format}`)
     .sort((a, b) => {
       const familyCompare = a.key.localeCompare(b.key, "es");
       return familyCompare || b.skuCount - a.skuCount;
@@ -293,11 +266,9 @@ export async function piwenMarketIntelligence(_access: EnterpriseAccessContext) 
     };
   });
 
-  const lastObservedAt = comparable
-    .map(row => row.observedAt)
-    .filter((value): value is string => Boolean(value))
-    .sort()
-    .at(-1) ?? null;
+  const lastObservedAt = marketSnapshot?.observedAt
+    ?? market.map(row => row.observedAt).filter((value): value is string => Boolean(value)).sort().at(-1)
+    ?? null;
 
   const topAssortment = byBrand[0] ?? null;
   const cheapestFamily = [...byProduct]
@@ -311,33 +282,40 @@ export async function piwenMarketIntelligence(_access: EnterpriseAccessContext) 
   const value = piwenPosition.filter(row => (row.priceIndex ?? Infinity) < 95).sort((a, b) => (a.priceIndex ?? Infinity) - (b.priceIndex ?? Infinity))[0];
   if (value) insights.push(`Piwén aparece más competitivo en ${value.family}: índice ${value.priceIndex} vs mediana de mercado = 100.`);
   if (cheapestFamily) insights.push(`${cheapestFamily.key} presenta la menor mediana de precio por kilo dentro del universo comparable: $${new Intl.NumberFormat("es-CL").format(cheapestFamily.medianPricePerKg ?? 0)}/kg.`);
+  if (!market.length) insights.push("No hay observaciones competitivas de supermercado disponibles en Supabase para el filtro vigente.");
+  if (!subject.length) insights.push("No hay un snapshot oficial de Piwén.cl disponible para construir la posición propia.");
+
+  const degraded = !market.length || !subject.length;
 
   return {
-    source: "clickhouse" as const,
+    source: "supabase" as const,
     generatedAt: new Date().toISOString(),
     lastObservedAt,
     scope: {
       market: "Chile",
-      retailers: [...new Set(comparable.map(row => row.retailer))].sort(),
-      families: [...new Set(comparable.map(row => row.family))].sort(),
+      retailers: [...new Set(market.map(row => row.retailer))].sort(),
+      families: [...new Set(market.map(row => row.family))].sort(),
     },
     kpis: {
-      competitorBrands: new Set(comparable.map(row => row.brand)).size,
-      marketSkus: comparable.length,
-      retailers: new Set(comparable.map(row => row.retailer)).size,
-      families: new Set(comparable.map(row => row.family)).size,
-      formats: new Set(comparable.map(row => row.format)).size,
-      promotedSkus: comparable.filter(row => (row.promotionPct ?? 0) > 0).length,
+      competitorBrands: new Set(market.map(row => row.brand)).size,
+      marketSkus: market.length,
+      retailers: new Set(market.map(row => row.retailer)).size,
+      families: new Set(market.map(row => row.family)).size,
+      formats: new Set(market.map(row => row.format)).size,
+      promotedSkus: market.filter(row => (row.promotionPct ?? 0) > 0).length,
     },
     subject,
     piwenPosition,
     byBrand,
     byProduct,
     byFormat,
-    listings: comparable
+    listings: [...market]
       .sort((a, b) => (b.observedAt ?? "").localeCompare(a.observedAt ?? ""))
       .slice(0, 600),
     insights,
-    note: "Mercado competitivo: últimas observaciones de supermercados monitoreados. Referencias Piwén: demo pública observada el 28-08-2026; se puede conectar el crawler D2C para mantenerlas con la misma frecuencia.",
+    note: degraded
+      ? "Fuente Supabase. El panel conserva la información disponible sin inventar referencias antiguas; una fuente está temporalmente incompleta."
+      : "Fuente Supabase. Mercado competitivo desde el último estado de supermercados monitoreados y Piwén desde el snapshot oficial de Piwén.cl. MercadoLibre se mantiene como canal separado.",
+    degraded,
   };
 }

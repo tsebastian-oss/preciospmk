@@ -86,7 +86,7 @@ type MarketplaceSnapshot = {
 };
 
 type Payload = {
-  source: "clickhouse";
+  source: "supabase";
   generatedAt: string;
   lastObservedAt: string | null;
   scope: { market: string; retailers: string[]; families: string[] };
@@ -339,6 +339,6 @@ export default function PiwenMarketPanel() {
 
     {tab === "downloads" && <PiwenDownloads/>}
 
-    <footer className={styles.footer}>MGP Super Precios · universo competitivo dinámico · precios normalizados por kilo · Piwén Chile</footer>
+    <footer className={styles.footer}>MGP Super Precios · fuente Supabase · universo competitivo dinámico · precios normalizados por kilo · Piwén Chile</footer>
   </section>;
 }
