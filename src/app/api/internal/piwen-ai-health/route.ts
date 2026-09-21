@@ -100,3 +100,4 @@ export async function GET(request: NextRequest) {
     error: "no_usable_free_tier_model",
     attempts,
   }, { status: 503, headers: { "cache-control": "no-store" } });
+}
