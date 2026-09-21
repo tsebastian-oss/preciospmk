@@ -108,7 +108,7 @@ type Payload = {
   error?: string;
 };
 
-type Tab = "overview" | "brands" | "products" | "formats" | "matrix" | "marketplace" | "downloads";
+type Tab = "overview" | "matrix" | "downloads";
 
 const money = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
 const number = new Intl.NumberFormat("es-CL");
@@ -151,10 +151,6 @@ export default function PiwenMarketPanel() {
   const [tab, setTab] = useState<Tab>("overview");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [family, setFamily] = useState("");
-  const [brand, setBrand] = useState("");
-  const [retailer, setRetailer] = useState("");
-  const [query, setQuery] = useState("");
 
   async function load() {
     setLoading(true);
@@ -176,45 +172,9 @@ export default function PiwenMarketPanel() {
     trackUsageEvent("module_view", { module: "piwen-market" });
   }, []);
 
-  const brandOptions = useMemo(() => [...new Set((payload?.listings ?? []).map(row => row.brand))].sort((a,b)=>a.localeCompare(b,"es")), [payload]);
-  const visibleListings = useMemo(() => {
-    const q = query.trim().toLocaleLowerCase("es-CL");
-    return (payload?.listings ?? []).filter(row => {
-      if (family && row.family !== family) return false;
-      if (brand && row.brand !== brand) return false;
-      if (retailer && row.retailer !== retailer) return false;
-      if (q && !`${row.name} ${row.brand} ${row.family} ${row.format} ${row.retailer}`.toLocaleLowerCase("es-CL").includes(q)) return false;
-      return true;
-    });
-  }, [payload, family, brand, retailer, query]);
-
-  const visibleBrandRows = useMemo(() => {
-    if (!family && !retailer) return payload?.byBrand ?? [];
-    const rows = visibleListings;
-    const groups = new Map<string, Listing[]>();
-    rows.forEach(row => groups.set(row.brand, [...(groups.get(row.brand) ?? []), row]));
-    return [...groups.entries()].map(([key, items]) => {
-      const prices = items.map(x=>x.pricePerKg).filter((x): x is number => x != null);
-      const sorted = [...prices].sort((a,b)=>a-b);
-      const median = sorted.length ? sorted[Math.floor(sorted.length/2)] : null;
-      return {
-        key,
-        skuCount: items.length,
-        brands: 1,
-        retailers: new Set(items.map(x=>x.retailer)).size,
-        families: new Set(items.map(x=>x.family)).size,
-        averagePricePerKg: prices.length ? Math.round(prices.reduce((a,b)=>a+b,0)/prices.length) : null,
-        medianPricePerKg: median,
-        minPricePerKg: prices.length ? Math.min(...prices) : null,
-        maxPricePerKg: prices.length ? Math.max(...prices) : null,
-        promoPct: items.length ? items.filter(x=>(x.promotionPct??0)>0).length/items.length*100 : 0,
-      };
-    }).sort((a,b)=>b.skuCount-a.skuCount);
-  }, [payload, visibleListings, family, retailer]);
-
   const matrixRows = useMemo<MatrixListing[]>(() => {
     if (!payload) return [];
-    const supermarketRows: MatrixListing[] = [...payload.subject, ...payload.listings].map(row => ({
+    return [...payload.subject, ...payload.listings].map(row => ({
       id: row.id,
       retailer: row.retailer,
       brand: row.brand,
@@ -223,16 +183,6 @@ export default function PiwenMarketPanel() {
       pricePerKg: row.pricePerKg,
       inStock: row.inStock,
     }));
-    const marketplaceRows: MatrixListing[] = (payload.marketplace?.listings ?? []).map(row => ({
-      id: row.id,
-      retailer: row.retailer || "MercadoLibre Chile",
-      brand: row.brand,
-      family: row.family,
-      currentPrice: row.currentPrice,
-      pricePerKg: row.pricePerKg,
-      inStock: row.inStock,
-    }));
-    return [...supermarketRows, ...marketplaceRows];
   }, [payload]);
 
   if (loading) return <section className={styles.shell}><div className={styles.state}><i/>Cargando mercado competitivo de Piwén…</div></section>;
@@ -264,11 +214,7 @@ export default function PiwenMarketPanel() {
     <nav className={styles.tabs}>
       {([
         ["overview","Resumen"],
-        ["brands","Por marca"],
-        ["products","Por producto"],
-        ["formats","Por formato"],
         ["matrix","Matriz competitiva"],
-        ["marketplace","MercadoLibre"],
         ["downloads","Descargas"],
       ] as [Tab,string][]).map(([key,label]) => <button key={key} className={tab===key?styles.active:""} onClick={()=>{setTab(key);trackUsageEvent("tab_view",{module:"piwen-market",metadata:{tab:key}})}}>{label}</button>)}
     </nav>
@@ -306,42 +252,8 @@ export default function PiwenMarketPanel() {
       </section>
     </>}
 
-    {tab !== "overview" && tab !== "downloads" && tab !== "marketplace" && tab !== "matrix" && <section className={styles.filters}>
-      <label><span>Familia</span><select value={family} onChange={e=>setFamily(e.target.value)}><option value="">Todas</option>{payload.scope.families.map(x=><option key={x}>{x}</option>)}</select></label>
-      {tab === "brands" && <label><span>Marca</span><select value={brand} onChange={e=>setBrand(e.target.value)}><option value="">Todas</option>{brandOptions.map(x=><option key={x}>{x}</option>)}</select></label>}
-      <button onClick={()=>{setFamily("");setBrand("");setRetailer("");setQuery("")}}>Limpiar</button>
-    </section>}
-
-    {tab === "brands" && <section className={styles.panel}><div className={styles.panelTitle}><div><span>MARCA</span><h2>Competencia resumida por marca</h2><p>Surtido, cobertura, promoción y nivel de precio por kilo.</p></div></div><RowTable rows={visibleBrandRows} dimension="Marca"/></section>}
-    {tab === "products" && <section className={styles.panel}><div className={styles.panelTitle}><div><span>PRODUCTO</span><h2>Mercado resumido por familia</h2><p>Almendras, castañas de cajú, pistachos, nueces, maní, mixes y categorías adyacentes.</p></div></div><RowTable rows={(payload.byProduct??[]).filter(x=>!family||x.key===family)} dimension="Producto"/></section>}
-    {tab === "formats" && <section className={styles.panel}><div className={styles.panelTitle}><div><span>FORMATO</span><h2>Arquitectura de packs</h2><p>Permite comparar cómo cambia el $/kg entre gramajes y detectar escalones de precio incoherentes.</p></div></div><RowTable rows={(payload.byFormat??[]).filter(x=>!family||x.key.startsWith(family+" · "))} dimension="Formato"/></section>}
     {tab === "matrix" && <PiwenPriceMatrix rows={matrixRows}/>}
 
-
-    {tab === "marketplace" && <section className={styles.panel}>
-      <div className={styles.panelTitle}>
-        <div><span>MARKETPLACE · MERCADOLIBRE CHILE</span><h2>Piwén, Alto La Cruz y Millantú</h2><p>Publicaciones detectadas en MercadoLibre, separadas del censo de supermercados para no mezclar canales.</p></div>
-        <div className={styles.liveBox}>
-          <span><i/> MARKETPLACE</span>
-          <strong>{payload.marketplace ? `${number.format(payload.marketplace.products)} publicaciones · ${number.format(payload.marketplace.pricedProducts)} con precio` : "Sin snapshot"}</strong>
-          <small>Última captura {date(payload.marketplace?.lastCrawledAt)}</small>
-        </div>
-      </div>
-      {!payload.marketplace?.listings?.length ? <div className={styles.empty}>No hay publicaciones de MercadoLibre cargadas.</div> : <div className={styles.tableWrap}><table className={styles.table}>
-        <thead><tr><th>Producto</th><th>Marca</th><th>Formato</th><th>Precio</th><th>$/kg</th><th>Stock</th><th>Seller</th><th>Observado</th></tr></thead>
-        <tbody>{payload.marketplace.listings.map(row => <tr key={row.id+"-"+row.brand}>
-          <td><a href={row.url} target="_blank" rel="noreferrer"><strong>{row.name}</strong></a><small>{row.family}{row.sourceFreshness ? " · evidencia "+row.sourceFreshness : ""}</small></td>
-          <td><strong>{row.brand}</strong></td>
-          <td>{row.format}</td>
-          <td><strong>{clp(row.currentPrice)}</strong>{row.regularPrice && row.currentPrice && row.regularPrice>row.currentPrice ? <small>Ref. {clp(row.regularPrice)}</small> : null}</td>
-          <td>{clp(row.pricePerKg)}</td>
-          <td>{row.inStock === true ? "Disponible" : row.inStock === false ? "No disponible" : "Sin confirmar"}</td>
-          <td>{row.seller || "—"}</td>
-          <td>{date(row.observedAt)}</td>
-        </tr>)}</tbody>
-      </table></div>}
-      <div className={styles.note}>MercadoLibre se monitorea como canal marketplace independiente. Cuando una publicación está fuera de stock, se conserva en la base para mantener trazabilidad histórica.</div>
-    </section>}
 
     {tab === "downloads" && <PiwenDownloads/>}
 
