@@ -46,3 +46,55 @@
 
 .copilotAsideHeader{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:1px}.copilotAsideHeader>span,.suggestionTitle{font-size:9px;font-weight:900;letter-spacing:.15em;color:var(--lime)}.copilotAsideHeader>button{border:1px solid #36513f;background:#142019;color:#dff0e6;border-radius:8px;padding:6px 8px;font-size:8px;font-weight:900;cursor:pointer}.copilotAsideHeader>button:hover{border-color:#6f9551;color:#fff}
 .copilotHistory{display:flex;flex-direction:column;gap:5px;max-height:220px;overflow:auto;padding-right:2px;margin-bottom:8px}.copilotHistory>small{color:#81958a;font-size:8px;padding:8px 2px}.historyItem,.historyActive{display:grid;grid-template-columns:minmax(0,1fr) 26px;gap:4px;align-items:stretch;border:1px solid #203229;border-radius:9px;background:#0a120e;overflow:hidden}.historyActive{border-color:#6f9551;background:#101a14}.historyOpen{min-width:0;border:0;background:transparent;color:#dce5e0;text-align:left;padding:8px 8px 7px;cursor:pointer}.historyOpen strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:8.5px;line-height:1.3}.historyOpen small{display:block;margin-top:3px;color:#72867b;font-size:7px}.historyDelete{border:0;border-left:1px solid #1d2d25;background:transparent;color:#687d72;font-size:15px;cursor:pointer}.historyDelete:hover{background:#2a1717;color:#ff9b9b}.historyError{padding:7px 8px;margin-bottom:7px;border:1px solid #573230;border-radius:8px;background:#241313;color:#e9a8a4;font-size:8px;line-height:1.35}.suggestionTitle{display:block;margin-top:4px}
+
+
+/* Executive pricing intelligence */
+.execShell{background:linear-gradient(145deg,#0d1712,#101a15);border:1px solid var(--line);border-radius:17px;padding:18px;margin-bottom:12px}
+.execHead{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;margin-bottom:14px}
+.execHead>div>span,.execCardTitle>span,.simulatorHead>div>span{font-size:9px;font-weight:900;letter-spacing:.15em;color:var(--lime)}
+.execHead h2{font-size:22px;letter-spacing:-.025em;margin:5px 0}
+.execHead p,.simulatorHead p{margin:0;max-width:780px;color:var(--muted);font-size:10px;line-height:1.55}
+.execHead>small{padding:7px 9px;border:1px solid #294034;border-radius:8px;background:#0a120e;color:#8fa49a;font-size:8px;white-space:nowrap}
+.execKpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-bottom:12px}
+.execKpis article{padding:13px;border:1px solid #203229;border-radius:12px;background:#0a120e}
+.execKpis span,.execKpis small{display:block;color:#83978c;font-size:8px}
+.execKpis span{font-weight:900;letter-spacing:.09em}
+.execKpis strong{display:block;margin:5px 0 4px;font-size:24px;letter-spacing:-.03em;color:#f7faf8}
+.alertStrip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+.alertStrip>div{min-height:66px;padding:10px 11px;border-radius:10px;border:1px solid #26382f}
+.alertStrip strong,.alertStrip span{display:block}
+.alertStrip strong{font-size:9px;margin-bottom:4px;color:#f1f5f3}
+.alertStrip span{font-size:8px;line-height:1.45;color:#9aacA2}
+.alertHigh{background:#241515!important;border-color:#57312f!important}.alertHigh strong{color:#ffb2ac!important}
+.alertMedium{background:#211b12!important;border-color:#574225!important}.alertMedium strong{color:#ffd28a!important}
+.alertInfo{background:#0c1712!important}
+.execGrid{display:grid;grid-template-columns:1.35fr .65fr;gap:10px;margin-top:10px}
+.execCard{background:#0a120e;border:1px solid #203229;border-radius:13px;padding:14px;min-width:0}
+.execCardTitle{margin-bottom:10px}.execCardTitle h3,.simulatorHead h3{font-size:17px;margin:4px 0 0}
+.opportunityList,.marketWatchList{display:grid;gap:7px}
+.opportunityRow{display:grid;grid-template-columns:54px minmax(0,1fr) 150px;gap:10px;align-items:center;padding:10px;border:1px solid #1e3027;border-radius:10px;background:#0d1712}
+.priorityBadge{display:grid;place-items:center;min-height:28px;border-radius:7px;background:#26321e;color:#ccef88;font-size:8px;font-weight:900;text-transform:uppercase}
+.priorityBadge[data-priority="alta"]{background:#3b2118;color:#ffc08e}
+.opportunityRow>div:nth-child(2) strong,.opportunityRow>div:nth-child(2) span,.opportunityRow>div:nth-child(2) small{display:block}
+.opportunityRow>div:nth-child(2) strong{font-size:10px}.opportunityRow>div:nth-child(2) span{font-size:8px;color:#b5c3bc;margin-top:2px}.opportunityRow>div:nth-child(2) small{font-size:7.5px;line-height:1.4;color:#7f9388;margin-top:4px}
+.opportunityNumbers{text-align:right}.opportunityNumbers span,.opportunityNumbers strong,.opportunityNumbers small{display:block}.opportunityNumbers span{font-size:8px;color:#94a79d}.opportunityNumbers strong{font-size:14px;margin:3px 0}.opportunityNumbers small{font-size:7.5px;color:#a9b9b0}
+.marketWatchList>div{display:grid;grid-template-columns:8px 1fr;gap:9px;padding:10px;border:1px solid #1e3027;border-radius:10px;background:#0d1712}
+.marketWatchList i{width:7px;height:7px;margin-top:3px;border-radius:50%;background:#7ee787}
+.marketWatchList strong,.marketWatchList span{display:block}.marketWatchList strong{font-size:9px}.marketWatchList span{margin-top:3px;color:#8fa49a;font-size:8px;line-height:1.45}
+.watchHigh{border-color:#57312f!important}.watchHigh i{background:#ff7f78!important}
+.watchMedium{border-color:#574225!important}.watchMedium i{background:#ffc46b!important}
+.watchInfo i{background:#7ee787!important}
+.dataQuality{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:9px}
+.dataQuality>div{padding:8px;border:1px solid #1f3027;border-radius:8px;background:#0c1510}.dataQuality span,.dataQuality strong{display:block}.dataQuality span{font-size:7px;color:#83978c}.dataQuality strong{font-size:13px;margin-top:3px}
+.execEmpty{padding:24px;text-align:center;border:1px dashed #2a3e33;border-radius:10px;color:#85998e;font-size:9px}
+.simulatorCard{margin-top:10px;background:#0a120e;border:1px solid #203229;border-radius:13px;padding:15px}
+.simulatorHead{display:flex;justify-content:space-between;gap:18px;align-items:flex-start;padding-bottom:12px;border-bottom:1px solid #1f3027}
+.simulatorHead label{min-width:300px;display:flex;flex-direction:column;gap:5px}.simulatorHead label>span{font-size:8px;font-weight:900;letter-spacing:.09em;color:#8fa49a}.simulatorHead select{height:39px;border:1px solid #2a3e33;background:#101a15;color:#edf2ef;border-radius:9px;padding:0 9px;font-size:9px}
+.simulatorGrid{display:grid;grid-template-columns:1.25fr repeat(3,minmax(0,.75fr));gap:8px;margin-top:12px}
+.simulatorControl,.simMetric{border:1px solid #203229;border-radius:10px;background:#0d1712;padding:12px}
+.simulatorControl>span,.simMetric>span{display:block;font-size:8px;color:#84988d;text-transform:uppercase;letter-spacing:.07em}.simulatorControl>strong,.simMetric>strong{display:block;margin:5px 0;font-size:20px}.simMetric>small{font-size:8px;color:#81958a}
+.simulatorControl input{width:100%;accent-color:#b9ef45}.simulatorControl>div{display:flex;justify-content:space-between;color:#71857a}
+.simulatorActions{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}.simulatorActions button{border:1px solid #2d4537;background:#111c16;color:#dce7e1;border-radius:8px;padding:8px 10px;font-size:8px;font-weight:800;cursor:pointer}.simulatorActions button:hover{border-color:#72984f;color:#fff}
+.simulatorReadout{display:flex;gap:10px;align-items:center;margin-top:9px;padding:10px 11px;border-radius:9px;background:#111c16;border:1px solid #23372d}.simulatorReadout strong{font-size:9px;color:#dff3a9}.simulatorReadout span{font-size:8px;color:#98aaa0}
+@media(max-width:1050px){.execKpis,.alertStrip{grid-template-columns:repeat(2,1fr)}.execGrid{grid-template-columns:1fr}.simulatorGrid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:640px){.execShell{padding:13px}.execHead,.simulatorHead{flex-direction:column}.execHead>small,.simulatorHead label{min-width:0;width:100%}.execKpis,.alertStrip,.simulatorGrid{grid-template-columns:1fr}.opportunityRow{grid-template-columns:1fr}.opportunityNumbers{text-align:left}.dataQuality{grid-template-columns:1fr}.simulatorReadout{align-items:flex-start;flex-direction:column}}

@@ -6,6 +6,7 @@ import { trackUsageEvent } from "@/lib/usage-client";
 import PiwenHistoryCharts from "./PiwenHistoryCharts";
 import PiwenDownloads from "./PiwenDownloads";
 import PiwenPriceMatrix, { type MatrixListing } from "./PiwenPriceMatrix";
+import PiwenExecutiveIntelligence from "./PiwenExecutiveIntelligence";
 
 type SummaryRow = {
   key: string;
@@ -108,7 +109,7 @@ type Payload = {
   error?: string;
 };
 
-type Tab = "overview" | "matrix" | "downloads";
+type Tab = "overview" | "opportunities" | "matrix" | "downloads";
 
 const money = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
 const number = new Intl.NumberFormat("es-CL");
@@ -214,34 +215,30 @@ export default function PiwenMarketPanel() {
     <nav className={styles.tabs}>
       {([
         ["overview","Resumen"],
+        ["opportunities","Oportunidades"],
         ["matrix","Matriz competitiva"],
         ["downloads","Descargas"],
       ] as [Tab,string][]).map(([key,label]) => <button key={key} className={tab===key?styles.active:""} onClick={()=>{setTab(key);trackUsageEvent("tab_view",{module:"piwen-market",metadata:{tab:key}})}}>{label}</button>)}
     </nav>
 
     {tab === "overview" && <>
-      <section className={styles.grid2}>
-        <article className={styles.panel}>
-          <div className={styles.panelTitle}><div><span>PIWÉN VS MERCADO</span><h2>Posición de precio por kilo</h2><p>Índice 100 = mediana de productos realmente comparables por familia y gramaje. Si no hay muestra suficiente, no se calcula índice.</p></div></div>
-          <div className={styles.positionList}>
-            {payload.piwenPosition.map(row => <div key={row.product} className={styles.positionRow}>
-              <div>
-                <strong>{row.product}</strong>
-                <small>{row.format} · {row.marketBrands} marcas · {row.marketSkuCount} SKU comparables{row.marketBrandNames?.length ? ` · ${row.marketBrandNames.slice(0,3).join(", ")}` : ""}</small>
-                <small>{row.benchmarkQuality === "robust" ? "Benchmark robusto" : row.benchmarkQuality === "limited" ? "Muestra limitada" : "Benchmark insuficiente"} · {row.benchmarkNote}</small>
-              </div>
-              <div><span>Piwén</span><b>{clp(row.piwenPricePerKg)}/kg</b></div>
-              <div><span>{row.benchmarkQuality === "insufficient" ? "Referencia" : "Comparable"}</span><b>{row.marketMedianPerKg == null ? "Sin muestra" : `${clp(row.marketMedianPerKg)}/kg`}</b></div>
-              <em className={indexTone(row.priceIndex)}>{row.priceIndex == null ? "N/D" : `${row.priceIndex.toFixed(1)}`}</em>
-            </div>)}
-          </div>
-        </article>
+      <PiwenExecutiveIntelligence positions={payload.piwenPosition} listings={payload.listings} mode="summary"/>
 
-        <article className={styles.panel}>
-          <div className={styles.panelTitle}><div><span>LECTURA EJECUTIVA</span><h2>Señales para pricing</h2></div></div>
-          <div className={styles.insights}>{payload.insights.map((text,index)=><div key={text}><span>{String(index+1).padStart(2,"0")}</span><p>{text}</p></div>)}</div>
-          <div className={styles.note}>{payload.note}</div>
-        </article>
+      <section className={styles.panel}>
+        <div className={styles.panelTitle}><div><span>PIWÉN VS MERCADO</span><h2>Posición de precio por kilo</h2><p>Índice 100 = mediana de productos realmente comparables por familia y gramaje. Si no hay muestra suficiente, no se calcula índice.</p></div></div>
+        <div className={styles.positionList}>
+          {payload.piwenPosition.map(row => <div key={row.product} className={styles.positionRow}>
+            <div>
+              <strong>{row.product}</strong>
+              <small>{row.format} · {row.marketBrands} marcas · {row.marketSkuCount} SKU comparables{row.marketBrandNames?.length ? ` · ${row.marketBrandNames.slice(0,3).join(", ")}` : ""}</small>
+              <small>{row.benchmarkQuality === "robust" ? "Benchmark robusto" : row.benchmarkQuality === "limited" ? "Muestra limitada" : "Benchmark insuficiente"} · {row.benchmarkNote}</small>
+            </div>
+            <div><span>Piwén</span><b>{clp(row.piwenPricePerKg)}/kg</b></div>
+            <div><span>{row.benchmarkQuality === "insufficient" ? "Referencia" : "Comparable"}</span><b>{row.marketMedianPerKg == null ? "Sin muestra" : `${clp(row.marketMedianPerKg)}/kg`}</b></div>
+            <em className={indexTone(row.priceIndex)}>{row.priceIndex == null ? "N/D" : `${row.priceIndex.toFixed(1)}`}</em>
+          </div>)}
+        </div>
+        <div className={styles.note}>{payload.note}</div>
       </section>
 
 <PiwenHistoryCharts/>
@@ -252,7 +249,9 @@ export default function PiwenMarketPanel() {
       </section>
     </>}
 
-    {tab === "matrix" && <PiwenPriceMatrix rows={matrixRows}/>}
+    {tab === "opportunities" && <PiwenExecutiveIntelligence positions={payload.piwenPosition} listings={payload.listings} mode="full"/>}
+
+    {tab === "matrix" && <PiwenPriceMatrix rows={matrixRows}/>} 
 
 
     {tab === "downloads" && <PiwenDownloads/>}
