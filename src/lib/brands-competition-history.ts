@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { brandScopeAllows, enterpriseAccess, enterpriseReadRpc, enterpriseRpc } from "@/lib/enterprise-auth";
+import { brandScopeAllows, enterpriseAccess, enterpriseReadRpc } from "@/lib/enterprise-auth";
 import { clickHouseConfigured, clickHouseQuery, type ClickHouseParams } from "@/lib/clickhouse";
 import { victorinoxMarketFromRows, type RawRow } from "@/lib/victorinox-market";
 
