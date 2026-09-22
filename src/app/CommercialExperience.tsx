@@ -29,8 +29,6 @@ export type CommercialAccountPayload = {
 const VIEW_MODULE: Record<string, string | null> = {
   overview: "overview",
   "category-intelligence": "brand-intelligence",
-  "price-map": "optimizer",
-  promotions: "promotions",
   downloads: "downloads",
   alerts: "alerts",
   scraping: "data-quality",
@@ -43,7 +41,11 @@ export function requiredModuleForView(view: string) {
 
 export function minimumPlanForView(view: string) {
   if (view === "scraping") return "Enterprise";
-  if (["category-intelligence", "price-map"].includes(view)) return "Business";
+  if (view === "pricing-b2b") return "Enterprise";
+  if (view === "automotive") return "Enterprise";
+  if (view === "brands") return "Enterprise";
+  if (view === "piwen") return "Enterprise";
+  if (view === "category-intelligence") return "Business";
   return "Starter";
 }
 
@@ -112,10 +114,8 @@ export function CommercialBanner({ account }: { account: CommercialAccountPayloa
 }
 
 const TRIAL_STEPS = [
-  { view: "promotions", title: "Revisa promociones", copy: "Detecta ofertas vigentes dentro de tu alcance." },
   { view: "category-intelligence", title: "Analiza una categoría", copy: "Compara precio, surtido y promociones usando ClickHouse." },
-  { view: "price-map", title: "Construye un AI Price Map", copy: "Compara posicionamiento, cobertura y precio relativo." },
-  { view: "downloads", title: "Exporta un análisis", copy: "Lleva los datos a Excel o CSV para tu equipo." },
+  { view: "downloads", title: "Descarga la base", copy: "Exporta el histórico directamente desde ClickHouse en formato compatible con Excel." },
 ] as const;
 
 export function ActivationGuide({ currentView, onNavigate, account }: { currentView: string; onNavigate: (view: any) => void; account: CommercialAccountPayload | null }) {

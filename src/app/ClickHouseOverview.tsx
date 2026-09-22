@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import styles from "./ClickHouseOverview.module.css";
+import DashboardContextChat, { type DashboardAiContext } from "./DashboardContextChat";
 
 type Option = { value: string; products: number };
 type Retailer = {
@@ -16,6 +17,15 @@ type Retailer = {
   lastObservedAt: string | null;
 };
 type TrendPoint = { date: string; averagePrice: number; medianPrice: number; products: number };
+type ProductTrendOption = {
+  id: string;
+  name: string;
+  brand: string;
+  retailer: string;
+  latestPrice: number;
+  lastObservedAt: string | null;
+};
+type ProductTrendSeries = ProductTrendOption & { points: Array<{ date: string; price: number }> };
 type Gap = {
   brand: string;
   category: string;
@@ -49,7 +59,7 @@ type Change = {
 type DashboardPayload = {
   source: "clickhouse";
   generatedAt: string;
-  filters: { retailer: string | null; category: string | null; brand: string | null; days: number };
+  filters: { query: string | null; retailer: string | null; category: string | null; brand: string | null; days: number };
   kpis: {
     monitoredProducts: number;
     retailers: number;
@@ -79,6 +89,7 @@ type Props = {
 const moneyFormatter = new Intl.NumberFormat("es-CL", { style: "currency", currency: "CLP", maximumFractionDigits: 0 });
 const numberFormatter = new Intl.NumberFormat("es-CL", { maximumFractionDigits: 0 });
 const compactFormatter = new Intl.NumberFormat("es-CL", { notation: "compact", maximumFractionDigits: 1 });
+const PRODUCT_SERIES_COLORS = ["#f5c400", "#4f9cf9", "#61c876", "#d978e8"];
 
 function money(value: number) {
   return moneyFormatter.format(Number.isFinite(value) ? value : 0);
@@ -183,6 +194,55 @@ function LineChart({ points }: { points: TrendPoint[] }) {
   </div>;
 }
 
+function ProductComparisonChart({ series }: { series: ProductTrendSeries[] }) {
+  if (!series.length) return <div className={styles.emptyChart}>Selecciona una marca y un producto para comenzar. Puedes comparar hasta 4 productos.</div>;
+  const dates = [...new Set(series.flatMap((item) => item.points.map((point) => point.date)))].sort();
+  const allValues = series.flatMap((item) => item.points.map((point) => point.price)).filter((value) => value > 0 && Number.isFinite(value));
+  if (!dates.length || !allValues.length) return <div className={styles.emptyChart}>Los productos seleccionados todavía no tienen histórico suficiente.</div>;
+  const width = 760;
+  const height = 260;
+  const margin = { top: 18, right: 18, bottom: 34, left: 58 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const rawMin = Math.min(...allValues);
+  const rawMax = Math.max(...allValues);
+  const pad = Math.max(1, (rawMax - rawMin) * .14, rawMax * .02);
+  const min = Math.max(0, rawMin - pad);
+  const max = rawMax + pad;
+  const x = (index: number) => margin.left + index / Math.max(1, dates.length - 1) * plotWidth;
+  const y = (value: number) => margin.top + (max - value) / Math.max(1, max - min) * plotHeight;
+  const paths = series.map((item) => {
+    const valueMap = new Map(item.points.map((point) => [point.date, point.price]));
+    const segments: string[] = [];
+    let drawing = false;
+    dates.forEach((date, index) => {
+      const value = valueMap.get(date);
+      if (!value || value <= 0) { drawing = false; return; }
+      segments.push(`${drawing ? "L" : "M"}${x(index).toFixed(1)},${y(value).toFixed(1)}`);
+      drawing = true;
+    });
+    return { item, path: segments.join(" "), valueMap };
+  });
+  const labels = dates.filter((_, index) => index === 0 || index === dates.length - 1 || index % Math.max(1, Math.floor(dates.length / 4)) === 0);
+  return <div className={styles.lineChartWrap}>
+    <svg viewBox={`0 0 ${width} ${height}`} className={styles.lineChart} role="img" aria-label="Evolución comparativa de precios por producto">
+      {[0, 1, 2, 3].map((index) => {
+        const value = max - index * (max - min) / 3;
+        const yy = y(value);
+        return <g key={index}><line x1={margin.left} x2={width - margin.right} y1={yy} y2={yy}/><text x={margin.left - 10} y={yy + 4}>{money(value)}</text></g>;
+      })}
+      {paths.map(({ item, path }, index) => <path key={item.id} d={path} style={{ stroke: PRODUCT_SERIES_COLORS[index % PRODUCT_SERIES_COLORS.length] }}/>) }
+      {paths.map(({ item, valueMap }, seriesIndex) => dates.map((date, dateIndex) => {
+        const value = valueMap.get(date);
+        if (!value || value <= 0) return null;
+        return <circle key={`${item.id}-${date}`} cx={x(dateIndex)} cy={y(value)} r={dateIndex === dates.length - 1 ? 3.6 : 2} style={{ fill: PRODUCT_SERIES_COLORS[seriesIndex % PRODUCT_SERIES_COLORS.length] }}/>;
+      }))}
+      {labels.map((date) => <text className={styles.xLabel} key={date} x={x(dates.indexOf(date))} y={height - 9}>{shortDate(date)}</text>)}
+    </svg>
+    <div className={styles.productLegend}>{series.map((item, index) => <span key={item.id}><i style={{ background: PRODUCT_SERIES_COLORS[index % PRODUCT_SERIES_COLORS.length] }}/><b>{item.brand}</b><small>{item.name} · {item.retailer}</small></span>)}</div>
+  </div>;
+}
+
 function RetailerBars({ rows }: { rows: Retailer[] }) {
   if (!rows.length) return <div className={styles.emptyChart}>No hay retailers para los filtros seleccionados.</div>;
   const sorted = [...rows].filter((row) => row.medianPrice > 0).sort((a, b) => b.medianPrice - a.medianPrice).slice(0, 8);
@@ -200,10 +260,15 @@ function Skeleton() {
 
 export default function ClickHouseOverview({ onNavigate }: Props) {
   const [payload, setPayload] = useState<DashboardPayload | null>(null);
-  const [retailer, setRetailer] = useState("");
-  const [category, setCategory] = useState("");
-  const [brand, setBrand] = useState("");
   const [days, setDays] = useState(30);
+  const [trendBrands, setTrendBrands] = useState<Option[]>([]);
+  const [trendBrand, setTrendBrand] = useState("");
+  const [trendProducts, setTrendProducts] = useState<ProductTrendOption[]>([]);
+  const [trendProductId, setTrendProductId] = useState("");
+  const [selectedProducts, setSelectedProducts] = useState<ProductTrendOption[]>([]);
+  const [productSeries, setProductSeries] = useState<ProductTrendSeries[]>([]);
+  const [productTrendLoading, setProductTrendLoading] = useState(false);
+  const [aiContext, setAiContext] = useState<DashboardAiContext | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
@@ -212,9 +277,10 @@ export default function ClickHouseOverview({ onNavigate }: Props) {
     if (quiet) return;
     if (quiet) setRefreshing(true); else setLoading(true);
     const params = new URLSearchParams({ days: String(days), live: String(Date.now()) });
-    if (retailer) params.set("retailer", retailer);
-    if (category) params.set("category", category);
-    if (brand) params.set("brand", brand);
+    if (aiContext?.query) params.set("query", aiContext.query);
+    if (aiContext?.category) params.set("category", aiContext.category);
+    if (aiContext?.brand) params.set("brand", aiContext.brand);
+    if (aiContext?.retailers?.length === 1) params.set("retailer", aiContext.retailers[0]);
     try {
       const response = await fetch(`/api/clickhouse-dashboard?${params.toString()}`, { cache: "no-store", signal });
       const data = await response.json() as DashboardPayload & { error?: string };
@@ -228,7 +294,7 @@ export default function ClickHouseOverview({ onNavigate }: Props) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [retailer, category, brand, days]);
+  }, [days, aiContext]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -242,6 +308,51 @@ export default function ClickHouseOverview({ onNavigate }: Props) {
     }, 30_000);
     return () => window.clearInterval(interval);
   }, [load]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch("/api/product-price-trends?mode=brands", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const data = await response.json() as { brands?: Option[]; error?: string };
+        if (!response.ok) throw new Error(data.error || "No fue posible cargar marcas");
+        setTrendBrands(data.brands ?? []);
+      })
+      .catch((err) => { if (!(err instanceof DOMException && err.name === "AbortError")) setError(err instanceof Error ? err.message : "No fue posible cargar marcas"); });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    setTrendProductId("");
+    if (!trendBrand) { setTrendProducts([]); return; }
+    const controller = new AbortController();
+    const params = new URLSearchParams({ mode: "products", brand: trendBrand });
+    fetch(`/api/product-price-trends?${params.toString()}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const data = await response.json() as { products?: ProductTrendOption[]; error?: string };
+        if (!response.ok) throw new Error(data.error || "No fue posible cargar productos");
+        setTrendProducts(data.products ?? []);
+      })
+      .catch((err) => { if (!(err instanceof DOMException && err.name === "AbortError")) setError(err instanceof Error ? err.message : "No fue posible cargar productos"); });
+    return () => controller.abort();
+  }, [trendBrand]);
+
+  const selectedProductKey = selectedProducts.map((item) => item.id).join("|");
+  useEffect(() => {
+    if (!selectedProducts.length) { setProductSeries([]); return; }
+    const controller = new AbortController();
+    const params = new URLSearchParams({ mode: "series", days: String(days), live: String(Date.now()) });
+    selectedProducts.slice(0, 4).forEach((item) => params.append("product", item.id));
+    setProductTrendLoading(true);
+    fetch(`/api/product-price-trends?${params.toString()}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const data = await response.json() as { series?: ProductTrendSeries[]; error?: string };
+        if (!response.ok) throw new Error(data.error || "No fue posible cargar la evolución de productos");
+        setProductSeries(data.series ?? []);
+      })
+      .catch((err) => { if (!(err instanceof DOMException && err.name === "AbortError")) setError(err instanceof Error ? err.message : "No fue posible cargar la evolución de productos"); })
+      .finally(() => setProductTrendLoading(false));
+    return () => controller.abort();
+  }, [selectedProductKey, days]);
 
   const trendValues = payload?.trend.map((point) => point.medianPrice) ?? [];
   const productValues = payload?.trend.map((point) => point.products) ?? [];
@@ -258,23 +369,25 @@ export default function ClickHouseOverview({ onNavigate }: Props) {
       <div>
         <span className={styles.eyebrow}>PRICE INTELLIGENCE</span>
         <h1>Price Intelligence Dashboard</h1>
-        <p>Pricing, promociones y movimientos competitivos calculados en ClickHouse sobre un dataset demo congelado.</p>
+        <p>Pricing, promociones y movimientos competitivos calculados directamente en ClickHouse sobre el histórico sincronizado.</p>
       </div>
       <div className={styles.headerStatus}>
         <span className={styles.liveDot}/>
-        <div><small>DATASET DEMO</small><strong>{datasetLabel}</strong></div>
+        <div><small>CLICKHOUSE LIVE</small><strong>{datasetLabel}</strong></div>
         <button onClick={() => void load(false)} disabled={loading} title="Actualizar vista">{loading ? "…" : "↻"}</button>
         <div className={styles.clickhouseBadge}><i>▥</i><span><small>POWERED BY</small><strong>ClickHouse</strong></span></div>
       </div>
     </header>
 
-    <section className={styles.filters}>
-      <label><span>Retailer</span><select value={retailer} onChange={(event) => { setRetailer(event.target.value); setCategory(""); setBrand(""); }}><option value="">Todos los retailers</option>{retailerOptions.map((item) => <option key={item.retailer} value={item.retailer}>{item.retailer}</option>)}</select></label>
-      <label><span>Categoría</span><select value={category} onChange={(event) => { setCategory(event.target.value); setBrand(""); }}><option value="">Todas las categorías</option>{category && !categories.some((item) => item.value === category) && <option value={category}>{category}</option>}{categories.map((item) => <option key={item.value} value={item.value}>{item.value} · {compact(item.products)}</option>)}</select></label>
-      <label><span>Marca</span><select value={brand} onChange={(event) => setBrand(event.target.value)}><option value="">Todas las marcas</option>{brand && !brands.some((item) => item.value === brand) && <option value={brand}>{brand}</option>}{brands.map((item) => <option key={item.value} value={item.value}>{item.value} · {compact(item.products)}</option>)}</select></label>
+    <section className={styles.productTrendFilters}>
+      <label><span>Marca</span><select value={trendBrand} onChange={(event) => setTrendBrand(event.target.value)}><option value="">Selecciona una marca</option>{trendBrands.map((item) => <option key={item.value} value={item.value}>{item.value} · {compact(item.products)}</option>)}</select></label>
+      <label className={styles.productSelect}><span>Producto</span><select value={trendProductId} disabled={!trendBrand} onChange={(event) => setTrendProductId(event.target.value)}><option value="">{trendBrand ? "Selecciona un producto" : "Primero selecciona una marca"}</option>{trendProducts.map((item) => <option key={item.id} value={item.id}>{item.name} · {item.retailer} · {money(item.latestPrice)}</option>)}</select></label>
       <label><span>Período</span><select value={days} onChange={(event) => setDays(Number(event.target.value))}><option value={7}>Últimos 7 días</option><option value={30}>Últimos 30 días</option><option value={90}>Últimos 90 días</option></select></label>
-      <button className={styles.clearFilters} onClick={() => { setRetailer(""); setCategory(""); setBrand(""); setDays(30); }}>⌁ Limpiar</button>
+      <button className={styles.addProduct} disabled={!trendProductId || selectedProducts.length >= 4 || selectedProducts.some((item) => item.id === trendProductId)} onClick={() => { const product = trendProducts.find((item) => item.id === trendProductId); if (!product) return; setSelectedProducts((current) => current.length >= 4 || current.some((item) => item.id === product.id) ? current : [...current, product]); setTrendProductId(""); }}>+ Agregar al gráfico</button>
+      <div className={styles.selectedSeries}>{selectedProducts.length ? selectedProducts.map((item, index) => <button key={item.id} onClick={() => setSelectedProducts((current) => current.filter((product) => product.id !== item.id))}><i style={{ background: PRODUCT_SERIES_COLORS[index % PRODUCT_SERIES_COLORS.length] }}/><span><b>{item.brand}</b><small>{item.name} · {item.retailer}</small></span><em>×</em></button>) : <p>Selecciona hasta 4 productos para comparar su evolución de precio.</p>}</div>
     </section>
+
+    {aiContext && <div className={styles.aiContextBanner}><span>✦ CONTEXTO IA</span><strong>{aiContext.query || aiContext.brand || aiContext.category || "Mercado"}</strong>{aiContext.category && <em>{aiContext.category}</em>}<button onClick={() => setAiContext(null)}>Restablecer</button></div>}
 
     {error && <div className={styles.error}><span>!</span>{error}<button onClick={() => void load(false)}>Reintentar</button></div>}
     {loading && !payload ? <Skeleton/> : payload && <>
@@ -288,8 +401,8 @@ export default function ClickHouseOverview({ onNavigate }: Props) {
 
       <section className={styles.primaryGrid}>
         <article className={`${styles.card} ${styles.trendCard}`}>
-          <header className={styles.cardHead}><div><span>PRICE EVOLUTION</span><h2>Evolución del precio mediano</h2><p>Histórico diario sobre el alcance seleccionado.</p></div><button onClick={() => onNavigate("movements")}>Ver monitoreo →</button></header>
-          <LineChart points={payload.trend}/>
+          <header className={styles.cardHead}><div><span>PRODUCT PRICE EVOLUTION</span><h2>Evolución de precios por producto</h2><p>Selecciona y compara hasta 4 productos. Cada línea corresponde a un SKU/retailer real en ClickHouse.</p></div></header>
+          {productTrendLoading && selectedProducts.length > 0 ? <div className={styles.chartLoading}>Actualizando histórico desde ClickHouse…</div> : <ProductComparisonChart series={productSeries}/>}
         </article>
         <article className={`${styles.card} ${styles.retailerCard}`}>
           <header className={styles.cardHead}><div><span>RETAILER BENCHMARK</span><h2>Precio mediano por retailer</h2><p>Comparación descriptiva; no implica SKU equivalentes.</p></div><em>Mediana</em></header>
@@ -304,10 +417,16 @@ export default function ClickHouseOverview({ onNavigate }: Props) {
           <div className={styles.coverageRows}>{payload.retailers.slice(0, 7).map((item) => <div key={item.retailer}><header><span>{item.retailer}</span><b>{compact(item.products)}</b></header><i><em style={{ width: `${Math.max(4, item.products / maxProducts * 100)}%` }}/></i><small>{pct(item.availabilityPct, false)} disponibilidad · {compact(item.promotions)} promos</small></div>)}</div>
         </article>
 
-        <article className={`${styles.card} ${styles.gapsCard}`}>
-          <header className={styles.cardHead}><div><span>PRICE GAPS</span><h2>Principales brechas por marca y categoría</h2><p>Medianas entre retailers; evita mezclarlo con Price Matching SKU a SKU.</p></div><button onClick={() => onNavigate("price-image")}>Ver Price Image →</button></header>
-          <div className={styles.gapTable}><div className={styles.gapHeader}><span>Marca / categoría</span><span>Menor</span><span>Mayor</span><span>Brecha</span></div>{payload.gaps.length ? payload.gaps.map((item) => <div className={styles.gapRow} key={`${item.brand}-${item.category}`}><span><strong>{item.brand}</strong><small>{item.category} · {compact(item.products)} SKU</small></span><span><b>{money(item.lowPrice)}</b><small>{item.lowRetailer}</small></span><span><b>{money(item.highPrice)}</b><small>{item.highRetailer}</small></span><em>+{item.gapPct.toFixed(1)}%</em></div>) : <div className={styles.emptyRows}>No hay brechas con al menos dos retailers para este filtro.</div>}</div>
-        </article>
+        <div className={styles.gapsCard}>
+          <DashboardContextChat
+            filters={{ retailer: "", category: "", brand: "", days }}
+            activeContext={aiContext}
+            onContextChange={(context) => {
+              setAiContext(context);
+              if (context?.days && [7, 30, 90].includes(Number(context.days))) setDays(Number(context.days));
+            }}
+          />
+        </div>
 
         <aside className={styles.rightRail}>
           <article className={styles.card}>
@@ -322,7 +441,7 @@ export default function ClickHouseOverview({ onNavigate }: Props) {
         </aside>
       </section>
 
-      <footer className={styles.footerNote}><span><i/>CLICKHOUSE DEMO</span><p>Los KPI, gráficos, rankings y alertas se calculan en ClickHouse sobre el dataset demo congelado. Supabase continúa capturando la data nueva por separado hasta reactivar la sincronización.</p><small>Datos hasta {datasetLabel}</small></footer>
+      <footer className={styles.footerNote}><span><i/>CLICKHOUSE LIVE</span><p>Los KPI, gráficos, rankings y alertas se calculan directamente en ClickHouse sobre el histórico sincronizado. La actualización se ejecuta bajo demanda para evitar consumo innecesario de compute.</p><small>Último dato {datasetLabel}</small></footer>
     </>}
   </section>;
 }

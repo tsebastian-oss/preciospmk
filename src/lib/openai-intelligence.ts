@@ -25,6 +25,15 @@ export type IntelligenceFilters = {
   period?: number;
 };
 
+export type IntelligenceDashboardContext = {
+  query: string | null;
+  brand: string | null;
+  category: string | null;
+  retailers: string[];
+  days: number;
+  scope: "product" | "brand" | "category" | "market";
+};
+
 export type IntelligenceAgentResult = {
   answer: string;
   model: string;
@@ -35,6 +44,7 @@ export type IntelligenceAgentResult = {
   toolsUsed: string[];
   dataSource: "clickhouse";
   brand: string | null;
+  dashboardContext: IntelligenceDashboardContext | null;
 };
 
 type ResponseItem = Record<string, any>;
@@ -285,10 +295,10 @@ function isReasoningModel(model: string) {
 function modelCandidates() {
   return [...new Set([
     OPENAI_MODEL,
-    "gpt-5.1",
-    "gpt-5-mini",
-    "gpt-4.1",
-  ].map((item) => item.trim()).filter(Boolean))].slice(0, 4);
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+  ].map((item) => item.trim()).filter(Boolean))].slice(0, 3);
 }
 
 function errorCategory(status: number, code?: string | null) {
@@ -418,6 +428,58 @@ export async function probeOpenAiIntelligence(): Promise<OpenAIProbe> {
   return { ok: false, status: 404, model: null, category: "no_supported_model" };
 }
 
+type DashboardSignal = { name: IntelligenceToolName; args: Record<string, unknown>; result: unknown };
+
+function dashboardContextFromSignals(signals: DashboardSignal[], filters: IntelligenceFilters): IntelligenceDashboardContext | null {
+  let query: string | null = null;
+  let brand: string | null = null;
+  let category: string | null = null;
+  let retailers: string[] = [];
+  let selectedDays = Number(filters.period) || 30;
+
+  for (let index = signals.length - 1; index >= 0; index -= 1) {
+    const signal = signals[index];
+    const args = signal.args ?? {};
+    if (!query && typeof args.query === "string" && args.query.trim()) query = args.query.trim().slice(0, 220);
+    if (!brand && typeof args.brand === "string" && args.brand.trim()) brand = args.brand.trim().slice(0, 140);
+    if (!category && typeof args.category === "string" && args.category.trim()) category = args.category.trim().slice(0, 180);
+    if (!retailers.length && Array.isArray(args.supermarkets)) {
+      retailers = [...new Set(args.supermarkets.filter((item): item is string => typeof item === "string" && item.trim().length > 0).map((item) => item.trim()))].slice(0, 12);
+    }
+    if (Number.isFinite(Number(args.days))) selectedDays = Math.max(7, Math.min(365, Number(args.days)));
+
+    const result = signal.result as { products?: Array<Record<string, unknown>> } | null;
+    const products = Array.isArray(result?.products) ? result!.products! : [];
+    if (products.length) {
+      const count = (field: string) => {
+        const map = new Map<string, number>();
+        for (const product of products) {
+          const value = typeof product[field] === "string" ? String(product[field]).trim() : "";
+          if (value) map.set(value, (map.get(value) ?? 0) + 1);
+        }
+        return [...map.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+      };
+      if (!brand) brand = count("brand");
+      if (!category) category = count("category");
+      if (!retailers.length) retailers = [...new Set(products.map((product) => typeof product.retailer === "string" ? product.retailer.trim() : "").filter(Boolean))].slice(0, 12);
+    }
+  }
+
+  brand = brand || (filters.brand?.trim() || null);
+  category = category || (filters.category?.trim() || null);
+  if (!retailers.length && filters.supermarket?.trim()) retailers = [filters.supermarket.trim()];
+  if (!query && !brand && !category && !retailers.length && !signals.length) return null;
+
+  return {
+    query,
+    brand,
+    category,
+    retailers,
+    days: selectedDays,
+    scope: query ? "product" : brand ? "brand" : category ? "category" : "market",
+  };
+}
+
 async function runWithModel(
   model: string,
   messages: IntelligenceChatMessage[],
@@ -426,6 +488,7 @@ async function runWithModel(
 ): Promise<IntelligenceAgentResult> {
   let input: any[] = cleanMessages(messages);
   const trace: string[] = [];
+  const dashboardSignals: DashboardSignal[] = [];
 
   for (let round = 0; round < 4; round += 1) {
     const response = await createResponse(input, access, filters, model, true);
@@ -444,6 +507,7 @@ async function runWithModel(
         toolsUsed: [...new Set(trace)],
         dataSource: "clickhouse",
         brand: likelyBrand(messages, filters),
+    dashboardContext: dashboardContextFromSignals(dashboardSignals, filters),
       };
     }
 
@@ -460,6 +524,7 @@ async function runWithModel(
       trace.push(name);
       try {
         const result = await executeIntelligenceTool(name, args, access);
+        dashboardSignals.push({ name, args, result });
         outputs.push({
           type: "function_call_output",
           call_id: String(call.call_id),
@@ -499,6 +564,7 @@ async function runWithModel(
     toolsUsed: [...new Set(trace)],
     dataSource: "clickhouse",
     brand: likelyBrand(messages, filters),
+    dashboardContext: dashboardContextFromSignals(dashboardSignals, filters),
   };
 }
 

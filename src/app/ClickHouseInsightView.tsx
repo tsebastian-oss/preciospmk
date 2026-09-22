@@ -108,11 +108,11 @@ export default function ClickHouseInsightView({ mode }: { mode: ClickHouseInsigh
   const meta = META[mode];
 
   useEffect(() => {
-    const cached = typeof window !== "undefined" ? window.sessionStorage.getItem("mgp_ch_brands_v1") : null;
+    const cached = typeof window !== "undefined" ? window.sessionStorage.getItem("mgp_ch_brands_v2") : null;
     if (cached) { try { setBrands(JSON.parse(cached) as BrandOption[]); return; } catch { /* reload */ } }
     const controller = new AbortController();
     fetch("/api/clickhouse-insight?options=brands", { signal: controller.signal })
-      .then(async (response) => { const data = await response.json() as { brands?: BrandOption[]; error?: string }; if (!response.ok) throw new Error(data.error || "No fue posible cargar marcas"); const rows=data.brands??[]; setBrands(rows); window.sessionStorage.setItem("mgp_ch_brands_v1",JSON.stringify(rows)); })
+      .then(async (response) => { const data = await response.json() as { brands?: BrandOption[]; error?: string }; if (!response.ok) throw new Error(data.error || "No fue posible cargar marcas"); const rows=data.brands??[]; setBrands(rows); window.sessionStorage.setItem("mgp_ch_brands_v2",JSON.stringify(rows)); })
       .catch((err) => { if (!(err instanceof DOMException && err.name === "AbortError")) setError(err instanceof Error ? err.message : "No fue posible cargar marcas"); });
     return () => controller.abort();
   }, []);
@@ -132,6 +132,7 @@ export default function ClickHouseInsightView({ mode }: { mode: ClickHouseInsigh
   }, [brand]);
 
   useEffect(() => {
+    if (mode==="price-evolution" && !brand) { setPayload(null); setLoading(false); setError(""); return; }
     const controller = new AbortController();
     const params = new URLSearchParams({ mode, days:String(days) });
     if (brand) params.set("brand",brand);
@@ -143,7 +144,7 @@ export default function ClickHouseInsightView({ mode }: { mode: ClickHouseInsigh
       .catch((err) => { if (!(err instanceof DOMException && err.name === "AbortError")) setError(err instanceof Error ? err.message : "No fue posible cargar el análisis"); })
       .finally(() => setLoading(false));
     return () => controller.abort();
-  }, [mode,brand,product,days,products]);
+  }, [mode,brand,product,days]);
 
   const selectedProduct = products.find((item) => item.id===product);
   const retailerRows = (payload?.retailers ?? []) as Retailer[];
@@ -157,13 +158,14 @@ export default function ClickHouseInsightView({ mode }: { mode: ClickHouseInsigh
     if (mode==="price-gaps") { const rows=payload?.gaps??[]; return [{label:"Brechas",value:num(rows.length)},{label:"Mayor brecha",value:rows.length?`${Math.max(...rows.map((r)=>r.gapPct)).toFixed(1)}%`:"—"},{label:"Universo",value:selectedProduct?"Producto":brand?"Marca":"Mercado"}]; }
     if (mode==="products") { const rows=payload?.products??[]; return [{label:"Resultados",value:num(rows.length)},{label:"Con stock",value:num(rows.filter((r)=>r.inStock).length)},{label:"Retailers",value:num(new Set(rows.map((r)=>r.retailer)).size)}]; }
     if (mode==="data-status") { return [{label:"Retailers",value:num(statusRows.length)},{label:"Activos 24h",value:num(statusRows.filter((r)=>r.observations24h>0).length)},{label:"Productos",value:short(statusRows.reduce((s,r)=>s+r.products,0))}]; }
+    if (mode==="price-evolution" && !brand) return [{label:"Marca",value:"Selecciona una"},{label:"Producto",value:"Opcional"},{label:"Período",value:`${days} días`}];
     const rows=payload?.series??[]; return [{label:"Retailers",value:num(rows.length)},{label:"Series",value:num(rows.length)},{label:"Período",value:`${days} días`}];
   }, [mode,payload,retailerRows,statusRows,selectedProduct,brand,days]);
 
   return <section className={styles.root}>
     <header className={styles.hero}><div><span>{meta.eyebrow}</span><h1>{meta.title}</h1><p>{meta.copy}</p></div><div className={styles.source}><i/>CLICKHOUSE LIVE</div></header>
     <section className={styles.filters}>
-      <label><span>Marca</span><select value={brand} onChange={(e)=>setBrand(e.target.value)}><option value="">Todas las marcas</option>{brands.map((item)=><option key={item.value} value={item.value}>{item.value} · {short(item.products)}</option>)}</select></label>
+      <label><span>Marca</span><select value={brand} onChange={(e)=>setBrand(e.target.value)}><option value="">{mode==="price-evolution"?"Selecciona una marca":"Todas las marcas"}</option>{brands.map((item)=><option key={item.value} value={item.value}>{item.value} · {short(item.products)}</option>)}</select></label>
       <label className={styles.productFilter}><span>Producto</span><select disabled={!brand || filterLoading} value={product} onChange={(e)=>setProduct(e.target.value)}><option value="">{!brand?"Selecciona primero una marca":filterLoading?"Cargando productos…":"Todos los productos de la marca"}</option>{products.map((item)=><option key={item.id} value={item.id}>{item.name} · {item.retailer} · {money(item.latestPrice)}</option>)}</select></label>
       <label><span>Período</span><select value={days} onChange={(e)=>setDays(Number(e.target.value))}><option value={7}>7 días</option><option value={30}>30 días</option><option value={90}>90 días</option></select></label>
       <button onClick={()=>{setBrand("");setProduct("");setDays(30);}}>Limpiar</button>
@@ -172,7 +174,7 @@ export default function ClickHouseInsightView({ mode }: { mode: ClickHouseInsigh
     {error && <div className={styles.error}>{error}</div>}
     <section className={styles.kpis}>{summary.map((item)=><article key={item.label}><span>{item.label}</span><strong>{item.value}</strong></article>)}</section>
     <article className={styles.card}>
-      {loading ? <div className={styles.loading}><i/><span>Consultando ClickHouse…</span></div> : <InsightBody mode={mode} payload={payload} />}
+      {mode==="price-evolution" && !brand ? <Empty text="Selecciona una marca para ver su evolución. Luego puedes elegir un producto específico."/> : loading ? <div className={styles.loading}><i/><span>Consultando ClickHouse…</span></div> : <InsightBody mode={mode} payload={payload} />}
     </article>
     <footer className={styles.footer}>Esta vista consulta únicamente el dataset necesario para el módulo activo. No precarga otros módulos.</footer>
   </section>;

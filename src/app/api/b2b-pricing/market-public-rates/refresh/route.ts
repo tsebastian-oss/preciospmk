@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import pdfParse from "pdf-parse";
+import pdfParse from "pdf-parse/lib/pdf-parse.js";
 import { enterpriseAccess, enterpriseRpc } from "@/lib/enterprise-auth";
 
 export const dynamic = "force-dynamic";

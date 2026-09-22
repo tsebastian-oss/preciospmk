@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import styles from "./CategoryIntelligence.module.css";
+import CategoryRetailerMixV2 from "./CategoryRetailerMixV2";
 
 type Filters = { supermarket?: string; period?: number };
 type CategoryPayload = {
@@ -88,7 +89,7 @@ export default function CategoryIntelligence({ filters }: { filters?: Filters })
 
   return <section className={styles.root}>
     <header className={styles.hero}>
-      <div><span>CATEGORY INTELLIGENCE · CLICKHOUSE</span><h2>Análisis visual de categorías</h2><p>Precios, surtido, promociones y productos en una sola vista analítica.</p></div>
+      <div><span>CATEGORY INTELLIGENCE</span><h2>Análisis visual de categorías</h2><p>Precios, surtido, marcas, retailers y productos calculados directamente en ClickHouse.</p></div>
       <div className={styles.source}><i/>100% ClickHouse</div>
     </header>
 
@@ -112,7 +113,6 @@ export default function CategoryIntelligence({ filters }: { filters?: Filters })
         <Kpi label="Marcas activas" value={integer.format(k?.brands ?? 0)} detail="Con precio vigente"/>
         <Kpi label="Precio mediano" value={money(k?.medianPrice ?? 0)} detail="Mediana de SKU" emphasis/>
         <Kpi label={`Variación ${days}d`} value={pct(k?.variationPct)} detail="Mediana inicio vs hoy" trend={k?.variationPct ?? null}/>
-        <Kpi label="En promoción" value={`${(k?.promotionPct ?? 0).toFixed(1)}%`} detail={`${integer.format(k?.promotions ?? 0)} SKU`}/>
         <Kpi label="Disponibilidad" value={`${(k?.availabilityPct ?? 0).toFixed(1)}%`} detail={`Actualizado ${observed(k?.lastObservedAt)}`}/>
       </section>
 
@@ -130,7 +130,7 @@ function Overview({ payload }: { payload: CategoryPayload }) {
     <article className={`${styles.card} ${styles.lineCard}`}><CardTitle eyebrow="PRICE TREND" title="Evolución de precio por retailer" copy="Precio mediano diario · evita que outliers dominen la lectura"/><LineChart rows={payload.trend}/></article>
     <article className={styles.card}><CardTitle eyebrow="PRICE POSITION" title="Precio mediano por retailer" copy="Índice 100 = mediana de la categoría"/><RetailerBars rows={payload.retailers}/></article>
     <article className={styles.card}><CardTitle eyebrow="ASSORTMENT MIX" title="Presencia de surtido por marca" copy="% de SKU observados · no representa market share de ventas"/><BrandDonut rows={payload.brands}/></article>
-    <article className={`${styles.card} ${styles.stackedCard}`}><CardTitle eyebrow="RETAILER MIX" title="Mix de marcas por retailer" copy="Composición del surtido observado en cada cadena"/><StackedAssortment payload={payload}/></article>
+    <article className={`${styles.card} ${styles.stackedCard}`}><CardTitle eyebrow="RETAILER MIX" title="Mix de productos por retailer" copy="Incluye supermercados, multitiendas, farmacias y Home Improvement cuando existen SKU en la categoría."/><CategoryRetailerMixV2 rows={payload.retailers}/></article>
     <article className={`${styles.card} ${styles.insightsCard}`}><CardTitle eyebrow="CATEGORY SIGNALS" title="Qué está pasando en la categoría" copy="Hallazgos calculados desde los datos actuales e históricos"/><div className={styles.insights}>{payload.insights.map((item, index) => <div key={item}><b>{String(index + 1).padStart(2, "0")}</b><p>{item}</p></div>)}</div></article>
   </div>;
 }

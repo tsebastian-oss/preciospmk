@@ -274,7 +274,7 @@ async function products(access: ScopedAccess, category: string, retailer: string
     INNER JOIN product_latest_price_state AS s FINAL ON s.product_id = p.id
     WHERE ${predicates.join("\n      AND ")}
     ORDER BY s.observed_at DESC, price ASC
-    LIMIT 80
+    LIMIT 300
   `, params, 8_000);
 }
 

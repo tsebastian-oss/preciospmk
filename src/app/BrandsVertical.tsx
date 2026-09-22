@@ -679,7 +679,10 @@ export default function BrandsVertical({ initialBrand = "krispy-kreme", locked =
     }
 
     setLoading(true);
-    fetch(`/api/brands?brand=${encodeURIComponent(selectedBrand)}`, { credentials: "same-origin", cache: "no-store" })
+    const baseEndpoint = selectedBrand === "victorinox"
+      ? `/api/brands-clickhouse-v3?brand=${encodeURIComponent(selectedBrand)}`
+      : `/api/brands?brand=${encodeURIComponent(selectedBrand)}`;
+    fetch(baseEndpoint, { credentials: "same-origin", cache: "no-store" })
       .then(async response => { if (!response.ok) throw new Error((await response.json().catch(() => null))?.error || "brands_failed"); return await response.json() as Payload; })
       .then(value => { if (active) setPayload(value); })
       .catch(cause => { if (active) setError(cause instanceof Error ? cause.message : "No fue posible cargar Brands."); })

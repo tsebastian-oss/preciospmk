@@ -7,11 +7,18 @@ type VerticalListing = {
 };
 
 const CATEGORIES = ["Relojes","Equipo de viaje","Navajas y multiherramientas","Cuchillos"];
+const OFFICIAL_MAX_AGE_DAYS = 14;
+const COMPETITION_MAX_AGE_DAYS = 30;
 
 function normalize(value:string){return value.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLocaleLowerCase("es-CL").replace(/\s+/g," ").trim();}
 function median(values:number[]){if(!values.length)return null;const s=[...values].sort((a,b)=>a-b),m=Math.floor(s.length/2);return s.length%2?s[m]:(s[m-1]+s[m])/2;}
 function quantile(values:number[],q:number){if(!values.length)return null;const s=[...values].sort((a,b)=>a-b),p=(s.length-1)*q,b=Math.floor(p),r=p-b;return s[b+1]==null?s[b]:s[b]+r*(s[b+1]-s[b]);}
 function round(value:number|null,digits=0){if(value==null||!Number.isFinite(value))return null;const f=10**digits;return Math.round(value*f)/f;}
+function isFresh(value:string|undefined|null,maxAgeDays:number){
+  if(!value)return false;
+  const timestamp=new Date(value).getTime();
+  return Number.isFinite(timestamp)&&Date.now()-timestamp<=maxAgeDays*86_400_000;
+}
 
 function categoryFor(row:VerticalListing){
   const title=normalize(row.title??"");
@@ -47,7 +54,7 @@ export function mergeVictorinoxOfficialMarket(base:any,vertical:any){
   for(const row of raw){
     if(normalize(row.domain??"")!=="victorinoxstore.cl")continue;
     const category=categoryFor(row),price=Number(row.currentPrice??0),regular=Number(row.regularPrice??0);
-    if(!category||price<=0||row.inStock===false)continue;
+    if(!category||price<=0||row.inStock===false||!isFresh(row.observedAt,OFFICIAL_MAX_AGE_DAYS))continue;
     const key=`${category}::${normalize(row.title??"")}`;
     const item:VictorinoxMarketRow={id:String(row.id??key),retailer:"Victorinox Store Chile",brand:"Victorinox",name:String(row.title??""),
       category,currentPrice:price,regularPrice:regular>0?regular:null,promotionPct:regular>price?round((regular-price)/regular*100,1):null,
@@ -56,7 +63,7 @@ export function mergeVictorinoxOfficialMarket(base:any,vertical:any){
     if(!previous||String(item.observedAt??"")>String(previous.observedAt??""))latest.set(key,item);
   }
   const official=[...latest.values()];
-  const competition:Array<VictorinoxMarketRow>=(Array.isArray(base?.listings)?base.listings:[]).filter((x:any)=>x.brand!=="Victorinox");
+  const competition:Array<VictorinoxMarketRow>=(Array.isArray(base?.listings)?base.listings:[]).filter((x:any)=>x.brand!=="Victorinox"&&isFresh(x.observedAt,COMPETITION_MAX_AGE_DAYS));
   const officialObservedAt=official.map(x=>x.observedAt).filter((x):x is string=>Boolean(x)).sort().at(-1)??null;
   const competitionObservedAt=competition.map(x=>x.observedAt).filter((x):x is string=>Boolean(x)).sort().at(-1)??null;
   const market=[...official,...competition];
@@ -92,6 +99,6 @@ export function mergeVictorinoxOfficialMarket(base:any,vertical:any){
   return {source:"victorinox-official+supabase-snapshot",generatedAt:new Date().toISOString(),lastObservedAt:observed,categories:CATEGORIES,retailers,brands,
     kpis:{marketSkus:market.length,ownSkus:official.length,competitorBrands:new Set(competition.map(x=>x.brand)).size,retailers:retailers.length,promotedOwnSkus:promoted.length},
     position,summary,listings:market,insights,presentationMode:false,
-    dataQuality:{officialSource:"victorinoxstore.cl",officialProducts:official.length,officialObservedAt,competitionObservedAt,watchProducts:watch?.skuCount??0,watchCurrentMedian:watch?.medianPrice??null,watchListMedian,competitionSource:"Supabase competition snapshot",syntheticData:false,
+    dataQuality:{officialSource:"victorinoxstore.cl",officialProducts:official.length,officialObservedAt,competitionObservedAt,watchProducts:watch?.skuCount??0,watchCurrentMedian:watch?.medianPrice??null,watchListMedian,competitionSource:"Supabase competition snapshot",syntheticData:false,directPageVerification:false,collectionMethod:"AI-assisted web search; URLs and freshness are retained for audit",officialMaxAgeDays:OFFICIAL_MAX_AGE_DAYS,competitionMaxAgeDays:COMPETITION_MAX_AGE_DAYS,
       minimumSample:5,categoryCoverage:CATEGORIES.map(category=>{const own=summary.find(x=>x.category===category&&x.brand==="Victorinox");return {category,products:own?.skuCount??0,reliable:(own?.skuCount??0)>=5};})}};
 }

@@ -5,7 +5,7 @@ import styles from "./BrandIntelligenceChat.module.css";
 import historyStyles from "./BrandIntelligenceHistory.module.css";
 
 type ChatFilters = {
-  retailerType: "all" | "supermarket" | "department_store" | "pharmacy";
+  retailerType: "all" | "supermarket" | "department_store" | "pharmacy" | "home_improvement";
   supermarket: string;
   category: string;
   brand: string;
@@ -117,7 +117,7 @@ function id() {
 
 function scopeText(filters: ChatFilters) {
   const parts: string[] = [];
-  if (filters.retailerType !== "all") parts.push(filters.retailerType === "supermarket" ? "Supermercados" : filters.retailerType === "pharmacy" ? "Farmacias" : "Multitiendas");
+  if (filters.retailerType !== "all") parts.push(filters.retailerType === "supermarket" ? "Supermercados" : filters.retailerType === "pharmacy" ? "Farmacias" : filters.retailerType === "home_improvement" ? "Hogar y construcción" : "Multitiendas");
   if (filters.supermarket) parts.push(filters.supermarket);
   if (filters.category) parts.push(filters.category);
   if (filters.brand) parts.push(filters.brand);
@@ -162,26 +162,112 @@ function availability(summary?: BrandSummary) {
 function inlineText(value: string) {
   return value.split(/(\*\*[^*]+\*\*)/g).map((part, index) =>
     part.startsWith("**") && part.endsWith("**")
-      ? <strong key={`${part}-${index}`}>{part.slice(2, -2)}</strong>
-      : <Fragment key={`${part}-${index}`}>{part}</Fragment>,
+      ? <strong key={part + "-" + index}>{part.slice(2, -2)}</strong>
+      : <Fragment key={part + "-" + index}>{part}</Fragment>,
   );
 }
 
+function tableCells(line: string) {
+  return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((cell) => cell.trim());
+}
+
+function isTableDivider(line: string) {
+  const cells = tableCells(line);
+  return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.replace(/\s+/g, "")));
+}
+
+function startsMarkdownBlock(lines: string[], index: number) {
+  const line = (lines[index] ?? "").trim();
+  if (!line) return true;
+  if (/^#{1,6}\s+/.test(line) || /^[-*+]\s+/.test(line) || /^\d+[.)]\s+/.test(line) || /^>\s?/.test(line)) return true;
+  return line.includes("|") && index + 1 < lines.length && isTableDivider(lines[index + 1] ?? "");
+}
+
+function MarkdownTable({ lines }: { lines: string[] }) {
+  const headers = tableCells(lines[0] ?? "");
+  const rows = lines.slice(2).map(tableCells);
+  return <div className={styles.markdownTableWrap}>
+    <table className={styles.markdownTable}>
+      <thead><tr>{headers.map((header, index) => <th key={"header-" + index}>{inlineText(header)}</th>)}</tr></thead>
+      <tbody>{rows.map((row, rowIndex) => <tr key={"row-" + rowIndex}>{headers.map((_, cellIndex) => <td key={"cell-" + rowIndex + "-" + cellIndex}>{inlineText(row[cellIndex] ?? "")}</td>)}</tr>)}</tbody>
+    </table>
+  </div>;
+}
+
 function ConversationalAnswer({ text }: { text: string }) {
-  const blocks = text.trim().split(/\n\s*\n/).filter(Boolean);
-  return <div className={styles.answer}>{blocks.map((block, index) => {
-    const lines = block.split("\n").map((line) => line.trim()).filter(Boolean);
-    if (lines.length && lines.every((line) => /^[-*]\s+/.test(line))) {
-      return <ul key={index}>{lines.map((line, lineIndex) => <li key={lineIndex}>{inlineText(line.replace(/^[-*]\s+/, ""))}</li>)}</ul>;
+  const lines = text.replace(/\r\n/g, "\n").trim().split("\n");
+  const blocks = [];
+  let index = 0;
+  let blockKey = 0;
+
+  while (index < lines.length) {
+    const line = (lines[index] ?? "").trim();
+    if (!line) { index += 1; continue; }
+
+    const heading = /^(#{1,6})\s+(.+)$/.exec(line);
+    if (heading) {
+      const level = heading[1].length;
+      const content = inlineText(heading[2]);
+      blocks.push(level <= 2
+        ? <h3 key={"heading-" + blockKey++}>{content}</h3>
+        : <h4 key={"heading-" + blockKey++}>{content}</h4>);
+      index += 1;
+      continue;
     }
-    if (lines.length && lines.every((line) => /^\d+[.)]\s+/.test(line))) {
-      return <ol key={index}>{lines.map((line, lineIndex) => <li key={lineIndex}>{inlineText(line.replace(/^\d+[.)]\s+/, ""))}</li>)}</ol>;
+
+    if (line.includes("|") && index + 1 < lines.length && isTableDivider(lines[index + 1] ?? "")) {
+      const tableLines = [lines[index], lines[index + 1]];
+      index += 2;
+      while (index < lines.length) {
+        const row = (lines[index] ?? "").trim();
+        if (!row || !row.includes("|")) break;
+        tableLines.push(lines[index]);
+        index += 1;
+      }
+      blocks.push(<MarkdownTable key={"table-" + blockKey++} lines={tableLines}/>);
+      continue;
     }
-    if (lines.length === 1 && /^#{1,3}\s+/.test(lines[0])) {
-      return <h3 key={index}>{inlineText(lines[0].replace(/^#{1,3}\s+/, ""))}</h3>;
+
+    if (/^[-*+]\s+/.test(line)) {
+      const items: string[] = [];
+      while (index < lines.length && /^[-*+]\s+/.test((lines[index] ?? "").trim())) {
+        items.push((lines[index] ?? "").trim().replace(/^[-*+]\s+/, ""));
+        index += 1;
+      }
+      blocks.push(<ul key={"ul-" + blockKey++}>{items.map((item, itemIndex) => <li key={itemIndex}>{inlineText(item)}</li>)}</ul>);
+      continue;
     }
-    return <p key={index}>{lines.map((line, lineIndex) => <Fragment key={lineIndex}>{lineIndex > 0 && <br/>}{inlineText(line)}</Fragment>)}</p>;
-  })}</div>;
+
+    if (/^\d+[.)]\s+/.test(line)) {
+      const items: string[] = [];
+      while (index < lines.length && /^\d+[.)]\s+/.test((lines[index] ?? "").trim())) {
+        items.push((lines[index] ?? "").trim().replace(/^\d+[.)]\s+/, ""));
+        index += 1;
+      }
+      blocks.push(<ol key={"ol-" + blockKey++}>{items.map((item, itemIndex) => <li key={itemIndex}>{inlineText(item)}</li>)}</ol>);
+      continue;
+    }
+
+    if (/^>\s?/.test(line)) {
+      const quote: string[] = [];
+      while (index < lines.length && /^>\s?/.test((lines[index] ?? "").trim())) {
+        quote.push((lines[index] ?? "").trim().replace(/^>\s?/, ""));
+        index += 1;
+      }
+      blocks.push(<blockquote key={"quote-" + blockKey++}>{quote.map((item, itemIndex) => <Fragment key={itemIndex}>{itemIndex > 0 && <br/>}{inlineText(item)}</Fragment>)}</blockquote>);
+      continue;
+    }
+
+    const paragraph: string[] = [line];
+    index += 1;
+    while (index < lines.length && (lines[index] ?? "").trim() && !startsMarkdownBlock(lines, index)) {
+      paragraph.push((lines[index] ?? "").trim());
+      index += 1;
+    }
+    blocks.push(<p key={"p-" + blockKey++}>{paragraph.map((item, itemIndex) => <Fragment key={itemIndex}>{itemIndex > 0 && <br/>}{inlineText(item)}</Fragment>)}</p>);
+  }
+
+  return <div className={styles.answer}>{blocks}</div>;
 }
 
 function SourceDetails({ sources }: { sources?: BrandSource[] }) {

@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const payload = await clickHouseDashboard(authorization.access, {
+      query: request.nextUrl.searchParams.get("query"),
       retailer: request.nextUrl.searchParams.get("retailer"),
       category: request.nextUrl.searchParams.get("category"),
       brand: request.nextUrl.searchParams.get("brand"),

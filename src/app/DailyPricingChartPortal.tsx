@@ -333,16 +333,16 @@ export default function DailyPricingChartPortal() {
         <div>
           <div className={styles.eyebrowRow}>
             <span>DAILY PRICING TREND</span>
-            <b className={styles.liveBadge}><i />DATASET DEMO</b>
-            <b>HISTÓRICO CONGELADO</b>
+            <b className={styles.liveBadge}><i />LIVE DATA</b>
+            <b>ACTUALIZACIÓN BAJO DEMANDA</b>
           </div>
           <h2>Evolución diaria de precios por categoría y marca</h2>
-          <p>Agrega o quita líneas para comparar categorías y marcas sobre el histórico congelado de la demo. La vista se recalcula solo cuando cambias filtros o período.</p>
+          <p>Agrega o quita líneas para comparar categorías y marcas sobre el histórico sincronizado. La vista se recalcula cuando cambias filtros o período, sin polling automático.</p>
         </div>
         <div className={styles.headerControls}>
           <div className={styles.liveMeta}>
             <i className={syncing ? styles.syncing : ""} />
-            <div><strong>{syncWarning || (syncing ? "Actualizando vista" : "Sin actualización automática")}</strong><small>Último dato {dataTimestampLabel(payload?.latestObservationAt ?? payload?.refreshedAt)}</small></div>
+            <div><strong>{syncWarning || (syncing ? "Actualizando vista" : "Actualización bajo demanda")}</strong><small>Último dato {dataTimestampLabel(payload?.latestObservationAt ?? payload?.refreshedAt)}</small></div>
           </div>
           <div className={styles.rangeControl} aria-label="Rango del gráfico">
             {[30, 60, 90].map((period) => <button key={period} className={days === period ? styles.rangeActive : ""} onClick={() => setDays(period)}>{period}D</button>)}

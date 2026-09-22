@@ -147,13 +147,28 @@ export async function clickHouseBrandOptions(accessInput: EnterpriseAccessContex
   const predicates = basePredicates(access, params);
   predicates.push("notEmpty(ifNull(p.brand, ''))");
   const rows = await clickHouseQuery<OptionRow>(`
-    SELECT ifNull(p.brand, '') AS value, uniqExact(p.id) AS products
-    FROM products AS p FINAL
-    WHERE ${predicates.join("\n      AND ")}
+    SELECT value, sum(products) AS products
+    FROM (
+      SELECT
+        value,
+        retailer_type,
+        products,
+        row_number() OVER (PARTITION BY retailer_type ORDER BY products DESC, value ASC) AS retailer_rank
+      FROM (
+        SELECT
+          ifNull(p.brand, '') AS value,
+          p.retailer_type AS retailer_type,
+          uniqExact(p.id) AS products
+        FROM products AS p FINAL
+        WHERE ${predicates.join("\n          AND ")}
+        GROUP BY value, retailer_type
+      )
+    )
+    WHERE retailer_rank <= 500
     GROUP BY value
     ORDER BY products DESC, value ASC
-    LIMIT 250
-  `, params, 5_000);
+    LIMIT 1500
+  `, params, 7_000);
   return rows.map((row) => ({ value: row.value, products: number(row.products) }));
 }
 

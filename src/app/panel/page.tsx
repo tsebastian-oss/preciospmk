@@ -48,13 +48,13 @@ export default function ClientBrandPanelPage() {
     window.location.replace("/login");
   }
 
-  if (error) return <main className={styles.state}><div className={styles.error}>{error}</div></main>;
-  if (!access?.brandSlug) return <main className={styles.state}>Preparando panel de marca…</main>;
+  if (error) return <main className={styles.state}><div className={styles.error} role="alert">{error}</div></main>;
+  if (!access?.brandSlug) return <main className={styles.state} role="status" aria-live="polite">Preparando panel de marca…</main>;
 
   return <main className={styles.page}>
     <header className={styles.topbar}>
       <div className={styles.identity}>
-        <div className={styles.mark}>M</div>
+        <div className={styles.mark}>{access.brandSlug === "victorinox" ? "V" : "M"}</div>
         <div><strong>MGP Price Intelligence</strong><span>{access.brandSlug === "chilexpress" ? "Panel privado de pricing" : "Panel privado de marca"}</span></div>
       </div>
       <div className={styles.account}>

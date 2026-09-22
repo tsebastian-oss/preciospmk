@@ -1,0 +1,55 @@
+name: Secure Victorinox RPC scope
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - supabase/migrations/20260921232702_secure_victorinox_rpc_scope.sql
+      - .github/workflows/secure-victorinox-rpc.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: yfpixszkiakwzrqdcfbw
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check database credential
+        run: test -n "$SUPABASE_ACCESS_TOKEN"
+
+      - name: Apply tenant isolation migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          query=$(cat supabase/migrations/20260921232702_secure_victorinox_rpc_scope.sql)
+          payload=$(jq -n --arg query "$query" '{query:$query,read_only:false}')
+          status=$(curl --silent --show-error --max-time 90 \
+            --output /tmp/apply.json --write-out '%{http_code}' \
+            --request POST "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query" \
+            --header "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            --header 'Content-Type: application/json' \
+            --data "$payload")
+          cat /tmp/apply.json | jq . || cat /tmp/apply.json
+          test "$status" -ge 200 -a "$status" -lt 300
+
+      - name: Verify protected wrappers
+        shell: bash
+        run: |
+          set -euo pipefail
+          query="select to_regprocedure('public.brands_vertical_light_payload(text)') is not null as light_ready, to_regprocedure('public.brands_vertical_official_history(text,integer)') is not null as history_ready, to_regprocedure('public.victorinox_competition_market_payload(integer)') is not null as market_ready;"
+          payload=$(jq -n --arg query "$query" '{query:$query,read_only:true}')
+          status=$(curl --silent --show-error --max-time 45 \
+            --output /tmp/verify.json --write-out '%{http_code}' \
+            --request POST "https://api.supabase.com/v1/projects/${SUPABASE_PROJECT_REF}/database/query" \
+            --header "Authorization: Bearer ${SUPABASE_ACCESS_TOKEN}" \
+            --header 'Content-Type: application/json' \
+            --data "$payload")
+          cat /tmp/verify.json | jq -e '.[0] | .light_ready and .history_ready and .market_ready'
+          test "$status" -ge 200 -a "$status" -lt 300

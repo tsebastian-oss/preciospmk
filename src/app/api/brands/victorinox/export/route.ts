@@ -14,7 +14,8 @@ function n(value: Numeric | null | undefined) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 function cell(value: unknown) {
-  const text = value == null ? "" : String(value);
+  const raw = value == null ? "" : String(value);
+  const text = /^[=+\-@]/.test(raw.trimStart()) ? `'${raw}` : raw;
   return '"' + text.replace(/"/g, '""') + '"';
 }
 function csv(headers: string[], rows: unknown[][]) {

@@ -31,7 +31,6 @@ function clean(value: unknown): Msg[] {
       .slice(-14)
     : [];
 }
-
 function output(response: any) {
   return (response?.output ?? [])
     .filter((item: any) => item?.type === "message")

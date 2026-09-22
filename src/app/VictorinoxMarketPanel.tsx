@@ -81,7 +81,8 @@ function signedPct(value:number|null|undefined){if(value==null||!Number.isFinite
 
 function CategoryTable({ rows }:{ rows:SummaryRow[] }) {
   return <div className={styles.tableWrap}><table className={styles.table}>
-    <thead><tr><th>Marca</th><th>SKU</th><th>Retailers</th><th>Mediana</th><th>Promedio</th><th>Rango</th><th>Promo</th></tr></thead>
+    <caption className={styles.srOnly}>Comparación de precios y surtido por marca</caption>
+    <thead><tr><th scope="col">Marca</th><th scope="col">SKU</th><th scope="col">Retailers</th><th scope="col">Mediana</th><th scope="col">Promedio</th><th scope="col">Rango</th><th scope="col">Promo</th></tr></thead>
     <tbody>{rows.map(row=><tr key={row.category+"-"+row.brand} className={row.brand==="Victorinox"?styles.ownRow:undefined}>
       <td><strong>{row.brand}</strong>{row.brand==="Victorinox"&&<small className={styles.ownTag}>MARCA FOCO</small>}</td><td>{number.format(row.skuCount)}</td><td>{row.retailers}</td>
       <td><strong>{clp(row.medianPrice)}</strong></td><td>{clp(row.averagePrice)}</td>
@@ -137,8 +138,8 @@ export default function VictorinoxMarketPanel(){
     return {highest,closest,bestGap};
   },[payload]);
 
-  if(loading)return <section className={styles.shell}><div className={styles.state}>Cargando mercado competitivo de Victorinox…</div></section>;
-  if(error||!payload)return <section className={styles.shell}><div className={styles.error}>{error||"No disponible."}<button onClick={()=>void load()}>Reintentar</button></div></section>;
+  if(loading)return <section className={styles.shell}><div className={styles.state} role="status" aria-live="polite">Cargando mercado competitivo de Victorinox…</div></section>;
+  if(error||!payload)return <section className={styles.shell}><div className={styles.error} role="alert">{error||"No disponible."}<button onClick={()=>void load()}>Reintentar</button></div></section>;
 
   return <section className={styles.shell}>
     <header className={styles.hero}>
@@ -158,10 +159,10 @@ export default function VictorinoxMarketPanel(){
       <article><span>Promo Victorinox</span><strong>{payload.kpis.promotedOwnSkus}</strong><small>SKU con descuento</small></article>
     </div>
 
-    <nav className={styles.tabs}>
+    <nav className={styles.tabs} role="tablist" aria-label="Secciones del panel Victorinox">
       {([
-        ["overview","Executive Overview"],["positioning","Price Positioning"],["copilot","AI Analyst"],["categories","Categorías"],["matrix","Matriz"],["history","Histórico"],["retailers","Retailers"],["downloads","Exportar"]
-      ] as [Tab,string][]).map(([key,label])=><button key={key} className={tab===key?styles.active:""} onClick={()=>{setTab(key);trackUsageEvent("tab_view",{module:"victorinox-market",metadata:{tab:key}})}}>{label}</button>)}
+        ["overview","Resumen ejecutivo"],["positioning","Posicionamiento"],["copilot","Analista IA"],["categories","Categorías"],["matrix","Matriz"],["history","Histórico"],["retailers","Retailers"],["downloads","Exportar"]
+      ] as [Tab,string][]).map(([key,label])=><button key={key} role="tab" aria-selected={tab===key} className={tab===key?styles.active:""} onClick={()=>{setTab(key);trackUsageEvent("tab_view",{module:"victorinox-market",metadata:{tab:key}})}}>{label}</button>)}
     </nav>
 
     {tab==="overview"&&<>
@@ -191,7 +192,7 @@ export default function VictorinoxMarketPanel(){
       <section className={styles.grid2}>
         <article className={styles.panel}>
           <div className={styles.panelTitle}><div><span>LECTURA EJECUTIVA</span><h2>Señales principales</h2></div></div>
-          <div className={styles.insights}>{payload.insights.map((text,index)=><div key={text}><b>{String(index+1).padStart(2,"0")}</b><p>{text}</p></div>)}</div>
+      <div className={styles.insights}>{payload.insights.length?payload.insights.map((text,index)=><div key={text}><b>{String(index+1).padStart(2,"0")}</b><p>{text}</p></div>):<div className={styles.empty}>Aún no hay señales suficientes para esta captura.</div>}</div>
         </article>
         <article className={styles.panel}>
           <div className={styles.panelTitle}><div><span>COMPETENCIA</span><h2>Benchmarks por vertical</h2></div></div>
@@ -217,11 +218,11 @@ export default function VictorinoxMarketPanel(){
 
     {tab==="retailers"&&<section className={styles.panel}>
       <div className={styles.panelTitle}><div><span>RETAILER INTELLIGENCE</span><h2>Canales monitoreados</h2><p>Distribución de evidencia, surtido competitivo y presión promocional por canal.</p></div></div>
-      <div className={styles.retailerGrid}>{payload.retailers.map(retailer=>{
+      <div className={styles.retailerGrid}>{payload.retailers.length?payload.retailers.map(retailer=>{
         const rows=payload.listings.filter(row=>row.retailer===retailer);
         const own=rows.filter(row=>row.brand==="Victorinox");
         return <article key={retailer}><span>RETAILER</span><h3>{retailer}</h3><strong>{number.format(rows.length)} SKU mercado</strong><small>{new Set(rows.map(r=>r.brand)).size} marcas · {own.length} listings Victorinox · {own.filter(r=>(r.promotionPct??0)>0).length} propios en promo</small></article>;
-      })}</div>
+      }):<div className={styles.empty}>No hay retailers con datos vigentes dentro de la ventana de calidad.</div>}</div>
     </section>}
 
     {tab==="downloads"&&<VictorinoxDownloads/>}

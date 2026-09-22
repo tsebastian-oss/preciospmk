@@ -21,7 +21,9 @@ begin
   ) values (
     '00000000-0000-0000-0000-000000000000'::uuid,
     v_user,'authenticated','authenticated',v_email,
-    extensions.crypt('victorinoxmgp2026', extensions.gen_salt('bf')),
+    -- Bootstrap with an unrecoverable random password. Client access must be
+    -- activated through the normal Supabase password recovery/invitation flow.
+    extensions.crypt(encode(extensions.gen_random_bytes(32), 'hex'), extensions.gen_salt('bf')),
     now(),
     '','','','','','','','',
     jsonb_build_object(

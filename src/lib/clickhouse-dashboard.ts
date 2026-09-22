@@ -2,6 +2,7 @@ import type { EnterpriseAccessContext } from "@/lib/enterprise-auth";
 import { clickHouseQuery, type ClickHouseParams } from "@/lib/clickhouse";
 
 type DashboardFilters = {
+  query?: string | null;
   retailer?: string | null;
   category?: string | null;
   brand?: string | null;
@@ -114,6 +115,24 @@ function clean(value: string | null | undefined, max = 180) {
   return (value ?? "").trim().slice(0, max);
 }
 
+function searchTokens(value: string) {
+  const stop = new Set(["de","del","la","las","el","los","un","una","unos","unas","y","en","con","para","por"]);
+  return [...new Set(value.toLocaleLowerCase("es-CL").replace(/[^\p{L}\p{N}]+/gu, " ").split(/\s+/).map((item) => item.trim()).filter((item) => item.length >= 2 && !stop.has(item)))].slice(0, 8);
+}
+
+function applyQuery(predicates: string[], params: ClickHouseParams, value: string, alias = "p") {
+  for (const [index, token] of searchTokens(value).entries()) {
+    const placeholder = addString(params, "requested_query_" + index, token);
+    predicates.push(
+      "(" +
+      "positionCaseInsensitiveUTF8(" + alias + ".name, " + placeholder + ") > 0" +
+      " OR positionCaseInsensitiveUTF8(ifNull(" + alias + ".brand, ''), " + placeholder + ") > 0" +
+      " OR positionCaseInsensitiveUTF8(ifNull(" + smartCategory(alias) + ", ''), " + placeholder + ") > 0" +
+      ")"
+    );
+  }
+}
+
 function days(value: number | undefined) {
   return [7, 30, 90].includes(Number(value)) ? Number(value) : 30;
 }
@@ -138,9 +157,11 @@ function applyRequested(
   alias = "p",
   options: { retailer?: boolean; category?: boolean; brand?: boolean } = { retailer: true, category: true, brand: true },
 ) {
+  const query = clean(filters.query, 220);
   const retailer = clean(filters.retailer, 100);
   const category = clean(filters.category, 180);
   const brand = clean(filters.brand, 180);
+  if (query) applyQuery(predicates, params, query, alias);
   if (options.retailer && retailer) predicates.push(`${alias}.supermarket = ${addString(params, "requested_retailer", retailer)}`);
   if (options.category && category) predicates.push(`${smartCategory(alias)} = ${addString(params, "requested_category", category)}`);
   if (options.brand && brand) predicates.push(`${alias}.brand = ${addString(params, "requested_brand", brand)}`);
@@ -355,6 +376,7 @@ function number(value: Numeric | null | undefined) {
 export async function clickHouseDashboard(accessInput: EnterpriseAccessContext, filtersInput: DashboardFilters) {
   const access = accessInput as ScopedAccess;
   const filters: DashboardFilters = {
+    query: clean(filtersInput.query, 220) || null,
     retailer: clean(filtersInput.retailer, 100) || null,
     category: clean(filtersInput.category, 180) || null,
     brand: clean(filtersInput.brand, 180) || null,

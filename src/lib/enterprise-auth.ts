@@ -94,20 +94,34 @@ export async function enterpriseRpc<T>(
   request: NextRequest,
   functionName: string,
   body: Record<string, unknown> = {},
+  timeoutMs?: number,
 ): Promise<RpcResult<T>> {
   const token = accessToken(request);
   if (!token) return { response: NextResponse.json({ error: "No autorizado" }, { status: 401 }) };
 
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${functionName}`, {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_KEY,
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(body),
-    cache: "no-store",
-  });
+  const controller = timeoutMs ? new AbortController() : null;
+  const timeout = controller && timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  let response: Response;
+  try {
+    response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${functionName}`, {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_KEY,
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+      signal: controller?.signal,
+    });
+  } catch (cause) {
+    if (cause instanceof Error && cause.name === "AbortError") {
+      return { response: NextResponse.json({ error: "La consulta tardó demasiado. Intenta nuevamente.", code: "DATA_TIMEOUT", transient: true }, { status: 503 }) };
+    }
+    throw cause;
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
   const text = await response.text();
   if (!response.ok) {
     const status = response.status === 400 && text.includes("42501") ? 403 : response.status;

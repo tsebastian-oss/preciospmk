@@ -77,8 +77,8 @@ export default function VictorinoxHistory({ compact = false }: { compact?: boole
     <div className={styles.panelTitle}>
       <div>
         <span>HISTÓRICO COMPETITIVO</span>
-        <h2>Evolución Victorinox vs benchmark</h2>
-        <p>Serie diaria oficial desde Supabase. El benchmark competitivo corresponde a la última captura disponible y se mantiene como referencia.</p>
+        <h2>Evolución Victorinox vs benchmark actual</h2>
+        <p>Serie diaria de Victorinox desde Supabase, comparada contra la última captura competitiva disponible como referencia constante.</p>
       </div>
       {!compact && <div className={styles.dayButtons}>{[30, 90, 180].map((value) => <button key={value} className={days === value ? styles.activeDay : ""} onClick={() => setDays(value)}>{value}D</button>)}</div>}
     </div>

@@ -3,7 +3,7 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import styles from "./AIPriceMap.module.css";
 
-type Filters={retailerType:"all"|"supermarket"|"department_store"|"pharmacy";supermarket:string;category:string;brand:string;query:string;stock:"all"|"in"|"out";period:number};
+type Filters={retailerType:"all"|"supermarket"|"department_store"|"pharmacy"|"home_improvement";supermarket:string;category:string;brand:string;query:string;stock:"all"|"in"|"out";period:number};
 type Point={brand:string;brandKey:string;isTarget:boolean;skus:number;retailers:number;coveragePct:number;averagePrice:number;minPrice:number;maxPrice:number;priceIndex:number;inStockPct:number;offers:number;promoPct:number;averageDiscount:number;lastObservedAt?:string|null;sampleProducts?:string[]};
 type Analysis={headline:string;summary:string;competitorKeys:string[];insights:Array<{title:string;detail:string}>;actions:string[]};
 type PriceMap={targetBrand:string;format?:string|null;formatMatched?:boolean;categories?:string[];points:Point[];kpis:{averagePrice:number;coveragePct:number;promoPct:number;inStockPct:number;nearestCompetitor?:string|null;gapVsNearestPct?:number|null};axis:{x:string;y:string;size:string};generatedAt?:string};
@@ -17,6 +17,7 @@ const id=()=>`${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const money=(v?:number)=>Number.isFinite(v)?`$${new Intl.NumberFormat("es-CL",{maximumFractionDigits:0}).format(Number(v))}`:"—";
 const pct=(v?:number)=>Number.isFinite(v)?`${Number(v).toLocaleString("es-CL",{maximumFractionDigits:1})}%`:"—";
 const historyDate=(v:string)=>{const d=new Date(v),t=new Date();return d.toDateString()===t.toDateString()?new Intl.DateTimeFormat("es-CL",{hour:"2-digit",minute:"2-digit"}).format(d):new Intl.DateTimeFormat("es-CL",{day:"2-digit",month:"short"}).format(d)};
+const observedDate=(v?:string|null)=>v?new Intl.DateTimeFormat("es-CL",{dateStyle:"short",timeStyle:"short"}).format(new Date(v)):"—";
 
 function BubbleMap({map}:{map:PriceMap}){
   const pts=map.points??[]; if(!pts.length)return null;
@@ -35,7 +36,7 @@ function BubbleMap({map}:{map:PriceMap}){
       <text transform={`translate(17 ${T+plotH/2}) rotate(-90)`} textAnchor="middle" className={styles.axisLabel}>Cobertura en cadenas</text>
       {pts.map((p,i)=>{const cx=x(p.priceIndex),cy=y(p.coveragePct),r=radius(p.skus);const fill=p.isTarget?"#0b57d0":colors[(i-1+colors.length)%colors.length];return <g key={p.brandKey} className={styles.bubble}>
         {p.isTarget&&<circle cx={cx} cy={cy} r={r+5} fill="none" stroke="#0b57d0" strokeWidth="2" opacity=".25"/>}
-        <circle cx={cx} cy={cy} r={r} fill={fill} opacity={p.isTarget?.95:.78}/>
+        <circle cx={cx} cy={cy} r={r} fill={fill} opacity={p.isTarget ? .95 : .78}/>
         <text x={cx} y={cy-2} textAnchor="middle" className={styles.bubbleBrand}>{p.brand.length>15?`${p.brand.slice(0,13)}…`:p.brand}</text>
         <text x={cx} y={cy+13} textAnchor="middle" className={styles.bubbleValue}>{Math.round(p.priceIndex)}</text>
         <title>{`${p.brand} · ${money(p.averagePrice)} · índice ${p.priceIndex} · cobertura ${p.coveragePct}% · ${p.skus} SKU`}</title>
@@ -57,7 +58,7 @@ function MapPanel({map,analysis,loading}:{map:PriceMap|null;analysis?:Analysis;l
       <div><span>Competidor cercano</span><strong className={styles.smallStrong}>{k.nearestCompetitor||"—"}</strong><small>{k.gapVsNearestPct==null?"sin brecha":`${Math.abs(k.gapVsNearestPct).toFixed(1)}% de brecha`}</small></div>
     </div>
     <BubbleMap map={map}/>
-    <div className={styles.tableBlock}><div className={styles.tableTitle}><strong>Detalle competitivo</strong><span>Precio equivalente normaliza packs cuando es posible</span></div><div className={styles.tableScroll}><table><thead><tr><th>Marca</th><th>Precio prom.</th><th>Índice</th><th>Cobertura</th><th>Stock</th><th>Promos</th><th>SKU</th></tr></thead><tbody>{map.points.map(p=><tr key={p.brandKey} className={p.isTarget?styles.targetRow:""}><td><b>{p.brand}</b>{p.isTarget&&<em>Objetivo</em>}</td><td>{money(p.averagePrice)}</td><td>{p.priceIndex.toFixed(1)}</td><td>{pct(p.coveragePct)}</td><td>{pct(p.inStockPct)}</td><td>{pct(p.promoPct)}</td><td>{p.skus}</td></tr>)}</tbody></table></div></div>
+    <div className={styles.tableBlock}><div className={styles.tableTitle}><strong>Detalle y trazabilidad del análisis</strong><span>Los valores provienen de productos observados en el alcance actual; la IA selecciona y explica los comparables.</span></div><div className={styles.tableScroll}><table><thead><tr><th>Marca</th><th>Precio prom.</th><th>Índice</th><th>Cobertura</th><th>Stock</th><th>Promos</th><th>SKU</th><th>Último dato</th><th>Muestra usada</th></tr></thead><tbody>{map.points.map(p=><tr key={p.brandKey} className={p.isTarget?styles.targetRow:""}><td><b>{p.brand}</b>{p.isTarget&&<em>Objetivo</em>}</td><td>{money(p.averagePrice)}</td><td>{p.priceIndex.toFixed(1)}</td><td>{pct(p.coveragePct)}</td><td>{pct(p.inStockPct)}</td><td>{pct(p.promoPct)}</td><td>{p.skus}</td><td><small>{observedDate(p.lastObservedAt)}</small></td><td className={styles.sourceSample}><small>{p.sampleProducts?.slice(0,2).join(" · ")||"Productos comparables del universo analizado"}</small></td></tr>)}</tbody></table></div><div className={styles.provenanceNote}><b>Cómo leerlo</b><span>Precio, cobertura, stock, promociones y cantidad de SKU se calculan desde la base monitoreada. La IA interviene en la interpretación de la consulta, selección de competidores y explicación; valida decisiones críticas contra el detalle disponible.</span></div></div>
   </div>;
 }
 

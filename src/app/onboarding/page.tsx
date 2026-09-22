@@ -30,13 +30,14 @@ const ICONS: Record<string, string> = {
   textiles: "✦", technology: "⌘", home: "⌂", beauty: "✧", health: "+",
   toys: "◇", sports: "↗", automotive: "◈", pets: "♢", other: "…",
 };
-const CHANNEL_ICONS: Record<string, string> = { supermarket: "▦", pharmacy: "+", department_store: "▤" };
+const CHANNEL_ICONS: Record<string, string> = { supermarket: "▦", pharmacy: "+", department_store: "▤", home_improvement: "⌂" };
 
 function suggestedChannels(industry: string) {
   if (industry === "health") return ["pharmacy"];
   if (industry === "beauty") return ["pharmacy", "supermarket"];
-  if (["textiles", "technology", "home", "toys", "sports"].includes(industry)) return ["department_store"];
-  if (industry === "all" || industry === "other") return ["supermarket", "pharmacy", "department_store"];
+  if (industry === "home") return ["home_improvement", "department_store"];
+  if (["textiles", "technology", "toys", "sports"].includes(industry)) return ["department_store"];
+  if (industry === "all" || industry === "other") return ["supermarket", "pharmacy", "department_store", "home_improvement"];
   return ["supermarket"];
 }
 
@@ -203,7 +204,7 @@ export default function OnboardingPage() {
       </section>
 
       {isTrial && <section className={styles.step}>
-        <div className={styles.stepHead}><span>02</span><div><b>Canales</b><p>Activa uno o más canales. Puedes combinar supermercados, farmacias y multitiendas.</p></div></div>
+        <div className={styles.stepHead}><span>02</span><div><b>Canales</b><p>Activa uno o más canales. Puedes combinar supermercados, farmacias, multitiendas y hogar/construcción.</p></div></div>
         <div className={styles.channelGrid}>
           {channels.map((channel) => {
             const active = activeChannels.includes(channel.code);
