@@ -1,5 +1,6 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
+import { denyUnlessInternal } from "@/lib/internal-auth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -46,7 +47,9 @@ async function download(url:string,html:string,cookie:string,a:Attachment){const
 function extract(text:string){const lines=text.split(/\r?\n/).map(x=>x.replace(/\s+/g," ").trim()).filter(Boolean); const out:Candidate[]=[]; let p:ReturnType<typeof provider>=null, w:number|null=null; for(let i=0;i<lines.length;i++){const ctx=lines.slice(Math.max(0,i-3),Math.min(lines.length,i+4)).join(" | "); p=provider(ctx)??p; w=weight(ctx)??w; const c=city(lines[i])??city(ctx); const ps=prices(lines[i]); if(!p||!w||!c||!ps.length)continue; if(!/tarifa|precio|valor|monto unitario|oferta economica|costo/.test(norm(ctx)))continue; for(const price of ps)out.push({providerGroup:p.group,providerName:p.name,destination:c.label,weightKg:w,price,confidence:88,evidence:ctx.slice(0,700)});} const uniq=new Map<string,Candidate>(); for(const x of out){const k=`${x.providerGroup}|${x.destination}|${x.weightKg}|${x.price}`; if(!uniq.has(k))uniq.set(k,x);} return [...uniq.values()].slice(0,100);}
 function rateRows(cands:Candidate[],seed:Seed,url:string,a:Attachment){return cands.map(x=>{const c=CITY_DISTANCE[norm(x.destination)]; return {source_record_id:`mp-b2b-${slug(seed.id)}-${slug(a.name)}-${slug(x.providerGroup)}-${slug(x.destination)}-${String(x.weightKg).replace(".","_")}-${x.price}`,source:"mercado_publico_annex",source_kind:"mercado_publico_b2b_rate",source_url:url,category:"courier",provider_name:x.providerName,provider_group:x.providerGroup,buyer_name:seed.buyer,service_type:"Courier / tarifa B2B observada",origin_label:seed.origin,destination_label:x.destination,weight_kg:x.weightKg,distance_km:c?.km??null,shipment_price_clp:x.price,confidence:x.confidence,normalization_method:"mercado_publico_annex_explicit_rate",process_date:seed.processDate,metadata:{processId:seed.id,attachment:a.name,evidence:x.evidence,sourceLayer:"public-sector B2B observed",distanceMethod:"city_centroid_geodesic"}};});}
 
-export async function GET(){
+export async function GET(request: NextRequest){
+  const denied=await denyUnlessInternal(request); if(denied) return denied;
+
   const deadline=Date.now()+50000; const rates:any[]=[]; const extractions:any[]=[]; const warnings:string[]=[]; let pdfsRead=0,attachmentsDetected=0;
   for(const seed of SEEDS){if(Date.now()>=deadline)break; try{const awardUrl=await resolveAward(seed.id); const page=await openAward(awardUrl); const list=attachments(page.html).filter(relevant).slice(0,5); attachmentsDetected+=list.length; for(const a of list){if(Date.now()>=deadline)break; try{const pdf=await download(awardUrl,page.html,page.cookie,a); pdfsRead++; const parsed=await pdfParse(pdf); const text=(parsed.text||"").replace(/\u0000/g,"").trim(); if(text.length<80){extractions.push({processId:seed.id,attachment:a.name,status:"scanned",pages:parsed.numpages??null}); continue;} const c=extract(text); const rr=rateRows(c,seed,awardUrl,a); rates.push(...rr); extractions.push({processId:seed.id,attachment:a.name,status:c.length?"parsed":"no_price",pages:parsed.numpages??null,candidates:c.slice(0,20)});}catch(e){warnings.push(`${seed.id}/${a.name}: ${e instanceof Error?e.message:"error"}`);}}}catch(e){warnings.push(`${seed.id}: ${e instanceof Error?e.message:"error"}`);}}
   const dedup=new Map<string,any>(); for(const r of rates)dedup.set(r.source_record_id,r);

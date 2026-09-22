@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { hasValidInternalToken } from "@/lib/internal-auth";
 
 const DEFAULT_SUPABASE_URL = "https://yfpixszkiakwzrqdcfbw.supabase.co";
 const DEFAULT_PUBLISHABLE_KEY = "sb_publishable_4FrGlw8owGm5EtwMs9V5zQ_oBrH0c0-";
@@ -13,10 +14,29 @@ const PRIVATE_API_PREFIXES = [
   "/api/brand-chat",
   "/api/price-map-ai",
   "/api/data-exports",
+  "/api/data-export-filters",
   "/api/alerts",
   "/api/price-movements",
   "/api/admin",
   "/api/enterprise",
+  "/api/clickhouse",
+  "/api/b2b-pricing",
+  "/api/b2c-pricing",
+  "/api/automotive",
+  "/api/brands",
+  "/api/category-intelligence",
+  "/api/chilexpress",
+  "/api/contextual-pricing-trend",
+  "/api/daily-pricing",
+  "/api/intelligence",
+  "/api/pharmacy-coverage",
+  "/api/usage",
+  "/api/price-optimizer",
+  "/api/weighted-price-pulse",
+  "/api/product-price-trends",
+  "/api/piwen-pricing-chat",
+  "/api/victorinox-pricing-chat",
+  "/api/cascading-filter-options",
 ];
 const PRIVATE_PAGE_PREFIXES = [
   "/dashboard",
@@ -158,6 +178,13 @@ export async function middleware(request: NextRequest) {
     const entryUrl = request.nextUrl.clone();
     entryUrl.pathname = "/entry";
     return applySessionCookies(NextResponse.redirect(entryUrl), session);
+  }
+
+  if (pathname.startsWith("/api/internal")) {
+    const workerOk = await hasValidInternalToken(request);
+    if (!session.authenticated && !workerOk) {
+      return applyHeaders(NextResponse.json({ error: "No autorizado" }, { status: 401 }));
+    }
   }
 
   if (isPrivateApi(pathname) && !session.authenticated) {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { denyUnlessInternal } from "@/lib/internal-auth";
 import { GET as downloadTarget } from "../b2b-target-attachment/route";
 
 export const dynamic = "force-dynamic";
@@ -15,10 +16,14 @@ function outputText(payload: any) {
   return out.join("\n").trim();
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const denied = await denyUnlessInternal(request);
+  if (denied) return denied;
   const apiKey = process.env.OPENAI_API_KEY ?? "";
   if (!apiKey) return NextResponse.json({ error: "OPENAI_API_KEY missing" }, { status: 503 });
-  const sourceRequest = new NextRequest("https://internal.local/api/internal/b2b-target-attachment?key=tarapaca-cotizacion");
+  const sourceRequest = new NextRequest("https://internal.local/api/internal/b2b-target-attachment?key=tarapaca-cotizacion", {
+    headers: request.headers,
+  });
   const fileResponse = await downloadTarget(sourceRequest);
   if (!fileResponse.ok) return NextResponse.json({ error: `source ${fileResponse.status}` }, { status: 502 });
   const pdf = Buffer.from(await fileResponse.arrayBuffer());

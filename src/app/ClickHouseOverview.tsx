@@ -120,6 +120,13 @@ function datasetDate(value: string | null | undefined) {
   }
 }
 
+function freshness(value: string | null | undefined) {
+  if (!value) return { label: "sin observación", stale: true };
+  const ageHours = (Date.now() - new Date(value).getTime()) / 3_600_000;
+  if (!Number.isFinite(ageHours)) return { label: datasetDate(value), stale: true };
+  return { label: datasetDate(value), stale: ageHours > 36 };
+}
+
 function Sparkline({ values }: { values: number[] }) {
   const clean = values.filter((value) => Number.isFinite(value));
   if (clean.length < 2) return <div className={styles.sparkEmpty}/>;
@@ -251,18 +258,19 @@ export default function ClickHouseOverview({ onNavigate }: Props) {
   const priceDrops = (payload?.changes ?? []).filter((item) => item.changePct < 0).slice(0, 4);
   const priceIncreases = (payload?.changes ?? []).filter((item) => item.changePct > 0).slice(0, 4);
   const maxProducts = Math.max(...(payload?.retailers ?? []).map((item) => item.products), 1);
-  const datasetLabel = useMemo(() => datasetDate(payload?.kpis.lastObservedAt), [payload?.kpis.lastObservedAt]);
+  const dataset = useMemo(() => freshness(payload?.kpis.lastObservedAt), [payload?.kpis.lastObservedAt]);
+  const datasetLabel = dataset.label;
 
   return <section className={styles.dashboard}>
     <header className={styles.header}>
       <div>
         <span className={styles.eyebrow}>PRICE INTELLIGENCE</span>
         <h1>Price Intelligence Dashboard</h1>
-        <p>Pricing, promociones y movimientos competitivos calculados en ClickHouse sobre un dataset demo congelado.</p>
+        <p>Pricing, promociones y movimientos competitivos calculados en ClickHouse sobre el histórico sincronizado de tu alcance.</p>
       </div>
       <div className={styles.headerStatus}>
         <span className={styles.liveDot}/>
-        <div><small>DATASET DEMO</small><strong>{datasetLabel}</strong></div>
+        <div><small>{dataset.stale ? "DATOS CON RETRASO" : "DATOS EN VIVO"}</small><strong>{datasetLabel}</strong></div>
         <button onClick={() => void load(false)} disabled={loading} title="Actualizar vista">{loading ? "…" : "↻"}</button>
         <div className={styles.clickhouseBadge}><i>▥</i><span><small>POWERED BY</small><strong>ClickHouse</strong></span></div>
       </div>
@@ -288,7 +296,7 @@ export default function ClickHouseOverview({ onNavigate }: Props) {
 
       <section className={styles.primaryGrid}>
         <article className={`${styles.card} ${styles.trendCard}`}>
-          <header className={styles.cardHead}><div><span>PRICE EVOLUTION</span><h2>Evolución del precio mediano</h2><p>Histórico diario sobre el alcance seleccionado.</p></div><button onClick={() => onNavigate("movements")}>Ver monitoreo →</button></header>
+          <header className={styles.cardHead}><div><span>PRICE EVOLUTION</span><h2>Evolución del precio mediano</h2><p>Histórico diario sobre el alcance seleccionado.</p></div><button onClick={() => onNavigate("price-evolution")}>Ver evolución →</button></header>
           <LineChart points={payload.trend}/>
         </article>
         <article className={`${styles.card} ${styles.retailerCard}`}>
@@ -305,7 +313,7 @@ export default function ClickHouseOverview({ onNavigate }: Props) {
         </article>
 
         <article className={`${styles.card} ${styles.gapsCard}`}>
-          <header className={styles.cardHead}><div><span>PRICE GAPS</span><h2>Principales brechas por marca y categoría</h2><p>Medianas entre retailers; evita mezclarlo con Price Matching SKU a SKU.</p></div><button onClick={() => onNavigate("price-image")}>Ver Price Image →</button></header>
+          <header className={styles.cardHead}><div><span>PRICE GAPS</span><h2>Principales brechas por marca y categoría</h2><p>Medianas entre retailers sobre universos comparables, no matching SKU a SKU.</p></div><button onClick={() => onNavigate("price-gaps")}>Ver brechas →</button></header>
           <div className={styles.gapTable}><div className={styles.gapHeader}><span>Marca / categoría</span><span>Menor</span><span>Mayor</span><span>Brecha</span></div>{payload.gaps.length ? payload.gaps.map((item) => <div className={styles.gapRow} key={`${item.brand}-${item.category}`}><span><strong>{item.brand}</strong><small>{item.category} · {compact(item.products)} SKU</small></span><span><b>{money(item.lowPrice)}</b><small>{item.lowRetailer}</small></span><span><b>{money(item.highPrice)}</b><small>{item.highRetailer}</small></span><em>+{item.gapPct.toFixed(1)}%</em></div>) : <div className={styles.emptyRows}>No hay brechas con al menos dos retailers para este filtro.</div>}</div>
         </article>
 
@@ -316,13 +324,13 @@ export default function ClickHouseOverview({ onNavigate }: Props) {
           </article>
 
           <article className={styles.card}>
-            <header className={styles.railHead}><div><span>PROMOTION OPPORTUNITIES</span><h3>Promociones destacadas</h3></div><button onClick={() => onNavigate("promotions")}>Ver todo</button></header>
+            <header className={styles.railHead}><div><span>PROMOTION OPPORTUNITIES</span><h3>Promociones destacadas</h3></div><button onClick={() => onNavigate("price-alerts")}>Ver alertas</button></header>
             <div className={styles.promoRows}>{payload.promotions.length ? payload.promotions.slice(0, 5).map((item, index) => <div key={`${item.retailer}-${item.name}`}><span className={styles.promoRank}>{index + 1}</span><div><strong>{item.name}</strong><small>{item.retailer} · {money(item.offerPrice)}</small></div><b>-{item.discountPct.toFixed(0)}%</b></div>) : <p className={styles.railEmpty}>No hay promociones visibles con este filtro.</p>}</div>
           </article>
         </aside>
       </section>
 
-      <footer className={styles.footerNote}><span><i/>CLICKHOUSE DEMO</span><p>Los KPI, gráficos, rankings y alertas se calculan en ClickHouse sobre el dataset demo congelado. Supabase continúa capturando la data nueva por separado hasta reactivar la sincronización.</p><small>Datos hasta {datasetLabel}</small></footer>
+      <footer className={styles.footerNote}><span><i/>CLICKHOUSE LIVE</span><p>Los KPI, gráficos, rankings y alertas se calculan en ClickHouse sobre el histórico sincronizado. {dataset.stale ? "La última observación tiene más de 36 horas; el crawl sigue en Supabase." : "La vista se actualiza bajo demanda para no consumir compute innecesario."}</p><small>Último dato {datasetLabel}</small></footer>
     </>}
   </section>;
 }

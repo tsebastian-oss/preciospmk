@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { denyUnlessInternal } from "@/lib/internal-auth";
 import { GET as parseTargets } from "../b2b-parse-targets/route";
 
 export const dynamic = "force-dynamic";
@@ -33,9 +34,11 @@ function compactSheets(sheets: unknown) {
 }
 
 export async function GET(request: NextRequest) {
+  const denied = await denyUnlessInternal(request);
+  if (denied) return denied;
   const key = request.nextUrl.searchParams.get("key");
   if (!key) return NextResponse.json({ error: "key required" }, { status: 400 });
-  const response = await parseTargets();
+  const response = await parseTargets(request);
   const payload = await response.json();
   const target = Array.isArray(payload?.results) ? payload.results.find((item: any) => item?.key === key) : null;
   if (!target) return NextResponse.json({ error: "target not found" }, { status: 404 });
