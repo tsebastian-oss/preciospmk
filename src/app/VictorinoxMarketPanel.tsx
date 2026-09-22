@@ -202,7 +202,6 @@ export default function VictorinoxMarketPanel(){
           <button className={styles.panelAction} onClick={()=>setTab("positioning")}>Abrir arquitectura de precios →</button>
         </article>
       </section>
-      <VictorinoxHistory compact/>
     </>}
 
     {tab==="positioning"&&<VictorinoxPositioning rows={payload.listings} categories={payload.categories}/>}
