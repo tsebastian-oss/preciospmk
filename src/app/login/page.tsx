@@ -21,7 +21,7 @@ export default function LoginPage() {
     const query = new URLSearchParams(window.location.search);
     const clientParam = query.get("client") || "";
     setClient(clientParam);
-    if (clientParam === "victorinox") setEmail("victorinox@mgp-retail.internal");
+    if (clientParam === "victorinox") setEmail("victorinox");
     if (query.get("confirmed") === "1") {
       setNotice("Correo confirmado correctamente. Ya puedes ingresar con tu contraseña.");
     }
