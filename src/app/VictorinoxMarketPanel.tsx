@@ -8,6 +8,7 @@ import VictorinoxMatrix from "./VictorinoxMatrix";
 import VictorinoxHistory from "./VictorinoxHistory";
 import VictorinoxDownloads from "./VictorinoxDownloads";
 import VictorinoxPositioning from "./VictorinoxPositioning";
+import VictorinoxFxExecutive from "./VictorinoxFxExecutive";
 import { trackUsageEvent } from "@/lib/usage-client";
 
 const styles={...baseStyles,...executiveStyles};
@@ -166,6 +167,7 @@ export default function VictorinoxMarketPanel(){
     </nav>
 
     {tab==="overview"&&<>
+      <VictorinoxFxExecutive positions={payload.position}/>
       <section className={styles.executiveHeader}>
         <div><span>RESUMEN EJECUTIVO</span><h2>Posición de mercado por categoría</h2><p>Comparable Price Index usa competidores dentro del corredor central de precios Victorinox (P10–P90). El Market Index completo queda como referencia secundaria.</p></div>
         <button onClick={()=>setTab("copilot")}>Preguntar al analista IA →</button>
