@@ -162,7 +162,7 @@ export default function VictorinoxMarketPanel(){
 
     <nav className={styles.tabs} role="tablist" aria-label="Secciones del panel Victorinox">
       {([
-        ["overview","Resumen ejecutivo"],["positioning","Posicionamiento"],["copilot","Analista IA"],["categories","Categorías"],["matrix","Matriz"],["history","Histórico"],["retailers","Retailers"],["downloads","Exportar"]
+        ["overview","Resumen ejecutivo"],["positioning","Posicionamiento"],["copilot","Analista IA"],["categories","Categorías"],["matrix","Matriz"],["history","Histórico"],["downloads","Exportar"]
       ] as [Tab,string][]).map(([key,label])=><button key={key} role="tab" aria-selected={tab===key} className={tab===key?styles.active:""} onClick={()=>{setTab(key);trackUsageEvent("tab_view",{module:"victorinox-market",metadata:{tab:key}})}}>{label}</button>)}
     </nav>
 
