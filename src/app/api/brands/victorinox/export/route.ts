@@ -6,13 +6,22 @@ import { mergeVictorinoxOfficialMarket } from "@/lib/victorinox-real-market";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-type Numeric = number | string;
-type OfficialHistoryRow = { category: string; date: string; median_price: Numeric; products: Numeric };
-
-function n(value: Numeric | null | undefined) {
-  const parsed = Number(value ?? 0);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
+type MarketHistoryPoint = {
+  date: string;
+  capturedAt?: string;
+  ownMedian: number;
+  benchmarkMedian: number;
+  priceIndex: number;
+  premiumPct: number;
+  ownProducts?: number;
+  competitorProducts?: number;
+  competitorBrands?: number;
+  officialObservedAt?: string;
+  competitionObservedAt?: string;
+};
+type MarketHistoryPayload = {
+  categories?: Array<{ category: string; points?: MarketHistoryPoint[] }>;
+};
 function cell(value: unknown) {
   const raw = value == null ? "" : String(value);
   const text = /^[=+\-@]/.test(raw.trimStart()) ? `'${raw}` : raw;
@@ -47,44 +56,37 @@ export async function GET(request: NextRequest) {
 
   try {
     if (mode === "history") {
-      const [official, competition] = await Promise.all([
-        enterpriseReadRpc<OfficialHistoryRow[]>(request, "brands_vertical_official_history", { p_slug: "victorinox", p_days: 180 }),
-        enterpriseReadRpc<RawRow[]>(request, "victorinox_competition_market_payload", { p_limit_per_brand: 250 }),
-      ]);
-      if (official.response) return official.response;
-      if (competition.response) return competition.response;
+      const history = await enterpriseReadRpc<MarketHistoryPayload>(
+        request,
+        "victorinox_market_history_payload",
+        { p_days: 365 },
+      );
+      if (history.response) return history.response;
 
-      const snapshot = victorinoxMarketFromRows(Array.isArray(competition.data) ? competition.data : []);
-      const positions = new Map(snapshot.position.map((item) => [item.category, item]));
-      const rows = (Array.isArray(official.data) ? official.data : [])
-        .filter((row) => n(row.median_price) > 0)
-        .sort((a, b) => a.date.localeCompare(b.date) || a.category.localeCompare(b.category, "es"))
-        .flatMap((row) => {
-          const position = positions.get(row.category);
-          const benchmark = n(position?.benchmarkMedian);
-          if (!benchmark) return [];
-          const own = n(row.median_price);
-          const index = own / benchmark * 100;
-          return [[
-            row.date,
-            row.category,
-            Math.round(own),
-            Math.round(benchmark),
-            Math.round(index * 10) / 10,
-            Math.round((index - 100) * 10) / 10,
-            n(row.products),
-            position?.competitors.reduce((sum, item) => sum + n(item.skuCount), 0) ?? 0,
-            position?.competitors.length ?? 0,
-            "Última captura competitiva disponible",
-          ]];
-        });
+      const rows = (history.data?.categories ?? [])
+        .flatMap((group) => (group.points ?? []).map((point) => [
+          point.date,
+          point.capturedAt ?? "",
+          group.category,
+          point.ownMedian,
+          point.benchmarkMedian,
+          point.priceIndex,
+          point.premiumPct,
+          point.ownProducts ?? 0,
+          point.competitorProducts ?? 0,
+          point.competitorBrands ?? 0,
+          point.officialObservedAt ?? "",
+          point.competitionObservedAt ?? "",
+          "Captura actual de mercado",
+        ]))
+        .sort((a, b) => String(a[0]).localeCompare(String(b[0])) || String(a[2]).localeCompare(String(b[2]), "es"));
 
       return download(
         csv(
-          ["Fecha", "Categoría", "Mediana Victorinox", "Benchmark observado", "Price Index", "Premium %", "SKU Victorinox", "SKU competencia", "Marcas competencia", "Modo benchmark"],
+          ["Observado mercado", "Capturado", "Categoría", "Mediana Victorinox", "Benchmark mercado", "Price Index", "Premium %", "SKU Victorinox", "SKU competencia", "Marcas competencia", "Observado Victorinox", "Observado competencia", "Modo"],
           rows,
         ),
-        `victorinox-historico-${today}.csv`,
+        `victorinox-capturas-mercado-${today}.csv`,
       );
     }
 
