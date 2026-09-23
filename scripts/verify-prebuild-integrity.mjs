@@ -10,7 +10,7 @@ const exportRoute = readFileSync("src/app/api/clickhouse-export/route.ts", "utf8
 const insight = readFileSync("src/app/ClickHouseInsightViewV2.tsx", "utf8");
 const insightData = readFileSync("src/lib/clickhouse-insights-v2.ts", "utf8");
 const automotive = readFileSync("src/app/AutomotiveIntelligence.tsx", "utf8");
-const automotiveData = readFileSync("src/lib/clickhouse-automotive.ts", "utf8");
+const automotiveData = readFileSync("src/lib/supabase-automotive.ts", "utf8");
 const automotiveRoute = readFileSync("src/app/api/automotive/route.ts", "utf8");
 
 const requiredApp = [
@@ -79,13 +79,13 @@ if (!insight.includes('Marca') || !insight.includes('Producto') || !insight.incl
 if (!insight.includes('/api/clickhouse-insight-v2?')) failures.push('Las vistas lazy no consultan el endpoint ClickHouse V2 dedicado');
 if (!insightData.includes('clickHouseInsightV2') || insightData.toLowerCase().includes('supabase')) failures.push('La analítica lazy V2 no está aislada en ClickHouse');
 
-if (!automotive.includes('Dealer-first · ClickHouse')) failures.push('Automotriz no declara sourcing concesionario + ClickHouse');
+if (!automotive.includes('Dealer-first · Supabase')) failures.push('Automotriz no declara sourcing concesionario + Supabase');
 if (!automotive.includes('<table') || !automotive.includes('Precio lista') || !automotive.includes('Bono financiamiento') || !automotive.includes('Precio final')) failures.push('Automotriz no muestra la tabla de precios requerida');
 if (automotive.includes('<img') || automotive.includes('imageUrl') || automotive.includes('technicalSheetUrl') || automotive.includes('Ver oferta')) failures.push('Automotriz volvió a exponer fotos, fichas o enlaces en vez de la tabla simple');
 if (!automotive.includes('/api/automotive?')) failures.push('Automotriz no usa su endpoint dedicado');
-if (!automotiveData.includes("p.retailer_type = 'automotive'") || automotiveData.toLowerCase().includes('supabase')) failures.push('Automotriz no está aislado analíticamente en ClickHouse');
+if (!automotiveData.includes('automotive_data_rows') || !automotiveData.includes('enterpriseReadRpc')) failures.push('Automotriz no está conectado a la API dedicada de Supabase');
 if (automotiveData.includes('image_url') || automotiveData.includes('technical_sheet_url') || automotiveData.includes('fuel_type')) failures.push('Payload automotriz todavía carga media/ficha en lugar de precios');
-if (!automotiveRoute.includes('clickHouseAutomotiveCatalog')) failures.push('Endpoint automotriz no resuelve catálogo ClickHouse');
+if (!automotiveRoute.includes('supabaseAutomotiveCatalog')) failures.push('Endpoint automotriz no resuelve catálogo Supabase');
 
 if (!downloads.includes('/api/clickhouse-export?mode=meta')) failures.push('Descargas no consulta metadata de ClickHouse');
 if (!downloads.includes('Descargar CSV para Excel')) failures.push('Descargas no ofrece formato amigable para Excel');
@@ -105,4 +105,4 @@ if (failures.length) {
   process.exit(1);
 }
 
-console.log("Prebuild integrity OK: lazy ClickHouse navigation, pricing-only automotive, category analytics, downloads and permissions validated.");
+console.log("Prebuild integrity OK: lazy ClickHouse navigation, Supabase automotive intelligence, category analytics, downloads and permissions validated.");
