@@ -16,6 +16,7 @@ export default function LoginPage() {
   const [client, setClient] = useState("");
 
   const isVictorinox = client === "victorinox";
+  const isAutomotive = client === "automotive";
 
   useEffect(() => {
     const query = new URLSearchParams(window.location.search);
@@ -63,15 +64,15 @@ export default function LoginPage() {
         {isVictorinox ? (
           <img className={styles.clientLogo} src="/victorinox-brand.svg" alt="Victorinox" />
         ) : (
-          <><span>M</span><div><strong>MGP Super Precios</strong><small>Price Intelligence Platform</small></div></>
+          <><span>{isAutomotive ? "A" : "M"}</span><div><strong>{isAutomotive ? "MGP Automotive Intelligence" : "MGP Super Precios"}</strong><small>{isAutomotive ? "Market & Pricing Intelligence" : "Price Intelligence Platform"}</small></div></>
         )}
       </Link>
 
       <section className={`${styles.card} ${isVictorinox ? styles.victorinoxCard : ""}`}>
         {isVictorinox && <img className={styles.heroLogo} src="/victorinox-brand.svg" alt="Victorinox" />}
-        <span className={styles.eyebrow}>{isVictorinox ? "COMMERCIAL & PRICING INTELLIGENCE" : "ACCESO CLIENTES"}</span>
-        <h1>{isVictorinox ? "Bienvenido a Victorinox Intelligence." : "Ingresa a tu plataforma."}</h1>
-        <p>{isVictorinox ? "Accede a pricing, competencia, surtido, retailers, promociones e inteligencia de mercado para Chile." : "Usa el correo y contraseña asociados a tu cuenta."}</p>
+        <span className={styles.eyebrow}>{isVictorinox ? "COMMERCIAL & PRICING INTELLIGENCE" : isAutomotive ? "AUTOMOTIVE MARKET INTELLIGENCE · CHILE" : "ACCESO CLIENTES"}</span>
+        <h1>{isVictorinox ? "Bienvenido a Victorinox Intelligence." : isAutomotive ? "Bienvenido a Automotive Intelligence." : "Ingresa a tu plataforma."}</h1>
+        <p>{isVictorinox ? "Accede a pricing, competencia, surtido, retailers, promociones e inteligencia de mercado para Chile." : isAutomotive ? "Consulta modelos, versiones, precios, bonos y variaciones del mercado automotriz chileno." : "Usa el correo y contraseña asociados a tu cuenta."}</p>
 
         {notice && <div className={styles.success}>{notice}</div>}
 
@@ -89,7 +90,7 @@ export default function LoginPage() {
           <button type="submit" disabled={loading}>{loading ? "Validando…" : "Ingresar"}</button>
         </form>
 
-        <small className={styles.notice}>{isVictorinox ? "Acceso privado · Victorinox Chile · Powered by MGP" : "El acceso y las consultas quedan restringidos a usuarios autenticados."}</small>
+        <small className={styles.notice}>{isVictorinox ? "Acceso privado · Victorinox Chile · Powered by MGP" : isAutomotive ? "Acceso privado · Automotive Intelligence Chile · Powered by MGP" : "El acceso y las consultas quedan restringidos a usuarios autenticados."}</small>
       </section>
     </main>
   );
