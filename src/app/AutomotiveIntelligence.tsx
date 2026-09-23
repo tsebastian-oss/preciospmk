@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import styles from "./AutomotiveIntelligence.module.css";
 
 type AutomotiveOptions = {
-  source: "clickhouse";
+  source: "supabase";
   brands: string[];
   models: { brand: string; model: string }[];
   dealers: string[];
@@ -28,7 +28,7 @@ type AutomotiveVehicle = {
 };
 
 type AutomotivePayload = {
-  source: "clickhouse";
+  source: "supabase";
   sourcePolicy?: "single_source_per_brand";
   summary: {
     brands: number;
@@ -69,7 +69,7 @@ type VariationSummary = {
 };
 
 type VariationsPayload = {
-  source: "clickhouse";
+  source: "supabase";
   sourcePolicy: "single_source_per_brand";
   comparison: "previous_week";
   gradeMethod: "price_rank_per_model";
@@ -94,7 +94,7 @@ type BrandVariationRow = {
 };
 
 type BrandVariationPayload = {
-  source: "clickhouse";
+  source: "supabase";
   sourcePolicy: "single_source_per_brand";
   comparison: BrandComparison;
   comparisonLabel: "semana pasada" | "mes pasado";
@@ -228,7 +228,7 @@ export default function AutomotiveIntelligence() {
         else setPayload(value as AutomotivePayload);
       })
       .catch((cause) => {
-        if (active && (cause as Error)?.name !== "AbortError") setError("No fue posible cargar la inteligencia automotriz desde ClickHouse.");
+        if (active && (cause as Error)?.name !== "AbortError") setError("No fue posible cargar la inteligencia automotriz desde Supabase.");
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; controller.abort(); };
@@ -295,7 +295,7 @@ export default function AutomotiveIntelligence() {
         <h1>{viewCopy.title}</h1>
         <p>{viewCopy.description}</p>
       </div>
-      <div className={styles.sourcePill}><i /> 1 fuente por marca · Dealer-first · ClickHouse</div>
+      <div className={styles.sourcePill}><i /> 1 fuente por marca · Dealer-first · Supabase</div>
     </div>
 
     <nav className={styles.subnav} aria-label="Inteligencia automotriz">
@@ -346,7 +346,7 @@ export default function AutomotiveIntelligence() {
         <b>{integer.format(vehicles.length)} resultados</b>
       </div>
 
-      {loading ? <div className={styles.loading}>Cargando catálogo desde ClickHouse…</div> : null}
+      {loading ? <div className={styles.loading}>Cargando mercado automotriz desde Supabase…</div> : null}
       {!loading && error ? <div className={styles.error}>{error}</div> : null}
       {!loading && !error && vehicles.length === 0 ? <div className={styles.empty}>
         <strong>No hay precios para esta combinación.</strong>

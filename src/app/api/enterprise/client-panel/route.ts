@@ -51,20 +51,26 @@ export async function GET(request: NextRequest) {
 
   const access = authorization.access;
   const configuredBrand = stringSetting(access.settings, "client_panel_brand");
+  const clientPanelKind = stringSetting(access.settings, "client_panel_kind");
   const scopedBrand = access.brands[0] ?? null;
   const brandName = scopedBrand ?? configuredBrand;
   const brandSlug = brandName ? slugify(configuredBrand ?? brandName) : null;
+  const clientAutomotiveMode = !access.isSaasAdmin
+    && (clientPanelKind === "automotive" || access.industrySlug === "automotive");
   const clientBrandMode = !access.isSaasAdmin
+    && !clientAutomotiveMode
     && access.organizationType === "brand"
     && Boolean(brandSlug);
 
   const landing = access.isSaasAdmin
     ? "/"
-    : clientBrandMode
-      ? "/panel"
-      : access.industryConfigured
-        ? "/"
-        : "/onboarding";
+    : clientAutomotiveMode
+      ? "/automotive-panel"
+      : clientBrandMode
+        ? "/panel"
+        : access.industryConfigured
+          ? "/"
+          : "/onboarding";
 
   const response = NextResponse.json({
     isSaasAdmin: access.isSaasAdmin,
@@ -75,6 +81,8 @@ export async function GET(request: NextRequest) {
     brandName: clientBrandMode ? brandName : null,
     brandSlug: clientBrandMode ? brandSlug : null,
     clientBrandMode,
+    clientAutomotiveMode,
+    clientPanelKind,
     landing,
   }, { headers: { "cache-control": "private, no-store, max-age=0" } });
 
