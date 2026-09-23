@@ -67,7 +67,7 @@ const AUTOMOTIVE_SOURCE_PRIORITY: Record<string, string[]> = {
   lexus: ["Bruno Fritsch", "Portillo"],
   mg: ["Cartoni", "Salazar Israel", "Pompeyo Carrasco"],
   mitsubishi: ["Rosselot", "Salazar Israel"],
-  nissan: ["Bruno Fritsch", "Pompeyo Carrasco", "Portillo"],
+  nissan: ["Guillermo Morales"],
   opel: ["Rosselot", "Portillo", "Pompeyo Carrasco"],
   peugeot: ["Rosselot", "Pompeyo Carrasco", "Portillo"],
   porsche: ["Salazar Israel"],
@@ -160,6 +160,15 @@ async function optionRows(request: NextRequest, access: EnterpriseAccessContext)
     { p_organization_id: access.organizationId },
     { attempts: 2, timeoutMs: 15_000 },
   );
+}
+
+export async function supabaseAutomotivePreferredSources(request: NextRequest, access: EnterpriseAccessContext) {
+  const result = await optionRows(request, access);
+  if (result.response) return { response: result.response };
+  return {
+    data: Object.fromEntries(applySingleSourcePolicy(result.data?.rows ?? [])
+      .map((row) => [row.brand, row.dealer])),
+  };
 }
 
 async function dataRows(

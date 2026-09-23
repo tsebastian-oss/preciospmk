@@ -133,14 +133,17 @@ function parseSubaruChile(html: string, url: string, sourceKey: string, dealer: 
 
 function sinotrukDiscovery(html: string, base: string, stage: string): QueueItem[] {
   if (stage !== "root") return [];
-  return hrefs(html, base)
+  const pages = hrefs(html, base)
     .filter((value) => {
       try {
         const parsed = new URL(value);
         return /(^|\.)sinotrukindumotora\.cl$/i.test(parsed.hostname) && /\/modelos\/[^/?#]+\.html$/i.test(parsed.pathname);
       } catch { return false; }
-    })
-    .slice(0, 80)
+    });
+  // Every Bolden page embeds the same complete version/pricing matrix. Crawl one
+  // canonical page so prices aren't overwritten by four duplicate model pages.
+  const canonical = pages.find((page) => /\/bolden-advance\.html$/i.test(new URL(page).pathname)) ?? pages[0];
+  return (canonical ? [canonical] : [])
     .map((url) => ({ kind: "automotive_model_page" as const, stage: "model", url, task_key: `sinotruk-${slug(new URL(url).pathname)}` }));
 }
 
@@ -154,6 +157,56 @@ function collectPrices(rows: string[], start: number, count: number) {
 }
 
 function parseSinotrukIndumotora(html: string, url: string, sourceKey: string, dealer: string): AutomotiveProduct[] {
+  const versionAttr = html.match(/<st-comparador-component\b[^>]*\bdataversions="([^"]+)"/i)?.[1];
+  if (versionAttr) {
+    let versions: { price?: string; SAPCode?: string; version?: string; modelo?: string }[] = [];
+    try { versions = JSON.parse(decodeHtml(versionAttr)); } catch { /* Legacy markup fallback below. */ }
+    if (Array.isArray(versions) && versions.length) {
+      const priceTable = (label: RegExp) => {
+        const matches = [...html.matchAll(/data-subcategory="([^"]+)"/gi)];
+        const marker = matches.find((match) => label.test(decodeHtml(match[1]).trim()));
+        if (!marker || marker.index === undefined) return new Map<string, number>();
+        const next = matches.find((match) => match.index !== undefined && match.index > marker.index!);
+        const section = html.slice(marker.index, next?.index ?? html.length);
+        const values = new Map<string, number>();
+        for (const row of section.matchAll(/data-code="([^"]+)"[\s\S]{0,300}?data-valor-version="([^"]+)"/gi)) {
+          const value = Number(row[2].replace(/[^0-9]/g, ""));
+          if (Number.isFinite(value)) values.set(row[1].replace(/^BOLD/i, ""), value);
+        }
+        return values;
+      };
+      const lists = priceTable(/^Precio lista \(con IVA\)$/i);
+      const brands = priceTable(/^Bono marca$/i);
+      const finance = priceTable(/^Bono Forum$/i);
+      const finals = priceTable(/^Precio final \(con IVA\)$/i);
+      const products: AutomotiveProduct[] = [];
+      for (const item of versions) {
+        const code = String(item.SAPCode ?? "");
+        const model = clean(item.modelo?.replace(/^Sinotruk\s+/i, ""), 180);
+        const version = clean(item.version, 220);
+        const list = lists.get(code) ?? 0;
+        const brandBonus = brands.get(code) ?? 0;
+        const financeBonus = finance.get(code) ?? 0;
+        const final = finals.get(code) ?? 0;
+        if (!code || !model || !version || list < 1_000_000 || final < 1_000_000 || final > list) continue;
+        if (Math.abs(list - brandBonus - financeBonus - final) > 1) continue;
+        products.push({
+          external_id: `${sourceKey}:${slug(`${model}-${version}`)}`,
+          source_key: sourceKey, brand: "Sinotruk", model, version,
+          name: `Sinotruk ${model} · ${version}`, body_type: "Camioneta", url,
+          list_price: list, cash_price: list - brandBonus, final_price: final,
+          metadata: {
+            parser: sourceKey, dealer, source_type: "brand", capture_scope: "version_pricing",
+            price_confidence: "official_indumotora_structured_version_table",
+            identity_source: "sap_version_code", source_version_id: code,
+            brand_bonus: brandBonus, finance_bonus: financeBonus, dealer_bonus: 0, online_bonus: 0,
+            final_price_condition: financeBonus > 0 ? "financing_required" : "all_payment_methods",
+          },
+        });
+      }
+      return products;
+    }
+  }
   const rows = htmlLines(html);
   const countLine = rows.findIndex((row) => /Tenemos\s+\d+\s+versiones disponibles/i.test(row));
   if (countLine < 0) return [];

@@ -79,7 +79,7 @@ if (!insight.includes('Marca') || !insight.includes('Producto') || !insight.incl
 if (!insight.includes('/api/clickhouse-insight-v2?')) failures.push('Las vistas lazy no consultan el endpoint ClickHouse V2 dedicado');
 if (!insightData.includes('clickHouseInsightV2') || insightData.toLowerCase().includes('supabase')) failures.push('La analítica lazy V2 no está aislada en ClickHouse');
 
-if (!automotive.includes('Dealer-first · Supabase')) failures.push('Automotriz no declara sourcing concesionario + Supabase');
+if (!automotive.includes('1 fuente prioritaria por marca') || !automotive.includes('/api/automotive?')) failures.push('Automotriz no declara sourcing concesionario + Supabase');
 if (!automotive.includes('<table') || !automotive.includes('Precio lista') || !automotive.includes('Bono financiamiento') || !automotive.includes('Precio final')) failures.push('Automotriz no muestra la tabla de precios requerida');
 if (automotive.includes('<img') || automotive.includes('imageUrl') || automotive.includes('technicalSheetUrl') || automotive.includes('Ver oferta')) failures.push('Automotriz volvió a exponer fotos, fichas o enlaces en vez de la tabla simple');
 if (!automotive.includes('/api/automotive?')) failures.push('Automotriz no usa su endpoint dedicado');

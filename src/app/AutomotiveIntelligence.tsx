@@ -41,7 +41,24 @@ type AutomotivePayload = {
 };
 
 type Grade = "entry" | "mid" | "top";
-type AutomotiveView = "catalog" | "variations" | "brand_variations";
+type AutomotiveView = "catalog" | "variations" | "brand_variations" | "monthly" | "downloads";
+type PriceType = "final" | "cash" | "list";
+type MonthlyPoint = {
+  month: string;
+  percentageChange: number | null;
+  averagePrice: number | null;
+  brands: number;
+  versions: number;
+  comparableBrands: number;
+  comparableVersions: number;
+  observations: number;
+  isPartial: boolean;
+};
+type MonthlyPayload = { months: MonthlyPoint[]; methodology: string };
+const PRICE_LABELS: Record<PriceType, string> = { final: "Precio final publicado", cash: "Precio contado", list: "Precio lista" };
+function monthLabel(month: string) {
+  return new Date(`${month.slice(0, 7)}-01T12:00:00Z`).toLocaleDateString("es-CL", { month: "short", year: "numeric", timeZone: "UTC" });
+}
 type BrandComparison = "previous_week" | "previous_month";
 
 type VariationRow = {
@@ -158,6 +175,14 @@ const GRADE_COPY: Record<Grade, { label: string; description: string }> = {
 };
 
 const VIEW_COPY: Record<AutomotiveView, { title: string; description: string }> = {
+  monthly: {
+    title: "Evolución mensual de precios",
+    description: "Sigue la variación promedio de la industria observada, mes a mes, con versiones y fuentes comparables.",
+  },
+  downloads: {
+    title: "Bases de datos e históricos",
+    description: "Descarga las capturas históricas completas en Excel para realizar tus propios análisis.",
+  },
   catalog: {
     title: "Mercado automotriz",
     description: "Modelo, versión y estructura de precio con una única fuente prioritaria por marca.",
@@ -177,6 +202,11 @@ export default function AutomotiveIntelligence() {
   const [payload, setPayload] = useState<AutomotivePayload | null>(null);
   const [variations, setVariations] = useState<VariationsPayload | null>(null);
   const [brandVariations, setBrandVariations] = useState<BrandVariationPayload | null>(null);
+  const [monthly, setMonthly] = useState<MonthlyPayload | null>(null);
+  const [priceType, setPriceType] = useState<PriceType>("final");
+  const [downloading, setDownloading] = useState<"all" | "filtered" | null>(null);
+  const [downloadError, setDownloadError] = useState("");
+  const [downloadSuccess, setDownloadSuccess] = useState("");
   const [view, setView] = useState<AutomotiveView>("catalog");
   const [grade, setGrade] = useState<Grade>("entry");
   const [comparison, setComparison] = useState<BrandComparison>("previous_week");
@@ -202,11 +232,16 @@ export default function AutomotiveIntelligence() {
   }, []);
 
   useEffect(() => {
+    if (view === "downloads") { setLoading(false); setError(""); return; }
     const controller = new AbortController();
     let active = true;
     setLoading(true);
     setError("");
     const params = new URLSearchParams();
+    if (view === "monthly") {
+      params.set("mode", "monthly");
+      params.set("priceType", priceType);
+    }
     if (view === "variations") params.set("mode", "variations");
     if (view === "brand_variations") {
       params.set("mode", "brand_variations");
@@ -219,11 +254,12 @@ export default function AutomotiveIntelligence() {
     fetch(`/api/automotive?${params.toString()}`, { credentials: "same-origin", signal: controller.signal })
       .then(async (response) => {
         if (!response.ok) throw new Error("automotive_failed");
-        return await response.json() as AutomotivePayload | VariationsPayload | BrandVariationPayload;
+        return await response.json() as AutomotivePayload | VariationsPayload | BrandVariationPayload | MonthlyPayload;
       })
       .then((value) => {
         if (!active) return;
-        if (view === "variations") setVariations(value as VariationsPayload);
+        if (view === "monthly") setMonthly(value as MonthlyPayload);
+        else if (view === "variations") setVariations(value as VariationsPayload);
         else if (view === "brand_variations") setBrandVariations(value as BrandVariationPayload);
         else setPayload(value as AutomotivePayload);
       })
@@ -232,7 +268,7 @@ export default function AutomotiveIntelligence() {
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; controller.abort(); };
-  }, [view, comparison, brand, model, dealer]);
+  }, [view, comparison, brand, model, dealer, priceType]);
 
   useEffect(() => {
     if (view !== "brand_variations" || !brandVariations) return;
@@ -288,6 +324,45 @@ export default function AutomotiveIntelligence() {
   const chartBaseline = 145;
   const chartAmplitude = 108;
 
+  const monthlyPoints = monthly?.months ?? [];
+  const lastMonth = monthlyPoints.at(-1);
+  const monthlyScale = Math.max(1, ...monthlyPoints.map((point) => Math.abs(point.percentageChange ?? 0)));
+  const monthlyWidth = Math.max(760, monthlyPoints.length * 92 + 80);
+  const monthX = (index: number) => 74 + index * ((monthlyWidth - 120) / Math.max(1, monthlyPoints.length - 1));
+  const monthY = (value: number) => 150 - value / monthlyScale * 98;
+  const hasFilters = Boolean(brand || model || dealer);
+
+  async function downloadHistory(scope: "all" | "filtered") {
+    setDownloading(scope);
+    setDownloadError("");
+    setDownloadSuccess("");
+    try {
+      const params = new URLSearchParams({ scope });
+      if (scope === "filtered") {
+        if (brand) params.set("brand", brand);
+        if (model) params.set("model", model);
+        if (dealer) params.set("dealer", dealer);
+      }
+      const response = await fetch(`/api/automotive/export?${params}`, { credentials: "same-origin" });
+      if (!response.ok) {
+        const problem = await response.json().catch(() => null);
+        throw new Error(problem?.message || "No fue posible generar el Excel. Intenta nuevamente.");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `automotriz-historico-${scope === "all" ? "completo" : "filtrado"}-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      setDownloadSuccess("Excel generado. Revisa las descargas de tu navegador.");
+    } catch (cause) {
+      setDownloadError(cause instanceof Error ? cause.message : "No fue posible descargar el histórico.");
+    } finally { setDownloading(null); }
+  }
+
   return <section className={styles.root}>
     <div className={styles.hero}>
       <div className={styles.heroCopy}>
@@ -295,16 +370,18 @@ export default function AutomotiveIntelligence() {
         <h1>{viewCopy.title}</h1>
         <p>{viewCopy.description}</p>
       </div>
-      <div className={styles.sourcePill}><i /> 1 fuente por marca · Dealer-first · Supabase</div>
+      <div className={styles.sourcePill}><i /> {view === "downloads" ? "Histórico de todas las fuentes" : "1 fuente prioritaria por marca"}</div>
     </div>
 
     <nav className={styles.subnav} aria-label="Inteligencia automotriz">
       <button type="button" className={view === "catalog" ? styles.subnavActive : ""} onClick={() => setView("catalog")}>Mercado automotriz</button>
       <button type="button" className={view === "variations" ? styles.subnavActive : ""} onClick={() => setView("variations")}>Variaciones de precio</button>
       <button type="button" className={view === "brand_variations" ? styles.subnavActive : ""} onClick={() => setView("brand_variations")}>Variación por marca</button>
+      <button type="button" className={view === "monthly" ? styles.subnavActive : ""} onClick={() => setView("monthly")}>Evolución mensual</button>
+      <button type="button" className={view === "downloads" ? styles.subnavActive : ""} onClick={() => setView("downloads")}>Descargar bases</button>
     </nav>
 
-    <div className={`${styles.filters} ${view === "brand_variations" ? styles.filtersWithComparison : ""}`}>
+    <div className={`${styles.filters} ${(view === "brand_variations" || view === "monthly") ? styles.filtersWithComparison : ""}`}>
       <label>Marca
         <select value={brand} onChange={(event) => { setBrand(event.target.value); setModel(""); }}>
           <option value="">Todas las marcas</option>
@@ -329,8 +406,64 @@ export default function AutomotiveIntelligence() {
           <option value="previous_month">Mes pasado</option>
         </select>
       </label> : null}
+      {view === "monthly" ? <label>Tipo de precio
+        <select value={priceType} onChange={(event) => setPriceType(event.target.value as PriceType)}>
+          {Object.entries(PRICE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+        </select>
+      </label> : null}
       <button type="button" className={styles.clear} onClick={() => { setBrand(""); setModel(""); setDealer(""); }}>Limpiar</button>
     </div>
+
+
+    {view === "monthly" ? <>
+      {loading ? <div className={styles.loading}>Construyendo evolución mensual con las capturas históricas…</div> : null}
+      {!loading && error ? <div className={styles.error}>{error}</div> : null}
+      {!loading && !error && !monthlyPoints.length ? <div className={styles.empty}><strong>No hay capturas para estos filtros.</strong><p>El histórico se construye con lecturas reales del mercado. Los meses sin capturas no se estiman.</p></div> : null}
+      {!loading && !error && monthlyPoints.length > 0 ? <>
+        <div className={styles.summary}>
+          <div className={styles.metric}><span>Último mes observado</span><strong>{lastMonth ? monthLabel(lastMonth.month) : "—"}</strong><small>{lastMonth?.isPartial ? "Mes en curso · datos parciales" : "Mes cerrado"}</small></div>
+          <div className={styles.metric}><span>Variación mensual</span><strong className={variationClass(lastMonth?.percentageChange)}>{formatPercentage(lastMonth?.percentageChange)}</strong><small>vs mes calendario anterior</small></div>
+          <div className={styles.metric}><span>Marcas comparables</span><strong>{integer.format(lastMonth?.comparableBrands ?? 0)} / {integer.format(lastMonth?.brands ?? 0)}</strong><small>cobertura del último mes</small></div>
+          <div className={styles.metric}><span>Versiones comparables</span><strong>{integer.format(lastMonth?.comparableVersions ?? 0)} / {integer.format(lastMonth?.versions ?? 0)}</strong><small>misma versión y fuente</small></div>
+          <div className={styles.metric}><span>Meses registrados</span><strong>{integer.format(monthlyPoints.filter((point) => point.observations > 0).length)}</strong><small>capturas reales del mercado</small></div>
+        </div>
+        <div className={styles.sectionHeader}><div><h2>{hasFilters ? "Evolución de la selección" : "Variación promedio de la industria observada"}</h2><p>{PRICE_LABELS[priceType]} · Variación porcentual respecto del mes anterior.</p></div></div>
+        <div className={styles.chartShell}>
+          <div className={styles.chartLegend}><span><i className={styles.legendMonthly} /> Variación mensual</span><span>○ Mes en curso</span><span>— Sin comparación disponible</span></div>
+          <div className={styles.chartScroller}>
+            <svg className={styles.brandChart} width={monthlyWidth} height="316" viewBox={`0 0 ${monthlyWidth} 316`} role="img" aria-label="Evolución de la variación promedio mensual de precios; detalle disponible en la tabla siguiente">
+              {[-1, 0, 1].map((tick) => <g key={tick}><line x1="54" x2={monthlyWidth - 22} y1={monthY(tick * monthlyScale)} y2={monthY(tick * monthlyScale)} className={tick === 0 ? styles.zeroLine : styles.monthGrid} /><text x="45" y={monthY(tick * monthlyScale) + 4} textAnchor="end" className={styles.zeroLabel}>{formatPercentage(tick * monthlyScale)}</text></g>)}
+              {monthlyPoints.map((point, index) => {
+                const previous = monthlyPoints[index - 1];
+                const value = point.percentageChange;
+                const x = monthX(index);
+                return <g key={point.month}>
+                  <title>{`${monthLabel(point.month)}: ${formatPercentage(value)} · ${point.comparableBrands} marcas y ${point.comparableVersions} versiones comparables${point.isPartial ? " · Mes parcial" : ""}`}</title>
+                  {value !== null && previous?.percentageChange != null ? <line x1={monthX(index - 1)} y1={monthY(previous.percentageChange)} x2={x} y2={monthY(value)} className={styles.monthLine} /> : null}
+                  {value !== null ? <><circle cx={x} cy={monthY(value)} r="5" className={point.isPartial ? styles.monthPartial : styles.monthPoint} /><text x={x} y={monthY(value) - 14} textAnchor="middle" className={styles.chartValue}>{formatPercentage(value)}</text></> : <text x={x} y="267" textAnchor="middle" className={styles.zeroLabel}>Sin comparación</text>}
+                  <text x={x} y="291" textAnchor="middle" className={styles.chartBrand}>{monthLabel(point.month)}{point.isPartial ? " *" : ""}</text>
+                </g>;
+              })}
+            </svg>
+          </div>
+        </div>
+        <p className={styles.methodology}>Cada mes utiliza la última captura disponible de cada versión y fuente. Se compara con el mes calendario inmediatamente anterior; la industria es el promedio simple de las variaciones por marca. No se pondera por ventas. Los cambios de fuente, versiones nuevas y precios faltantes quedan fuera de la comparación. El mes en curso es parcial y los meses sin comparación quedan vacíos.</p>
+        {!monthlyPoints.some((point) => point.percentageChange !== null) ? <div className={styles.empty}><strong>Ya hay capturas; falta un segundo mes comparable.</strong><p>La curva aparecerá cuando existan observaciones de las mismas versiones y fuentes en meses consecutivos.</p></div> : null}
+        <div className={styles.tableShell}><table className={`${styles.table} ${styles.monthTable}`}><thead><tr><th>Mes</th><th>Variación mensual</th><th>Precio medio observado</th><th>Marcas comparables / total</th><th>Versiones comparables / total</th><th>Capturas</th><th>Estado</th></tr></thead><tbody>{monthlyPoints.map((point) => <tr key={point.month}><td><strong>{monthLabel(point.month)}</strong></td><td className={variationClass(point.percentageChange)}>{formatPercentage(point.percentageChange)}</td><td>{formatPrice(point.averagePrice ?? 0)}</td><td>{integer.format(point.comparableBrands)} / {integer.format(point.brands)}</td><td>{integer.format(point.comparableVersions)} / {integer.format(point.versions)}</td><td>{integer.format(point.observations)}</td><td>{!point.observations ? "Sin capturas" : point.isPartial ? "Mes parcial" : "Mes cerrado"}</td></tr>)}</tbody></table></div>
+        <p className={styles.methodology}>El precio final puede incluir condiciones comerciales o de financiamiento según la fuente. El precio contado solo se compara cuando está registrado explícitamente en ambas capturas. El precio medio observado describe la oferta capturada y puede cambiar por su composición; la variación mensual utiliza únicamente versiones comparables.</p>
+      </> : null}
+    </> : null}
+
+    {view === "downloads" ? <>
+      <div className={styles.downloadGrid}>
+        <div className={styles.downloadCard}><span className={styles.downloadTag}>EXCEL · HISTÓRICO COMPLETO</span><h2>Todas las capturas del mercado</h2><p>Descarga todas las marcas, modelos, versiones y fuentes con sus observaciones históricas y estructura de precios. Incluye el historial disponible desde la primera captura, aunque cambie la fuente prioritaria.</p><p className={styles.downloadNote}>Esta descarga incluye todas las fechas y no aplica los filtros de la pantalla.</p><button type="button" className={styles.downloadButton} disabled={downloading !== null} onClick={() => void downloadHistory("all")}>{downloading === "all" ? "Generando Excel completo…" : "Descargar histórico completo (.xlsx)"}</button></div>
+        <div className={styles.downloadCard}><span className={styles.downloadTag}>EXCEL · SELECCIÓN ACTUAL</span><h2>Histórico de tu selección</h2><p>Exporta todas las fechas disponibles para la marca, modelo y fuente que selecciones en los filtros superiores.</p><div className={styles.filterSelection}>{[brand, model, dealer].filter(Boolean).join(" · ") || "Selecciona al menos un filtro para preparar una base específica."}</div><button type="button" className={styles.downloadSecondary} disabled={downloading !== null || !hasFilters} onClick={() => void downloadHistory("filtered")}>{downloading === "filtered" ? "Generando Excel filtrado…" : "Descargar selección (.xlsx)"}</button></div>
+      </div>
+      <p className={styles.methodology}>Los históricos contienen las lecturas efectivamente capturadas. No se reconstruyen precios anteriores a la primera observación. La base crecerá con cada nueva corrida de captura.</p>
+      {downloading ? <div className={styles.loading} role="status">Preparando el archivo con todas las observaciones. La descarga comenzará al terminar.</div> : null}
+      {downloadError ? <div className={styles.error} role="alert">{downloadError}</div> : null}
+      {downloadSuccess ? <div className={styles.downloadSuccess} role="status">{downloadSuccess}</div> : null}
+    </> : null}
 
     {view === "catalog" ? <>
       <div className={styles.summary}>

@@ -1,6 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { clean, discover, parseProducts, slug, type AutomotiveProduct } from "./parsers.ts";
 import { discoverMarket, parseMarketProducts } from "./market-parsers-v4.ts";
+import { discoverNissanGuillermoMorales, parseNissanGuillermoMorales } from "./nissan-parser.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -181,9 +182,17 @@ async function processTask(task: Task) {
   if (!url) throw new Error("automotive_url_missing");
 
   const html = await fetchHtml(url, Number.isFinite(delayMs) ? delayMs : 800);
-  const marketProducts = parseMarketProducts(parser, html, url, sourceKey, task.supermarket);
+  const isNissanGM = parser === "nissan_guillermo_morales";
+  const marketProducts = isNissanGM
+    ? parseNissanGuillermoMorales(html, url, sourceKey, task.supermarket)
+    : parseMarketProducts(parser, html, url, sourceKey, task.supermarket);
   const rawProducts = marketProducts ?? parseProducts(parser, html, url, sourceKey, task.supermarket, task.kind);
-  const products = enforceUrlIdentity(parser, url, sourceKey, rawProducts);
+  // A catalog title is not a car brand (Portillo previously emitted a vehicle called "Nuevo").
+  const products = enforceUrlIdentity(parser, url, sourceKey, rawProducts)
+    .filter((product) => product.brand.trim() && !/^(nuevo|nuevos|versiones|autos)$/i.test(product.brand.trim()));
+  if (task.kind === "automotive_model_page" && !products.length) {
+    throw new Error(`automotive_no_priced_products_${parser}`);
+  }
 
   const expectedProducts = Number(task.payload?.expected_products ?? 0);
   if (
@@ -203,11 +212,14 @@ async function processTask(task: Task) {
   const ingested = skipCartoniCatalogIngest ? 0 : await ingest(task, products);
 
   if (task.kind === "automotive_dealer_catalog") {
-    const marketItems = discoverMarket(parser, html, url, stage);
+    const marketItems = isNissanGM
+      ? discoverNissanGuillermoMorales(html, url, stage)
+      : discoverMarket(parser, html, url, stage);
     const discoveredItems = marketItems ?? discover(parser, html, url, stage);
     const items = parser === "cartoni" && stage === "brand"
       ? withCartoniExpectedProducts(html, url, discoveredItems)
       : discoveredItems;
+    if (!products.length && !items.length) throw new Error(`automotive_empty_catalog_${parser}`);
     const enqueued = items.length
       ? await rpcWithRetry<number>("enqueue_automotive_tasks_service", { p_parent_task_id: task.id, p_items: items })
       : 0;

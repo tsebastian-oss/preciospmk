@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { enterpriseAccess } from "@/lib/enterprise-auth";
+import { enterpriseAccess, enterpriseReadRpc } from "@/lib/enterprise-auth";
 import {
   supabaseAutomotiveBrandVariations,
   supabaseAutomotiveCatalog,
   supabaseAutomotiveOptions,
+  supabaseAutomotivePreferredSources,
   supabaseAutomotiveVariations,
   type AutomotiveBrandComparison,
 } from "@/lib/supabase-automotive";
@@ -28,6 +29,25 @@ export async function GET(request: NextRequest) {
   };
 
   try {
+    if (params.get("mode") === "monthly") {
+      const priceType = params.get("priceType") ?? "final";
+      if (!["final", "list", "cash"].includes(priceType)) {
+        return NextResponse.json({ error: "Tipo de precio inválido." }, { status: 400 });
+      }
+      const preferred = await supabaseAutomotivePreferredSources(request, authorization.access);
+      if (preferred.response) return preferred.response;
+      const result = await enterpriseReadRpc(request, "automotive_monthly_history", {
+        p_organization_id: authorization.access.organizationId,
+        p_brand: filters.brand || null,
+        p_model: filters.model || null,
+        p_dealer: filters.dealer || null,
+        p_price_type: priceType,
+        p_sources: preferred.data ?? {},
+      }, { attempts: 2, timeoutMs: 25_000 });
+      if (result.response) return result.response;
+      return NextResponse.json(result.data, { headers: LIVE_DATA_HEADERS });
+    }
+
     if (params.get("options") === "1") {
       const result = await supabaseAutomotiveOptions(request, authorization.access);
       if (result.response) return result.response;
