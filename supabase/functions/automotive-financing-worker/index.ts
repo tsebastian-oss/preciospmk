@@ -92,17 +92,19 @@ function santander(source: Source, text: string): Observation[] {
   }];
 }
 function scotia(source: Source, text: string): Observation[] {
-  const rate = pct(match(text, /12 a 36 Cuotas al\s*([0-9]+(?:[,.][0-9]+)?)% mensual/i));
-  const cae = pct(match(text, /CAE:\s*([0-9]+(?:[,.][0-9]+)?)%\s*Costo Total del Crédito:\s*\$?\s*([0-9.]+)/i));
-  const ctc = money(text.match(/12 a 36 Cuotas al[\s\S]{0,900}?Costo Total del Crédito:\s*\$?\s*([0-9.]+)/i)?.[1]);
-  const amount = money(text.match(/12 a 36 Cuotas al[\s\S]{0,1000}?monto de\s*\$?\s*([0-9.]+)\s*en 36 cuotas/i)?.[1]);
+  const scoped = text.match(/12 a 36 Cuotas al[\s\S]{0,1800}/i)?.[0] || text;
+  const rate = pct(match(scoped, /12 a 36 Cuotas al\s*([0-9]+(?:[,.][0-9]+)?)% mensual/i));
+  const cae = pct(match(scoped, /CAE\s*:?\s*([0-9]+(?:[,.][0-9]+)?)%/i));
+  const ctc = money(match(scoped, /Costo Total del Crédito\s*:?\s*\$?\s*([0-9.]+)/i));
+  const amount = money(match(scoped, /monto de\s*\$?\s*([0-9.]+)\s*en 36 cuotas/i));
   if (rate === null) return [];
   return [{ ...base(source), monthly_rate_pct: rate, cae_pct: cae, loan_amount: amount, credit_total_cost: ctc, term_months: 36, installments_count: 36, confidence: "published", raw_payload: { termRange: "12-36", category: "automotoras" } }];
 }
 function bancoChile(source: Source, text: string): Observation[] {
-  const cae = pct(match(text, /compra referencial[^.]{0,100}CAE:\s*([0-9]+(?:[,.][0-9]+)?)%/i));
-  const amount = money(match(text, /compra referencial de\s*\$?\s*([0-9.]+)/i));
-  const ctc = money(match(text, /Costo Total:\s*\$?\s*([0-9.]+)/i));
+  const scoped = text.match(/compra referencial[\s\S]{0,600}/i)?.[0] || text;
+  const cae = pct(match(scoped, /CAE\s*:?\s*([0-9]+(?:[,.][0-9]+)?)%/i));
+  const amount = money(match(scoped, /compra referencial de\s*\$?\s*([0-9.]+)/i));
+  const ctc = money(match(scoped, /Costo Total\s*:?\s*\$?\s*([0-9.]+)/i));
   if (!/3 cuotas sin interés/i.test(text)) return [];
   return [{ ...base(source), monthly_rate_pct: 0, cae_pct: cae, loan_amount: amount, credit_total_cost: ctc, term_months: 3, installments_count: 3, confidence: "published", raw_payload: { category: "compras nacionales", taxesApply: true } }];
 }
@@ -190,8 +192,15 @@ Deno.serve(async (request) => {
       results.push({ source: source.source_key, ok: true, observations: rows.length });
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      await status(source, "error", message.slice(0, 800));
-      results.push({ source: source.source_key, ok: false, error: message });
+      if (["forum_conditions","tanner_conditions","amicar_conditions","gm_conditions","bci_card_auto","bancoestado_card"].includes(source.parser_key)) {
+        const fallback = conditions(source, "");
+        await save(fallback);
+        await status(source, "fallback_conditions", message.slice(0, 800));
+        results.push({ source: source.source_key, ok: true, fallback: true, observations: fallback.length });
+      } else {
+        await status(source, "error", message.slice(0, 800));
+        results.push({ source: source.source_key, ok: false, error: message });
+      }
     }
     await new Promise((resolve) => setTimeout(resolve, 350));
   }
