@@ -177,7 +177,7 @@ export default function AutomotiveFinancing({vehicles}:{vehicles:Vehicle[]}) {
         <div className={styles.panelHeader}><div><h2>Cobertura de fuentes</h2><p>Estado operativo del crawler diario.</p></div><span>Actualización diaria</span></div>
         <div className={styles.sourceGrid}>{payload.sources.map(s=><a key={s.id} href={s.sourceUrl} target="_blank" rel="noreferrer">
           <div><strong>{s.provider}</strong><small>{s.productName}</small></div>
-          <span className={s.lastStatus==="ok"?styles.ok:s.lastStatus==="error"?styles.bad:styles.pending}>{s.lastStatus==="ok"?"OK":s.lastStatus==="fallback_conditions"?"Fallback":s.lastStatus==="no_structured_offer"?"Referencia":s.lastStatus==="error"?"Error":"Pendiente"}</span>
+          <span className={s.lastStatus==="ok"?styles.ok:(s.lastStatus==="error"||s.lastStatus==="blocked_403")?styles.bad:styles.pending}>{s.lastStatus==="ok"?"OK":s.lastStatus==="fallback_conditions"?"Fallback":s.lastStatus==="no_structured_offer"?"Referencia":s.lastStatus==="blocked_403"?"Bloqueado":s.lastStatus==="error"?"Error":"Pendiente"}</span>
         </a>)}</div>
       </section>
     </>:null}
