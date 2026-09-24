@@ -100,6 +100,31 @@ function scotia(source: Source, text: string): Observation[] {
   if (rate === null) return [];
   return [{ ...base(source), monthly_rate_pct: rate, cae_pct: cae, loan_amount: amount, credit_total_cost: ctc, term_months: 36, installments_count: 36, confidence: "published", raw_payload: { termRange: "12-36", category: "automotoras" } }];
 }
+function bancoChileAuto(source: Source, text: string): Observation[] {
+  const scoped = text.match(/tasa preferencial[\s\S]{0,1800}/i)?.[0] || text;
+  const rate = pct(match(scoped, /([0-9]+(?:[,.][0-9]+)?)%\s*mensual/i));
+  const annual = pct(match(scoped, /\(([0-9]+(?:[,.][0-9]+)?)%\s*anual\)/i));
+  const cae = pct(match(scoped, /CAE\s*:?\s*([0-9]+(?:[,.][0-9]+)?)%/i));
+  const amount = money(match(scoped, /compra referencial de\s*\$?\s*([0-9.]+)/i));
+  const count = Number(match(scoped, /en\s*([0-9]{1,2})\s*cuotas/i) || 0) || null;
+  const installment = money(match(scoped, /[0-9]{1,2}\s*cuotas de\s*\$?\s*([0-9.]+)/i));
+  const ctc = money(match(scoped, /Costo total\s*:?\s*\$?\s*([0-9.]+)/i));
+  if (rate === null) return [];
+  return [{
+    ...base(source),
+    monthly_rate_pct: rate,
+    annual_rate_pct: annual,
+    cae_pct: cae,
+    loan_amount: amount,
+    term_months: count,
+    installments_count: count,
+    installment_amount: installment,
+    credit_total_cost: ctc,
+    confidence: "published",
+    raw_payload: { category: "automotriz", termRange: "13-36", merchantEligibility: true },
+  }];
+}
+
 function bancoChile(source: Source, text: string): Observation[] {
   const scoped = text.match(/compra referencial[\s\S]{0,600}/i)?.[0] || text;
   const cae = pct(match(scoped, /CAE\s*:?\s*([0-9]+(?:[,.][0-9]+)?)%/i));
@@ -202,6 +227,7 @@ function parse(source: Source, text: string) {
   if (source.parser_key === "maf_toyota") return mafToyota(source, text);
   if (source.parser_key === "santander_promo") return santander(source, text);
   if (source.parser_key === "scotia_card_auto") return scotia(source, text);
+  if (source.parser_key === "bch_card_auto") return bancoChileAuto(source, text);
   if (source.parser_key === "bch_card_general") return bancoChile(source, text);
   return conditions(source, text);
 }
