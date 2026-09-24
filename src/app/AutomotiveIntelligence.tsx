@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import styles from "./AutomotiveIntelligence.module.css";
+import AutomotiveFinancing from "./AutomotiveFinancing";
 
 type AutomotiveOptions = {
   source: "supabase";
@@ -41,7 +42,7 @@ type AutomotivePayload = {
 };
 
 type Grade = "entry" | "mid" | "top";
-type AutomotiveView = "catalog" | "variations" | "brand_variations" | "monthly" | "downloads";
+type AutomotiveView = "catalog" | "variations" | "brand_variations" | "monthly" | "financing" | "downloads";
 type PriceType = "final" | "cash" | "list";
 type MonthlyPoint = {
   month: string;
@@ -175,6 +176,10 @@ const GRADE_COPY: Record<Grade, { label: string; description: string }> = {
 };
 
 const VIEW_COPY: Record<AutomotiveView, { title: string; description: string }> = {
+  financing: {
+    title: "Financiamiento",
+    description: "Compara financieras automotrices y tarjetas de crédito con tasas, CAE, cuotas, bonos y costo total bajo un mismo escenario.",
+  },
   monthly: {
     title: "Evolución mensual de precios",
     description: "Sigue la variación promedio de la industria observada, mes a mes, con versiones y fuentes comparables.",
@@ -232,7 +237,7 @@ export default function AutomotiveIntelligence() {
   }, []);
 
   useEffect(() => {
-    if (view === "downloads") { setLoading(false); setError(""); return; }
+    if (view === "downloads" || view === "financing") { setLoading(false); setError(""); return; }
     const controller = new AbortController();
     let active = true;
     setLoading(true);
@@ -370,7 +375,7 @@ export default function AutomotiveIntelligence() {
         <h1>{viewCopy.title}</h1>
         <p>{viewCopy.description}</p>
       </div>
-      <div className={styles.sourcePill}><i /> {view === "downloads" ? "Histórico de todas las fuentes" : "1 fuente prioritaria por marca"}</div>
+      <div className={styles.sourcePill}><i /> {view === "downloads" ? "Histórico de todas las fuentes" : view === "financing" ? "Financieras + tarjetas · fuentes públicas" : "1 fuente prioritaria por marca"}</div>
     </div>
 
     <nav className={styles.subnav} aria-label="Inteligencia automotriz">
@@ -378,10 +383,11 @@ export default function AutomotiveIntelligence() {
       <button type="button" className={view === "variations" ? styles.subnavActive : ""} onClick={() => setView("variations")}>Variaciones de precio</button>
       <button type="button" className={view === "brand_variations" ? styles.subnavActive : ""} onClick={() => setView("brand_variations")}>Variación por marca</button>
       <button type="button" className={view === "monthly" ? styles.subnavActive : ""} onClick={() => setView("monthly")}>Evolución mensual</button>
+      <button type="button" className={view === "financing" ? styles.subnavActive : ""} onClick={() => setView("financing")}>Financiamiento</button>
       <button type="button" className={view === "downloads" ? styles.subnavActive : ""} onClick={() => setView("downloads")}>Descargar bases</button>
     </nav>
 
-    <div className={`${styles.filters} ${(view === "brand_variations" || view === "monthly") ? styles.filtersWithComparison : ""}`}>
+    {view !== "financing" ? <div className={`${styles.filters} ${(view === "brand_variations" || view === "monthly") ? styles.filtersWithComparison : ""}`}>
       <label>Marca
         <select value={brand} onChange={(event) => { setBrand(event.target.value); setModel(""); }}>
           <option value="">Todas las marcas</option>
@@ -412,8 +418,9 @@ export default function AutomotiveIntelligence() {
         </select>
       </label> : null}
       <button type="button" className={styles.clear} onClick={() => { setBrand(""); setModel(""); setDealer(""); }}>Limpiar</button>
-    </div>
+    </div> : null}
 
+    {view === "financing" ? <AutomotiveFinancing vehicles={vehicles} /> : null}
 
     {view === "monthly" ? <>
       {loading ? <div className={styles.loading}>Construyendo evolución mensual con las capturas históricas…</div> : null}
