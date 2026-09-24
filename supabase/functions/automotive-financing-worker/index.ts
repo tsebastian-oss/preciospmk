@@ -108,6 +108,48 @@ function bancoChile(source: Source, text: string): Observation[] {
   if (!/3 cuotas sin interés/i.test(text)) return [];
   return [{ ...base(source), monthly_rate_pct: 0, cae_pct: cae, loan_amount: amount, credit_total_cost: ctc, term_months: 3, installments_count: 3, confidence: "published", raw_payload: { category: "compras nacionales", taxesApply: true } }];
 }
+function mafToyota(source: Source, text: string): Observation[] {
+  const blocks = text.split(/Precio publicado de\s*:/i).slice(1);
+  const rows: Observation[] = [];
+  for (const block of blocks.slice(0, 60)) {
+    const scoped = block.slice(0, 3200);
+    const vehiclePrice = money(match(scoped, /^\s*\$?\s*([0-9.]+)/i));
+    const model = match(scoped, /modelo\s+([^,]+),\s*versi[oó]n/i)?.trim() || null;
+    const version = match(scoped, /versi[oó]n\s+(.+?),\s*incluye IVA/i)?.trim() || null;
+    const financeBonus = money(match(scoped, /bono de financiamiento(?:\s+de)?\s*:?\s*\$?\s*([0-9.]+)/i));
+    const piePct = pct(match(scoped, /Ejemplo representativo\s+([0-9]+(?:[,.][0-9]+)?)%\s+de pie/i));
+    const pieAmount = money(match(scoped, /de pie de\s*:?\s*\$?\s*([0-9.]+)/i));
+    const installmentsCount = Number(match(scoped, /([0-9]{1,2})\s+cuotas? de\s*:?\s*\$?\s*[0-9.]+/i) || 0) || null;
+    const installmentAmount = money(match(scoped, /[0-9]{1,2}\s+cuotas? de\s*:?\s*\$?\s*([0-9.]+)/i));
+    const balloonAmount = money(match(scoped, /cuota final N[°ºo]?\s*[0-9]+\s+de\s*:?\s*\$?\s*([0-9.]+)/i));
+    const monthlyRatePct = pct(match(scoped, /Tasa de Inter[eé]s referencial de\s*:?\s*([0-9]+(?:[,.][0-9]+)?)%\s+mensual/i));
+    const creditTotalCost = money(match(scoped, /Costo Total del Cr[eé]dito\s*:?\s*\$?\s*([0-9.]+)/i));
+    const caePct = pct(match(scoped, /CAE\s*:?\s*([0-9]+(?:[,.][0-9]+)?)%/i));
+    if (!model || monthlyRatePct === null) continue;
+    rows.push({
+      ...base(source),
+      product_name: `Plan Renueve · ${model}`,
+      brand: "Toyota",
+      model,
+      vehicle_price: vehiclePrice,
+      finance_bonus: financeBonus,
+      down_payment_pct: piePct,
+      down_payment_amount: pieAmount,
+      term_months: installmentsCount,
+      installments_count: installmentsCount,
+      installment_amount: installmentAmount,
+      balloon_amount: balloonAmount,
+      monthly_rate_pct: monthlyRatePct,
+      cae_pct: caePct,
+      credit_total_cost: creditTotalCost,
+      vehicle_total_cost: creditTotalCost && pieAmount ? creditTotalCost + pieAmount : null,
+      confidence: "published",
+      raw_payload: { parser: source.parser_key, version, termRange: "25-60", rateMayVaryAtContract: true },
+    });
+  }
+  return rows;
+}
+
 function conditions(source: Source, text: string): Observation[] {
   let pie: number | null = null;
   let term: number | null = null;
@@ -137,12 +179,27 @@ function conditions(source: Source, text: string): Observation[] {
     case "bancoestado_card":
       term = 12; note = "Beneficio de bienvenida para tarjetas elegibles; no universal.";
       break;
+    case "global_conditions":
+      pie = pct(match(text, /Pie m[ií]nimo\s*([0-9]+(?:[,.][0-9]+)?)\s*%/i)) ?? 20;
+      term = Number(match(text, /Plazo de\s*[0-9]+\s*a\s*([0-9]{2})\s*meses/i) || 48);
+      note = "Crédito convencional público; tasa depende de evaluación.";
+      break;
+    case "bk_conditions":
+      note = "Compra inteligente, cuotas lineales y flexibles; cotización individual según evaluación.";
+      break;
+    case "autofin_conditions":
+      note = "Financiera automotriz activa; condiciones y tasa se obtienen por cotización/evaluación.";
+      break;
+    case "eurocapital_conditions":
+      note = "Cobertura de financiamiento automotriz; condiciones específicas se cotizan con ejecutivo.";
+      break;
     default:
       return [];
   }
   return [{ ...base(source), down_payment_pct: pie, term_months: term, confidence: "conditions_only", raw_payload: { note } }];
 }
 function parse(source: Source, text: string) {
+  if (source.parser_key === "maf_toyota") return mafToyota(source, text);
   if (source.parser_key === "santander_promo") return santander(source, text);
   if (source.parser_key === "scotia_card_auto") return scotia(source, text);
   if (source.parser_key === "bch_card_general") return bancoChile(source, text);
@@ -192,7 +249,7 @@ Deno.serve(async (request) => {
       results.push({ source: source.source_key, ok: true, observations: rows.length });
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      if (["forum_conditions","tanner_conditions","amicar_conditions","gm_conditions","bci_card_auto","bancoestado_card"].includes(source.parser_key)) {
+      if (["forum_conditions","tanner_conditions","amicar_conditions","gm_conditions","bci_card_auto","bancoestado_card","global_conditions","bk_conditions","autofin_conditions","eurocapital_conditions"].includes(source.parser_key)) {
         const fallback = conditions(source, "");
         await save(fallback);
         await status(source, "fallback_conditions", message.slice(0, 800));
