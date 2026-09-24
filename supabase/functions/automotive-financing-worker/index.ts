@@ -28,8 +28,8 @@ function cleanHtml(html: string) {
     .replace(/<script[\s\S]*?<\/script>/gi, " ")
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
+    .replace(/&nbsp;|&#160;/gi, " ")
     .replace(/&#0*39;|&apos;/gi, "'")
     .replace(/&quot;/gi, '"')
     .replace(/\s+/g, " ")
@@ -133,6 +133,153 @@ function bancoChile(source: Source, text: string): Observation[] {
   if (!/3 cuotas sin interés/i.test(text)) return [];
   return [{ ...base(source), monthly_rate_pct: 0, cae_pct: cae, loan_amount: amount, credit_total_cost: ctc, term_months: 3, installments_count: 3, confidence: "published", raw_payload: { category: "compras nacionales", taxesApply: true } }];
 }
+function forumDate(text: string | undefined): string | null {
+  if (!text) return null;
+  const value = text.trim().toLowerCase().replace(/\s+/g, " ");
+  const numeric = value.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+  if (numeric) {
+    const d = Number(numeric[1]), m = Number(numeric[2]), y = Number(numeric[3]);
+    const date = new Date(Date.UTC(y, m - 1, d));
+    if (date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d) return `${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    return null;
+  }
+  const months: Record<string, number> = { enero:1,febrero:2,marzo:3,abril:4,mayo:5,junio:6,julio:7,agosto:8,septiembre:9,octubre:10,noviembre:11,diciembre:12 };
+  const named = value.match(/(\d{1,2})\s+(?:de\s+)?([a-záéíóúñ]+)\s+(\d{4})/i);
+  if (!named) return null;
+  const d = Number(named[1]), m = months[named[2].normalize("NFD").replace(/[\u0300-\u036f]/g,"")] || 0, y = Number(named[3]);
+  if (!m) return null;
+  const date = new Date(Date.UTC(y, m - 1, d));
+  if (date.getUTCFullYear() !== y || date.getUTCMonth() !== m - 1 || date.getUTCDate() !== d) return null;
+  return `${y}-${String(m).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+}
+function forumBrandFromVehicle(vehicle: string, source: Source): string | null {
+  const metaBrand = typeof source.metadata?.brand === "string" ? String(source.metadata.brand) : "";
+  if (metaBrand) return metaBrand;
+  const v = vehicle.trim();
+  const known = ["OMODA","JAECOO","Dongfeng","Foton","BAIC","BYD","Kia","Ford","Geely","Peugeot","Chery","JAC","Suzuki","Mazda","Subaru","Mitsubishi"];
+  return known.find(b => v.toLowerCase().startsWith(b.toLowerCase())) || v.split(/\s+/)[0] || null;
+}
+function forumPromo(source: Source, text: string): Observation[] {
+  const normalized = text.replace(/\(1\)\s*/g, "(1) ");
+  const blocks = normalized.split(/(?=\(1\)\s*Simulación corresponde a producto)/i).slice(1);
+  const rows: Observation[] = [];
+  for (const block of blocks.slice(0, 120)) {
+    const scoped = block.slice(0, 6500);
+    const product = match(scoped, /Simulación corresponde a producto\s+(.+?)\s+operado por Forum Servicios Financieros/i)?.trim() || "Financiamiento Forum";
+    const vehicle = match(scoped, /Válido para\s+(.+?)\.\s*Precio lista corresponde/i)?.trim() || null;
+    const listPrice = money(match(scoped, /Precio lista corresponde a\s*\$?\s*([0-9.]+)/i));
+    const financedPrice = money(match(scoped, /Precio con bono\s*\$?\s*([0-9.]+)/i));
+    const totalBonus = money(match(scoped, /incluye bono de\s*\$?\s*([0-9.]+)/i));
+    const financingMentions = [...scoped.matchAll(/\$\s*([0-9.]+)\s+con financiamiento Forum/gi)].map(m=>money(m[1])).filter((v): v is number => v!==null);
+    const intelligentMentions = [...scoped.matchAll(/\$\s*([0-9.]+)\s+con (?:bono compra|crédito) inteligente/gi)].map(m=>money(m[1])).filter((v): v is number => v!==null);
+    const explicitFinanceBonus = [...financingMentions, ...intelligentMentions].reduce((a,b)=>a+b,0);
+    const headlinePiePct = pct(match(scoped, /con un\s+([0-9]+(?:[,.][0-9]+)?)%\s+de pie/i));
+    const actualPiePct = pct(match(scoped, /y un pie de\s*([0-9]+(?:[,.][0-9]+)?)%\s*\(/i));
+    const piePct = actualPiePct ?? headlinePiePct;
+    const installmentCount = Number(match(scoped, /([0-9]{1,2})\s+cuotas?\s*(?:y cuotón|de\s*\$)/i) || 0) || null;
+    const installment = money(match(scoped, /[0-9]{1,2}\s+cuotas? de\s*\$?\s*([0-9.]+)/i));
+    const balloon = money(match(scoped, /(?:más\s+)?cuota n[°ºo]?\s*[0-9]+(?:VFMG)?\s+de\s*\$\s*([0-9.]+)/i));
+    const pieAmount = money(match(scoped, /pie de\s*(?:[0-9]+(?:[,.][0-9]+)?%\s*)?\(\$\s*([0-9.]+)\)/i));
+    const cae = pct(match(scoped, /CAE\s*([0-9]+(?:[,.][0-9]+)?)%/i));
+    const ctc = money(match(scoped, /Costo Total del Crédito\s*\$?\s*([0-9.]+)/i));
+    const loanAmount = money(match(scoped, /Monto Total del Crédito\s*\$?\s*([0-9.]+)/i));
+    const vehicleTotal = money(match(scoped, /Costo Total del Vehículo\s*\$?\s*([0-9.]+)/i));
+    const validText = match(scoped, /Vigencia\s*promoción\s*hasta\s+([^\.]+?)(?:\.|Stock|$)/i);
+    const validUntil = forumDate(validText);
+    if (!vehicle || (!cae && !ctc && !installment)) continue;
+    const brand = forumBrandFromVehicle(vehicle, source);
+    const financingBonus = explicitFinanceBonus || (totalBonus && /con financiamiento Forum/i.test(scoped) ? totalBonus : null);
+    rows.push({
+      ...base(source),
+      product_name: `${product} · ${vehicle}`,
+      brand,
+      model: vehicle,
+      vehicle_price: listPrice,
+      financed_price: financedPrice,
+      finance_bonus: financingBonus,
+      down_payment_pct: piePct,
+      down_payment_amount: pieAmount,
+      term_months: installmentCount,
+      installments_count: installmentCount,
+      installment_amount: installment,
+      balloon_amount: balloon,
+      cae_pct: cae,
+      loan_amount: loanAmount,
+      credit_total_cost: ctc,
+      vehicle_total_cost: vehicleTotal || (ctc && pieAmount ? ctc + pieAmount : null),
+      valid_until: validUntil,
+      confidence: "published",
+      raw_payload: {
+        parser: source.parser_key,
+        provider: "Forum",
+        totalPublishedBonus: totalBonus,
+        financingBonusBasis: explicitFinanceBonus ? "explicit_financing_components" : financingBonus ? "published_total_bonus" : "not_isolated",
+        validityText: validText || null,
+        invalidValidityDate: Boolean(validText && !validUntil),
+        headlinePiePct,
+        actualPiePct,
+        pieMismatch: headlinePiePct !== null && actualPiePct !== null && headlinePiePct !== actualPiePct,
+        capture: "forum_legal_promotion",
+      },
+    });
+  }
+  return rows;
+}
+
+function forumFord(source: Source, text: string): Observation[] {
+  const starts = [...text.matchAll(/Imagen corresponde a\s+(.+?)\.\s*Precio de Lista/gi)];
+  const rows: Observation[] = [];
+  for (let i = 0; i < starts.length; i++) {
+    const start = starts[i].index ?? 0;
+    const end = i + 1 < starts.length ? (starts[i + 1].index ?? text.length) : Math.min(text.length, start + 7000);
+    const scoped = text.slice(start, end);
+    const vehicle = starts[i][1]?.trim() || null;
+    const listPrice = money(match(scoped, /Precio de Lista\s*\$?\s*([0-9.]+)/i));
+    const financedPrice = money(match(scoped, /Precio final exclusivo con financiamiento Forum\s*\$?\s*([0-9.]+)/i));
+    const product = match(scoped, /A modo de ejemplo producto con\s+([^:]+):?/i)?.trim() || "Financiamiento Forum";
+    const installmentsCount = Number(match(scoped, /([0-9]{1,2})\s+cuotas? de\s*\$?\s*[0-9.]+/i) || 0) || null;
+    const installment = money(match(scoped, /[0-9]{1,2}\s+cuotas? de\s*\$?\s*([0-9.]+)/i));
+    const balloon = money(match(scoped, /(?:más\s+)?cuota n[°ºo]?\s*[0-9]+\s+de\s*\$\s*([0-9.]+)/i));
+    const piePct = pct(match(scoped, /pie de\s*([0-9]+(?:[,.][0-9]+)?)%/i));
+    const pieAmount = money(match(scoped, /pie de\s*[0-9]+(?:[,.][0-9]+)?%\s*\(\$\s*([0-9.]+)\)/i));
+    const cae = pct(match(scoped, /CAE\s*([0-9]+(?:[,.][0-9]+)?)%/i));
+    const ctc = money(match(scoped, /Costo Total del Crédito\s*\$?\s*([0-9.]+)/i));
+    const loanAmount = money(match(scoped, /Monto Total del Crédito\s*\$?\s*([0-9.]+)/i));
+    const vehicleTotal = money(match(scoped, /Costo Total del Vehículo\s*\$?\s*([0-9.]+)/i));
+    const validText = match(scoped, /Vigencia promoción hasta\s+([^\.]+?)(?:\.|Stock|$)/i);
+    const validUntil = forumDate(validText);
+    if (!vehicle || (!cae && !ctc && !installment)) continue;
+    rows.push({
+      ...base(source),
+      product_name: `${product} · ${vehicle}`,
+      brand: "Ford",
+      model: vehicle,
+      vehicle_price: listPrice,
+      financed_price: financedPrice,
+      finance_bonus: listPrice && financedPrice ? Math.max(0, listPrice - financedPrice) : null,
+      down_payment_pct: piePct,
+      down_payment_amount: pieAmount,
+      term_months: installmentsCount,
+      installments_count: installmentsCount,
+      installment_amount: installment,
+      balloon_amount: balloon,
+      cae_pct: cae,
+      loan_amount: loanAmount,
+      credit_total_cost: ctc,
+      vehicle_total_cost: vehicleTotal || (ctc && pieAmount ? ctc + pieAmount : null),
+      valid_until: validUntil,
+      confidence: "published",
+      raw_payload: {
+        parser: source.parser_key,
+        provider: "Forum",
+        capture: "partner_brand_legal",
+        validityText: validText || null,
+      },
+    });
+  }
+  return rows;
+}
+
 function mafToyota(source: Source, text: string): Observation[] {
   const blocks = text.split(/Precio publicado de\s*:/i).slice(1);
   const rows: Observation[] = [];
@@ -224,6 +371,8 @@ function conditions(source: Source, text: string): Observation[] {
   return [{ ...base(source), down_payment_pct: pie, term_months: term, confidence: "conditions_only", raw_payload: { note } }];
 }
 function parse(source: Source, text: string) {
+  if (source.parser_key === "forum_promo") return forumPromo(source, text);
+  if (source.parser_key === "forum_ford") return forumFord(source, text);
   if (source.parser_key === "maf_toyota") return mafToyota(source, text);
   if (source.parser_key === "santander_promo") return santander(source, text);
   if (source.parser_key === "scotia_card_auto") return scotia(source, text);
@@ -264,28 +413,38 @@ Deno.serve(async (request) => {
 
   const list = await sources();
   const results: unknown[] = [];
-  for (const source of list) {
+  async function processSource(source: Source) {
     try {
-      const response = await fetch(source.source_url, { headers: { "user-agent": UA, accept: "text/html,*/*", "accept-language": "es-CL,es;q=0.9" }, signal: AbortSignal.timeout(30000) });
+      const response = await fetch(source.source_url, { headers: { "user-agent": UA, accept: "text/html,*/*", "accept-language": "es-CL,es;q=0.9" }, signal: AbortSignal.timeout(20000) });
       if (!response.ok) throw new Error(`source_${response.status}`);
       const text = cleanHtml(await response.text()).slice(0, 250000);
-      const rows = parse(source, text);
+      const parsed = parse(source, text);
+      const unique = new Map<string, Observation>();
+      for (const row of parsed) {
+        const key = [row.provider,row.product_name,row.brand,row.model,row.term_months,row.cae_pct,row.vehicle_price,row.valid_until].join("|");
+        const existing = unique.get(key);
+        if (!existing || (!existing.credit_total_cost && row.credit_total_cost)) unique.set(key,row);
+      }
+      const rows = [...unique.values()];
       await save(rows);
       await status(source, rows.length ? "ok" : "no_structured_offer", null);
-      results.push({ source: source.source_key, ok: true, observations: rows.length });
+      return { source: source.source_key, ok: true, observations: rows.length };
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       if (["forum_conditions","tanner_conditions","amicar_conditions","gm_conditions","bci_card_auto","bancoestado_card","global_conditions","bk_conditions","autofin_conditions","eurocapital_conditions"].includes(source.parser_key)) {
         const fallback = conditions(source, "");
         await save(fallback);
         await status(source, "fallback_conditions", message.slice(0, 800));
-        results.push({ source: source.source_key, ok: true, fallback: true, observations: fallback.length });
-      } else {
-        await status(source, "error", message.slice(0, 800));
-        results.push({ source: source.source_key, ok: false, error: message });
+        return { source: source.source_key, ok: true, fallback: true, observations: fallback.length };
       }
+      await status(source, message === "source_403" ? "blocked_403" : "error", message.slice(0, 800));
+      return { source: source.source_key, ok: false, error: message };
     }
-    await new Promise((resolve) => setTimeout(resolve, 350));
+  }
+  for (let i = 0; i < list.length; i += 4) {
+    const batch = list.slice(i, i + 4);
+    results.push(...await Promise.all(batch.map(processSource)));
+    if (i + 4 < list.length) await new Promise(resolve => setTimeout(resolve, 250));
   }
   return json({ ok: true, sources: list.length, results, completedAt: new Date().toISOString() });
 });
