@@ -35,6 +35,15 @@ function publishedRate(offer:Offer){
 function confidenceLabel(value:Offer["confidence"]){
   return value==="published" ? "Publicado" : value==="derived" ? "Derivado" : "Sólo condiciones";
 }
+function supportsTerm(offer:Offer, months:number){
+  const range=typeof offer.raw?.termRange==="string" ? offer.raw.termRange.match(/(\d+)\s*-\s*(\d+)/) : null;
+  if(range){
+    const min=Number(range[1]), max=Number(range[2]);
+    return months>=min && months<=max;
+  }
+  if(offer.termMonths!==null) return months===offer.termMonths;
+  return true;
+}
 
 export default function AutomotiveFinancing({vehicles}:{vehicles:Vehicle[]}) {
   const [payload,setPayload]=useState<Payload|null>(null);
@@ -44,7 +53,7 @@ export default function AutomotiveFinancing({vehicles}:{vehicles:Vehicle[]}) {
   const [selectedVehicle,setSelectedVehicle]=useState("");
   const [manualPrice,setManualPrice]=useState(20000000);
   const [pie,setPie]=useState(30);
-  const [term,setTerm]=useState(36);
+  const [term,setTerm]=useState(25);
 
   useEffect(()=>{
     let active=true;
@@ -74,12 +83,13 @@ export default function AutomotiveFinancing({vehicles}:{vehicles:Vehicle[]}) {
     const offers=(payload?.offers||[]).filter(o=>segment==="all"||o.sourceType===segment);
     return offers.map(o=>{
       const monthly=o.monthlyRatePct!==null ? o.monthlyRatePct : o.caePct!==null ? effectiveMonthlyFromCae(o.caePct) : null;
-      const comparable=o.confidence!=="conditions_only" && monthly!==null && o.sourceType!=="benchmark";
+      const termCompatible=supportsTerm(o,term);
+      const comparable=o.confidence!=="conditions_only" && monthly!==null && o.sourceType!=="benchmark" && termCompatible;
       const payment=comparable ? annuity(principal,monthly!,term) : null;
       const total=payment!==null ? downPayment+payment*term : null;
       const delta=total!==null ? total-vehiclePrice : null;
       const basis=o.monthlyRatePct!==null ? "tasa mensual" : o.caePct!==null ? "CAE equivalente" : "";
-      return {...o,simMonthly:monthly,simPayment:payment,simTotal:total,simDelta:delta,simBasis:basis};
+      return {...o,simMonthly:monthly,simPayment:payment,simTotal:total,simDelta:delta,simBasis:basis,termCompatible};
     }).sort((a,b)=>{
       if(a.simTotal!==null&&b.simTotal!==null)return a.simTotal-b.simTotal;
       if(a.simTotal!==null)return -1;if(b.simTotal!==null)return 1;
@@ -90,7 +100,8 @@ export default function AutomotiveFinancing({vehicles}:{vehicles:Vehicle[]}) {
   const comparable=rows.filter(r=>r.simTotal!==null);
   const best=comparable[0]||null;
   const published=rows.filter(r=>r.confidence==="published").length;
-  const sourceOk=(payload?.sources||[]).filter(s=>s.lastStatus==="ok").length;
+  const sourceOk=(payload?.sources||[]).filter(s=>["ok","fallback_conditions","no_structured_offer"].includes(s.lastStatus||"")).length;
+  const rateCoverage=rows.filter(r=>r.sourceType!=="benchmark" && (r.monthlyRatePct!==null || r.annualRatePct!==null || r.caePct!==null)).length;
 
   return <div className={styles.root}>
     <section className={styles.simulator}>
@@ -116,7 +127,7 @@ export default function AutomotiveFinancing({vehicles}:{vehicles:Vehicle[]}) {
           <select value={pie} onChange={e=>setPie(Number(e.target.value))}>{[0,10,20,30,40,50].map(v=><option key={v} value={v}>{v}%</option>)}</select>
         </label>
         <label>Plazo comparable
-          <select value={term} onChange={e=>setTerm(Number(e.target.value))}>{[12,24,25,36,48,60].map(v=><option key={v} value={v}>{v} meses</option>)}</select>
+          <select value={term} onChange={e=>setTerm(Number(e.target.value))}>{[3,12,24,25,36,48,60].map(v=><option key={v} value={v}>{v} meses</option>)}</select>
         </label>
       </div>
       <div className={styles.mathline}>
@@ -138,7 +149,7 @@ export default function AutomotiveFinancing({vehicles}:{vehicles:Vehicle[]}) {
       <div className={styles.kpis}>
         <article><span>Proveedores cubiertos</span><strong>{integer.format(payload.summary.providers||0)}</strong><small>{payload.sources.length} fuentes registradas</small></article>
         <article><span>Ofertas publicadas</span><strong>{published}</strong><small>con condición estructurada</small></article>
-        <article><span>Con tasa / CAE</span><strong>{payload.summary.withPublishedRate+payload.summary.withCae}</strong><small>pueden alimentar comparación</small></article>
+        <article><span>Con tasa / CAE</span><strong>{rateCoverage}</strong><small>sin doble contar ofertas</small></article>
         <article><span>Fuentes actualizadas OK</span><strong>{sourceOk}/{payload.sources.length}</strong><small>última corrida automática</small></article>
         <article><span>Menor costo simulado</span><strong>{best?money.format(best.simTotal!):"—"}</strong><small>{best?best.provider:"sin tasa comparable"}</small></article>
       </div>
@@ -154,19 +165,19 @@ export default function AutomotiveFinancing({vehicles}:{vehicles:Vehicle[]}) {
             <td>{r.downPaymentPct!==null?`${fmtPct(r.downPaymentPct)} pie · `:""}{r.termMonths?`${r.termMonths} m`:"—"}</td>
             <td className={styles.good}>{fmtMoney(r.financeBonus)}</td>
             <td>{fmtMoney(r.installmentAmount)}</td><td>{fmtMoney(r.balloonAmount)}</td><td>{fmtMoney(r.creditTotalCost)}</td>
-            <td>{r.simPayment!==null?<><strong>{money.format(r.simPayment)}</strong><small className={styles.simBasis}>{r.simBasis}</small></>:"—"}</td>
+            <td>{r.simPayment!==null?<><strong>{money.format(r.simPayment)}</strong><small className={styles.simBasis}>{r.simBasis}</small></>:!r.termCompatible&&r.confidence!=="conditions_only"?<small className={styles.simBasis}>plazo no publicado</small>:"—"}</td>
             <td className={r.simTotal!==null&&index===0?styles.best:""}>{r.simTotal!==null?<><strong>{money.format(r.simTotal)}</strong><small className={r.simDelta!==null&&r.simDelta>0?styles.cost:styles.saving}>{r.simDelta===null?"":`${r.simDelta>=0?"+":"−"} ${money.format(Math.abs(r.simDelta))} vs precio`}</small></>:"—"}</td>
             <td><a href={r.sourceUrl} target="_blank" rel="noreferrer">Fuente ↗</a></td>
           </tr>)}</tbody>
         </table></div>
-        <p className={styles.disclaimer}>La simulación comparable usa la tasa mensual publicada o, cuando sólo existe CAE, una tasa mensual equivalente derivada del CAE. Sirve para homologar escenarios; no reproduce seguros, comisiones, cupos, promociones ni criterios de riesgo particulares. Las tarjetas requieren cupo disponible y las promociones pueden limitar comercios o segmentos.</p>
+        <p className={styles.disclaimer}>La simulación comparable sólo se calcula cuando el plazo seleccionado está dentro de la vigencia/plazo publicado. Usa la tasa mensual publicada o, cuando sólo existe CAE, una tasa mensual equivalente derivada del CAE. Sirve para homologar escenarios; no reproduce seguros, comisiones, cupos, promociones ni criterios de riesgo particulares. Las tarjetas requieren cupo disponible y las promociones pueden limitar comercios o segmentos.</p>
       </section>
 
       <section className={styles.coverage}>
         <div className={styles.panelHeader}><div><h2>Cobertura de fuentes</h2><p>Estado operativo del crawler diario.</p></div><span>Actualización diaria</span></div>
         <div className={styles.sourceGrid}>{payload.sources.map(s=><a key={s.id} href={s.sourceUrl} target="_blank" rel="noreferrer">
           <div><strong>{s.provider}</strong><small>{s.productName}</small></div>
-          <span className={s.lastStatus==="ok"?styles.ok:s.lastStatus==="error"?styles.bad:styles.pending}>{s.lastStatus==="ok"?"OK":s.lastStatus==="error"?"Error":"Pendiente"}</span>
+          <span className={s.lastStatus==="ok"?styles.ok:s.lastStatus==="error"?styles.bad:styles.pending}>{s.lastStatus==="ok"?"OK":s.lastStatus==="fallback_conditions"?"Fallback":s.lastStatus==="no_structured_offer"?"Referencia":s.lastStatus==="error"?"Error":"Pendiente"}</span>
         </a>)}</div>
       </section>
     </>:null}
